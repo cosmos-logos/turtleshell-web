@@ -170,7 +170,7 @@ export function Chat() {
             onKeyDown={handleKeyDown}
             placeholder="Message Athena..."
             rows={1}
-            className="flex-1 resize-none bg-surface-2 border border-border rounded-xl px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-500/50 focus:ring-1 focus:ring-shell-500/20 transition-colors h-[44px] max-h-[200px]"
+            className="flex-1 resize-none bg-surface-2 border border-border rounded-xl px-4 py-2.5 text-base sm:text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-500/50 focus:ring-1 focus:ring-shell-500/20 transition-colors h-[44px] max-h-[200px]"
           />
 
           <button

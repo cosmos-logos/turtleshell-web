@@ -33,7 +33,7 @@
 
 @layer components {
   .app-shell {
-    @apply h-screen flex overflow-hidden relative;
+    @apply h-dvh flex overflow-hidden relative;
   }
 
   .main-content {
