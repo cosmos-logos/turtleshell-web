@@ -23,7 +23,7 @@ interface EnvironmentStore {
 export const useEnvironmentStore = create<EnvironmentStore>()(
   persist(
     (set, get) => ({
-      current: 'cloud',
+      current: 'offgrid',
       customEndpoint: '',
       developerMode: false,
 
