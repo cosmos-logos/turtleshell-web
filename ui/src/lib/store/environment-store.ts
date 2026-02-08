@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware';
 export type AppEnvironment = 'cloud' | 'offgrid' | 'custom';
 
 const ENVIRONMENT_URLS: Record<AppEnvironment, string> = {
-  cloud: 'https://api.olympus-grid.ai/v1/athena',
+  cloud: 'https://us-west-1-api-int.olympus-grid.ai/v1/athena',
   offgrid: 'https://athena-616.ngrok.io',
   custom: '',
 };
