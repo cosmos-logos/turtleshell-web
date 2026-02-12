@@ -1,10 +1,15 @@
+import { useState } from 'react';
 import { Plug, ExternalLink, Trash2, Plus } from 'lucide-react';
 import { useServiceStore } from '@/lib/store/service-store';
 import { SERVICE_CATALOG } from '@/types/service';
+import { OlympusGridConnect } from '@/components/services/OlympusGridConnect';
 
 export function Services() {
   const { services, remove } = useServiceStore();
   const connectedServices = Object.values(services);
+  const connectedProviders = new Set(connectedServices.map((s) => s.provider));
+  const [olympusGridModalOpen, setOlympusGridModalOpen] = useState(false);
+  const catalogServices = SERVICE_CATALOG.filter((s) => !connectedProviders.has(s.provider));
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -76,7 +81,7 @@ export function Services() {
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {SERVICE_CATALOG.map((service) => (
+            {catalogServices.map((service) => (
               <div
                 key={`${service.category}-${service.provider}`}
                 className="p-4 bg-surface-1 border border-border-muted rounded-xl hover:border-border transition-colors"
@@ -97,6 +102,11 @@ export function Services() {
                 </p>
                 <button
                   disabled={service.status !== 'available'}
+                  onClick={() => {
+                    if (service.provider === 'olympus-grid') {
+                      setOlympusGridModalOpen(true);
+                    }
+                  }}
                   className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
                     service.status === 'available'
                       ? 'bg-shell-500/10 text-shell-400 hover:bg-shell-500/20'
@@ -118,6 +128,11 @@ export function Services() {
           </div>
         </section>
       </div>
+
+      <OlympusGridConnect
+        open={olympusGridModalOpen}
+        onOpenChange={setOlympusGridModalOpen}
+      />
     </div>
   );
 }

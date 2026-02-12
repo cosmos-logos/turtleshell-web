@@ -10,19 +10,42 @@ export type ServiceCategory =
   | 'database'
   | 'identity'
   | 'payment'
-  | 'voice';
+  | 'voice'
+  | 'platform';
 
 export type CRMProvider = 'salesforce' | 'hubspot';
 export type SourceControlProvider = 'github' | 'gitlab' | 'bitbucket';
 export type CalendarProvider = 'google' | 'outlook';
 export type CommunicationProvider = 'slack' | 'discord' | 'teams';
+export type PlatformProvider = 'olympus-grid';
 
 export type ServiceProvider =
   | CRMProvider
   | SourceControlProvider
   | CalendarProvider
   | CommunicationProvider
+  | PlatformProvider
   | string;
+
+// ── Olympus-Grid Models ──
+
+export interface OlympusUser {
+  sub: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  emailVerified: boolean;
+}
+
+export interface CaseRecord {
+  Id: string;
+  CaseNumber: string;
+  Subject: string;
+  Description: string;
+  Status: string;
+  Priority: string;
+  CreatedDate: string;
+}
 
 // ── Service Models ──
 
@@ -116,6 +139,15 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
     icon: '💼',
     oauthSupported: true,
     status: 'coming_soon',
+  },
+  {
+    category: 'platform',
+    provider: 'olympus-grid',
+    label: 'Olympus-Grid',
+    description: 'Platform services — Service Desk, identity, and AI tools',
+    icon: '🛡️',
+    oauthSupported: false,
+    status: 'available',
   },
 ];
 
