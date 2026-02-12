@@ -1,4 +1,6 @@
 import type { ServiceCredentials } from '@/types/service';
+import { useServiceStore } from '@/lib/store/service-store';
+import { useEnvironmentStore } from '@/lib/store/environment-store';
 
 /**
  * Build MCP headers for Athena requests.
@@ -10,16 +12,19 @@ import type { ServiceCredentials } from '@/types/service';
 export function buildMCPHeaders(
   credentials?: ServiceCredentials,
 ): Record<string, string> {
-  if (!credentials) return {};
-
   const headers: Record<string, string> = {};
 
-  if (credentials.accessToken) {
+  if (credentials?.accessToken) {
     headers['Authorization'] = `Bearer ${credentials.accessToken}`;
   }
 
-  if (credentials.instanceUrl) {
+  if (credentials?.instanceUrl) {
     headers['salesforce-url'] = credentials.instanceUrl;
+  }
+
+  // Olympus-Grid gateway fallback for MCP routing
+  if (!headers['salesforce-url'] && useServiceStore.getState().isOlympusGridConnected()) {
+    headers['salesforce-url'] = useEnvironmentStore.getState().getGatewayUrl();
   }
 
   return headers;

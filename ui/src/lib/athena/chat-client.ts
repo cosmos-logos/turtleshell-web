@@ -25,6 +25,7 @@ export async function* streamChat(
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'x-developer-key': 'ts-web-int-2026',
     Origin: window.location.origin,
     ...buildMCPHeaders(crmService?.credentials),
   };
@@ -32,6 +33,7 @@ export async function* streamChat(
   const response = await fetch(url, {
     method: 'POST',
     headers,
+    credentials: 'include',
     body: JSON.stringify({ prompt }),
     signal,
   });

@@ -9,6 +9,12 @@ const ENVIRONMENT_URLS: Record<AppEnvironment, string> = {
   custom: '',
 };
 
+const GATEWAY_URLS: Record<AppEnvironment, string> = {
+  cloud: 'https://us-west-1-api-int.olympus-grid.ai',
+  offgrid: 'https://athena-616.ngrok.io',
+  custom: '',
+};
+
 interface EnvironmentStore {
   current: AppEnvironment;
   customEndpoint: string;
@@ -18,6 +24,7 @@ interface EnvironmentStore {
   setCustomEndpoint: (url: string) => void;
   setDeveloperMode: (enabled: boolean) => void;
   getBaseUrl: () => string;
+  getGatewayUrl: () => string;
 }
 
 export const useEnvironmentStore = create<EnvironmentStore>()(
@@ -37,6 +44,18 @@ export const useEnvironmentStore = create<EnvironmentStore>()(
           return state.customEndpoint;
         }
         return ENVIRONMENT_URLS[state.current];
+      },
+
+      getGatewayUrl: () => {
+        const state = get();
+        if (state.current === 'custom') {
+          try {
+            return new URL(state.customEndpoint).origin;
+          } catch {
+            return state.customEndpoint;
+          }
+        }
+        return GATEWAY_URLS[state.current];
       },
     }),
     { name: 'turtleshell-environment' },

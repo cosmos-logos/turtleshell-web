@@ -11,6 +11,8 @@ import { Agents } from './routes/Agents';
 import { Settings } from './routes/Settings';
 import { Docs } from './routes/Docs';
 import { OAuthCallback } from './routes/OAuthCallback';
+import { AuthCallback } from './routes/AuthCallback';
+import { ServiceDesk } from './routes/ServiceDesk';
 
 export function App() {
   return (
@@ -23,14 +25,16 @@ export function App() {
         <Route path="/security" element={<Security />} />
       </Route>
 
-      {/* OAuth callback (outside shell) */}
+      {/* Auth callbacks (outside shell) */}
       <Route path="/oauth/callback/:provider" element={<OAuthCallback />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
 
       {/* App shell with sidebar */}
       <Route path="/app" element={<AppShell />}>
         <Route index element={<Navigate to="/app/chat" replace />} />
         <Route path="chat" element={<Chat />} />
         <Route path="services" element={<Services />} />
+        <Route path="service-desk" element={<ServiceDesk />} />
         <Route path="agents" element={<Agents />} />
         <Route path="settings" element={<Settings />} />
         <Route path="docs/*" element={<Docs />} />

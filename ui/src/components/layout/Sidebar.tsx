@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   MessageSquare,
   Plug,
+  LifeBuoy,
   Bot,
   Settings,
   BookOpen,
@@ -24,6 +25,7 @@ interface SidebarProps {
 const navItems = [
   { to: '/app/chat', icon: MessageSquare, label: 'Chat' },
   { to: '/app/services', icon: Plug, label: 'Services' },
+  { to: '/app/service-desk', icon: LifeBuoy, label: 'Service Desk' },
   { to: '/app/agents', icon: Bot, label: 'Agents' },
   { to: '/app/docs', icon: BookOpen, label: 'Docs' },
   { to: '/app/settings', icon: Settings, label: 'Settings' },

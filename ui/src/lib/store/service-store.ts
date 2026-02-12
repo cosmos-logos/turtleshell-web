@@ -3,17 +3,22 @@ import { persist } from 'zustand/middleware';
 import type {
   RegisteredService,
   ServiceCategory,
+  OlympusUser,
 } from '@/types/service';
 
 interface ServiceStore {
   services: Record<string, RegisteredService>;
   activeServiceIds: Partial<Record<ServiceCategory, string>>;
+  olympusGridUser: OlympusUser | null;
 
   register: (service: RegisteredService) => void;
   remove: (id: string) => void;
   setActive: (category: ServiceCategory, id: string) => void;
   activeService: (category: ServiceCategory) => RegisteredService | null;
   servicesByCategory: (category: ServiceCategory) => RegisteredService[];
+  setOlympusGridConnected: (user: OlympusUser) => void;
+  disconnectOlympusGrid: () => void;
+  isOlympusGridConnected: () => boolean;
 }
 
 export const useServiceStore = create<ServiceStore>()(
@@ -21,6 +26,7 @@ export const useServiceStore = create<ServiceStore>()(
     (set, get) => ({
       services: {},
       activeServiceIds: {},
+      olympusGridUser: null,
 
       register: (service) =>
         set((state) => ({
@@ -61,6 +67,36 @@ export const useServiceStore = create<ServiceStore>()(
           (s) => s.category === category,
         );
       },
+
+      setOlympusGridConnected: (user) =>
+        set((state) => {
+          const service: RegisteredService = {
+            id: 'olympus-grid',
+            displayName: 'Olympus-Grid',
+            category: 'platform',
+            provider: 'olympus-grid',
+            connectedAt: Date.now(),
+            isConnected: true,
+          };
+          return {
+            olympusGridUser: user,
+            services: { ...state.services, [service.id]: service },
+            activeServiceIds: { ...state.activeServiceIds, platform: service.id },
+          };
+        }),
+
+      disconnectOlympusGrid: () =>
+        set((state) => {
+          const { 'olympus-grid': _, ...remaining } = state.services;
+          const { platform: __, ...activeIds } = state.activeServiceIds;
+          return {
+            olympusGridUser: null,
+            services: remaining,
+            activeServiceIds: activeIds,
+          };
+        }),
+
+      isOlympusGridConnected: () => get().olympusGridUser !== null,
     }),
     {
       name: 'turtleshell-services',
@@ -73,6 +109,7 @@ export const useServiceStore = create<ServiceStore>()(
           ]),
         ),
         activeServiceIds: state.activeServiceIds,
+        olympusGridUser: state.olympusGridUser,
       }),
     },
   ),

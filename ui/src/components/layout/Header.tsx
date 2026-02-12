@@ -1,5 +1,6 @@
-import { Menu, ChevronRight, Zap } from 'lucide-react';
+import { Menu, ChevronRight, Zap, LogOut } from 'lucide-react';
 import { useAgentStore } from '@/lib/store/agent-store';
+import { useServiceStore } from '@/lib/store/service-store';
 
 interface HeaderProps {
   desktopSidebarOpen: boolean;
@@ -9,6 +10,8 @@ interface HeaderProps {
 
 export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMenuToggle }: HeaderProps) {
   const activeAgent = useAgentStore((s) => s.activeAgent);
+  const olympusGridUser = useServiceStore((s) => s.olympusGridUser);
+  const disconnectOlympusGrid = useServiceStore((s) => s.disconnectOlympusGrid);
 
   return (
     <header className="h-14 flex-shrink-0 flex items-center justify-between px-4 border-b border-border-muted bg-surface-0/80 backdrop-blur-md">
@@ -52,10 +55,28 @@ export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMen
 
       {/* Right side */}
       <div className="flex items-center gap-3">
-        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-surface-2 rounded-full">
-          <div className="w-1.5 h-1.5 rounded-full bg-shell-400" />
-          <span className="text-2xs font-medium text-text-muted">Connected</span>
-        </div>
+        {olympusGridUser ? (
+          <div className="hidden sm:flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-surface-2 rounded-full">
+              <div className="w-1.5 h-1.5 rounded-full bg-shell-400" />
+              <span className="text-2xs font-medium text-text-muted">
+                {olympusGridUser.email}
+              </span>
+            </div>
+            <button
+              onClick={disconnectOlympusGrid}
+              className="p-1.5 rounded-md hover:bg-red-500/10 text-text-muted hover:text-red-400 transition-colors"
+              title="Sign out of Olympus-Grid"
+            >
+              <LogOut size={14} />
+            </button>
+          </div>
+        ) : (
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-surface-2 rounded-full">
+            <div className="w-1.5 h-1.5 rounded-full bg-shell-400" />
+            <span className="text-2xs font-medium text-text-muted">Connected</span>
+          </div>
+        )}
 
         {/* Mobile hamburger — RIGHT side */}
         <button

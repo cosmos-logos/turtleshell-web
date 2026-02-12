@@ -1,0 +1,73 @@
+import { useEffect, useState } from 'react';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
+import { Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { verifyCode } from '@/lib/api/olympus-grid-client';
+import { useServiceStore } from '@/lib/store/service-store';
+
+type CallbackState = 'processing' | 'success' | 'error';
+
+export function AuthCallback() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [state, setState] = useState<CallbackState>('processing');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const code = searchParams.get('code');
+    const requestId = searchParams.get('requestId');
+
+    if (!code || !requestId) {
+      navigate('/app/services', { replace: true });
+      return;
+    }
+
+    verifyCode(code, requestId)
+      .then((user) => {
+        useServiceStore.getState().setOlympusGridConnected(user);
+        setState('success');
+        const timer = setTimeout(() => navigate('/app/services', { replace: true }), 2000);
+        return () => clearTimeout(timer);
+      })
+      .catch((e) => {
+        setState('error');
+        setError(e instanceof Error ? e.message : 'Verification failed');
+      });
+  }, [searchParams, navigate]);
+
+  return (
+    <div className="h-screen flex items-center justify-center bg-surface-0">
+      <div className="text-center space-y-4 p-8">
+        {state === 'processing' && (
+          <>
+            <Loader2 size={32} className="mx-auto text-shell-400 animate-spin" />
+            <p className="text-sm text-text-secondary">
+              Verifying your identity...
+            </p>
+          </>
+        )}
+
+        {state === 'success' && (
+          <>
+            <CheckCircle size={32} className="mx-auto text-shell-400" />
+            <p className="text-sm text-text-secondary">
+              Successfully connected! Redirecting...
+            </p>
+          </>
+        )}
+
+        {state === 'error' && (
+          <>
+            <XCircle size={32} className="mx-auto text-red-400" />
+            <p className="text-sm text-red-400">{error}</p>
+            <Link
+              to="/app/services"
+              className="text-sm text-shell-400 hover:underline"
+            >
+              Return to Services
+            </Link>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
