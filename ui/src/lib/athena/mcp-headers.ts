@@ -12,15 +12,13 @@ import { useEnvironmentStore } from '@/lib/store/environment-store';
 export function buildMCPHeaders(
   credentials?: ServiceCredentials,
 ): Record<string, string> {
-  if (!credentials) return {};
-
   const headers: Record<string, string> = {};
 
-  if (credentials.accessToken) {
+  if (credentials?.accessToken) {
     headers['Authorization'] = `Bearer ${credentials.accessToken}`;
   }
 
-  if (credentials.instanceUrl) {
+  if (credentials?.instanceUrl) {
     headers['salesforce-url'] = credentials.instanceUrl;
   }
 
