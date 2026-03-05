@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { CheckCircle, Loader2, X } from 'lucide-react';
-import { requestMagicLink, verifyCode } from '@/lib/api/olympus-grid-client';
+import { CheckCircle, Loader2, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { requestMagicLink, verifyCode, getServiceUrl, getServiceUrlOverride, setServiceUrlOverride } from '@/lib/api/olympus-grid-client';
 import { useServiceStore } from '@/lib/store/service-store';
+import { useEnvironmentStore } from '@/lib/store/environment-store';
 
 type Step = 'email' | 'code' | 'success';
 
@@ -18,6 +19,19 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
   const [requestId, setRequestId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [devExpanded, setDevExpanded] = useState(false);
+  const [serviceUrlInput, setServiceUrlInput] = useState('');
+  const [serviceNameInput, setServiceNameInput] = useState('');
+
+  const developerMode = useEnvironmentStore((s) => s.developerMode);
+
+  // Sync override inputs from localStorage when modal opens
+  useEffect(() => {
+    if (open) {
+      setServiceUrlInput(getServiceUrlOverride());
+      setServiceNameInput(localStorage.getItem('olympus_grid_service_name_override') || '');
+    }
+  }, [open]);
 
   const resetState = useCallback(() => {
     setTimeout(() => {
@@ -27,6 +41,7 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
       setRequestId('');
       setLoading(false);
       setError('');
+      setDevExpanded(false);
     }, 200);
   }, []);
 
@@ -38,14 +53,29 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
     [onOpenChange, resetState],
   );
 
+  const persistDevOverrides = () => {
+    setServiceUrlOverride(serviceUrlInput.trim());
+    if (serviceNameInput.trim()) {
+      localStorage.setItem('olympus_grid_service_name_override', serviceNameInput.trim());
+    } else {
+      localStorage.removeItem('olympus_grid_service_name_override');
+    }
+    const resolvedUrl = getServiceUrl();
+    console.log('[OG] Developer overrides saved — serviceUrl:', resolvedUrl, 'serviceName:', serviceNameInput.trim() || '(default)');
+  };
+
   const handleSendCode = async () => {
     setError('');
     setLoading(true);
+    if (developerMode) persistDevOverrides();
+    console.log('[OG] requestMagicLink → email:', email, 'serviceUrl:', getServiceUrl());
     try {
       const result = await requestMagicLink(email);
+      console.log('[OG] requestMagicLink ← requestId:', result.requestId, 'expiresIn:', result.expiresIn);
       setRequestId(result.requestId);
       setStep('code');
     } catch (e) {
+      console.error('[OG] requestMagicLink ERROR:', e);
       setError(e instanceof Error ? e.message : 'Failed to send code');
     } finally {
       setLoading(false);
@@ -55,12 +85,15 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
   const handleVerify = async () => {
     setError('');
     setLoading(true);
+    console.log('[OG] verifyCode → code:', code, 'requestId:', requestId);
     try {
-      const user = await verifyCode(code, requestId);
-      useServiceStore.getState().setOlympusGridConnected(user);
+      const result = await verifyCode(code, requestId);
+      console.log('[OG] verifyCode ← user:', result.user, 'tokenType:', result.tokenType, 'expiresIn:', result.expiresIn);
+      useServiceStore.getState().setOlympusGridConnected(result.user);
       setStep('success');
       setTimeout(() => handleOpenChange(false), 1500);
     } catch (e) {
+      console.error('[OG] verifyCode ERROR:', e);
       setError(e instanceof Error ? e.message : 'Verification failed');
     } finally {
       setLoading(false);
@@ -70,10 +103,13 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
   const handleResend = async () => {
     setError('');
     setLoading(true);
+    console.log('[OG] resend → email:', email);
     try {
       const result = await requestMagicLink(email);
+      console.log('[OG] resend ← requestId:', result.requestId);
       setRequestId(result.requestId);
     } catch (e) {
+      console.error('[OG] resend ERROR:', e);
       setError(e instanceof Error ? e.message : 'Failed to resend code');
     } finally {
       setLoading(false);
@@ -118,6 +154,48 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
                 }}
                 autoFocus
               />
+
+              {/* Developer mode overrides */}
+              {developerMode && (
+                <div className="border border-border-muted rounded-lg overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setDevExpanded(!devExpanded)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-text-muted hover:bg-surface-2 transition-colors"
+                  >
+                    {devExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    Developer Overrides
+                  </button>
+                  {devExpanded && (
+                    <div className="px-3 pb-3 space-y-2">
+                      <div>
+                        <label className="text-2xs text-text-muted block mb-1">Service Name</label>
+                        <input
+                          type="text"
+                          value={serviceNameInput}
+                          onChange={(e) => setServiceNameInput(e.target.value)}
+                          placeholder="Olympus-Grid"
+                          className="w-full px-2.5 py-1.5 bg-surface-2 border border-border-muted rounded text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-400 transition-colors font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-2xs text-text-muted block mb-1">Service URL (SF Experience Cloud site)</label>
+                        <input
+                          type="text"
+                          value={serviceUrlInput}
+                          onChange={(e) => setServiceUrlInput(e.target.value)}
+                          placeholder={getServiceUrl()}
+                          className="w-full px-2.5 py-1.5 bg-surface-2 border border-border-muted rounded text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-400 transition-colors font-mono"
+                        />
+                      </div>
+                      <p className="text-2xs text-text-muted leading-relaxed">
+                        Overrides persist in localStorage. Clear to use defaults.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <button
                 onClick={handleSendCode}
                 disabled={!isEmailValid || loading}

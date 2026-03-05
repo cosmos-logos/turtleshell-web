@@ -1,5 +1,4 @@
 import { useEnvironmentStore } from '@/lib/store/environment-store';
-import { useServiceStore } from '@/lib/store/service-store';
 import { buildMCPHeaders } from './mcp-headers';
 
 /**
@@ -16,30 +15,32 @@ import { buildMCPHeaders } from './mcp-headers';
 export async function* streamChat(
   prompt: string,
   signal?: AbortSignal,
-): AsyncGenerator<string, void, unknown> {
+  conversationId?: string | null,
+): AsyncGenerator<string | { conversationId: string }, void, unknown> {
   const baseUrl = useEnvironmentStore.getState().getBaseUrl();
-  const crmService = useServiceStore.getState().activeService('crm');
+  const mcpHeaders = buildMCPHeaders();
 
   const url = `${baseUrl}/chat`;
-  console.log('🐢 [Athena] Connecting to:', url);
+
+  console.log('[ATHENA] Chat request — MCP active:',
+    Object.keys(mcpHeaders).filter((k) => k !== 'x-developer-key'));
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'x-developer-key': 'ts-web-int-2026',
     Origin: window.location.origin,
-    ...buildMCPHeaders(crmService?.credentials),
+    ...mcpHeaders,
   };
 
   const response = await fetch(url, {
     method: 'POST',
     headers,
     credentials: 'include',
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify({ prompt, ...(conversationId ? { conversationId } : {}) }),
     signal,
   });
 
-  console.log('🐢 [Athena] Response status:', response.status);
-  console.log('🐢 [Athena] Content-Type:', response.headers.get('content-type'));
+  console.log('[ATHENA] Response status:', response.status);
+  console.log('[ATHENA] Content-Type:', response.headers.get('content-type'));
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
@@ -75,13 +76,33 @@ export async function* streamChat(
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
 
+      let currentEventType = '';
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed || trimmed.startsWith(':')) continue;
 
+        // Track SSE event type
+        if (trimmed.startsWith('event: ')) {
+          currentEventType = trimmed.slice(7).trim();
+          continue;
+        }
+
         if (trimmed.startsWith('data: ')) {
           const data = trimmed.slice(6).trim();
           if (data === '[DONE]') return;
+
+          // Handle metadata events (conversationId, requestId, etc.)
+          if (currentEventType === 'metadata') {
+            try {
+              const meta = JSON.parse(data);
+              if (meta.conversationId) {
+                yield { conversationId: meta.conversationId };
+              }
+            } catch { /* ignore malformed metadata */ }
+            currentEventType = '';
+            continue;
+          }
+          currentEventType = '';
 
           // Try structured JSON parse
           try {

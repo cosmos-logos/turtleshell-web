@@ -62,7 +62,7 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
     return (
       <aside
         className={`fixed top-0 right-0 h-full w-72 bg-surface-1 border-l border-border-muted z-40 flex flex-col transition-transform duration-250 ${
-          open ? 'translate-x-0' : 'translate-x-full'
+          open ? 'translate-x-0' : 'translate-x-full invisible'
         }`}
       >
         {/* Header with close button */}

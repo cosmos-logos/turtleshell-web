@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { useStartupRefresh } from './hooks/useStartupRefresh';
 import { MarketingLayout } from './components/layout/MarketingLayout';
 import { AppShell } from './components/layout/AppShell';
 import { Landing } from './routes/Landing';
@@ -15,6 +16,8 @@ import { AuthCallback } from './routes/AuthCallback';
 import { ServiceDesk } from './routes/ServiceDesk';
 
 export function App() {
+  useStartupRefresh();
+
   return (
     <Routes>
       {/* Public pages with marketing layout */}

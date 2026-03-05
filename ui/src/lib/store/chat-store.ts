@@ -5,11 +5,13 @@ interface ChatStore {
   messages: ChatMessage[];
   isStreaming: boolean;
   error: string | null;
+  currentConversationId: string | null;
 
   addMessage: (message: ChatMessage) => void;
   updateLastAssistantMessage: (content: string) => void;
   setStreaming: (streaming: boolean) => void;
   setError: (error: string | null) => void;
+  setConversationId: (id: string | null) => void;
   clearMessages: () => void;
 }
 
@@ -17,6 +19,7 @@ export const useChatStore = create<ChatStore>((set) => ({
   messages: [],
   isStreaming: false,
   error: null,
+  currentConversationId: null,
 
   addMessage: (message) =>
     set((state) => ({ messages: [...state.messages, message] })),
@@ -33,5 +36,6 @@ export const useChatStore = create<ChatStore>((set) => ({
 
   setStreaming: (isStreaming) => set({ isStreaming }),
   setError: (error) => set({ error }),
-  clearMessages: () => set({ messages: [], error: null }),
+  setConversationId: (currentConversationId) => set({ currentConversationId }),
+  clearMessages: () => set({ messages: [], error: null, currentConversationId: null }),
 }));

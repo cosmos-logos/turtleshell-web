@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2, RefreshCw, Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { useServiceStore } from '@/lib/store/service-store';
-import { listCases, createCase } from '@/lib/api/olympus-grid-client';
+import { listCases, createCase, isOlympusGridTokenPresent } from '@/lib/api/olympus-grid-client';
 import type { CaseRecord } from '@/types/service';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -32,6 +32,9 @@ export function ServiceDesk() {
   const [creating, setCreating] = useState(false);
   const [createSuccess, setCreateSuccess] = useState('');
 
+  const hasTokens = isOlympusGridTokenPresent();
+  const canUseServiceDesk = isConnected && hasTokens;
+
   const fetchCases = useCallback(async () => {
     setLoading(true);
     try {
@@ -47,10 +50,10 @@ export function ServiceDesk() {
   }, [disconnectOlympusGrid]);
 
   useEffect(() => {
-    if (isConnected) fetchCases();
-  }, [isConnected, fetchCases]);
+    if (canUseServiceDesk) fetchCases();
+  }, [canUseServiceDesk, fetchCases]);
 
-  if (!isConnected) {
+  if (!canUseServiceDesk) {
     return (
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto py-8 px-4 space-y-8">

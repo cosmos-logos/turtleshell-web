@@ -22,8 +22,8 @@ export function AuthCallback() {
     }
 
     verifyCode(code, requestId)
-      .then((user) => {
-        useServiceStore.getState().setOlympusGridConnected(user);
+      .then((result) => {
+        useServiceStore.getState().setOlympusGridConnected(result.user);
         setState('success');
         const timer = setTimeout(() => navigate('/app/services', { replace: true }), 2000);
         return () => clearTimeout(timer);

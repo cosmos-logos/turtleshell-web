@@ -3,6 +3,32 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --surface-0: 255 255 255;
+    --surface-1: 244 244 245;
+    --surface-2: 228 228 231;
+    --surface-3: 212 212 216;
+    --surface-4: 161 161 170;
+    --border-default: 212 212 216;
+    --border-muted: 228 228 231;
+    --text-primary: 9 9 11;
+    --text-secondary: 63 63 70;
+    --text-muted: 113 113 122;
+  }
+
+  .dark {
+    --surface-0: 10 10 11;
+    --surface-1: 17 17 19;
+    --surface-2: 26 26 29;
+    --surface-3: 35 35 38;
+    --surface-4: 44 44 48;
+    --border-default: 44 44 48;
+    --border-muted: 31 31 35;
+    --text-primary: 250 250 250;
+    --text-secondary: 161 161 170;
+    --text-muted: 113 113 122;
+  }
+
   * {
     @apply border-border;
   }
@@ -22,12 +48,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: theme('colors.surface.3');
+    background: rgb(var(--surface-3));
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: theme('colors.surface.4');
+    background: rgb(var(--surface-4));
   }
 }
 
@@ -41,11 +67,13 @@
   }
 
   .chat-container {
-    @apply flex-1 overflow-y-auto px-4 py-6;
+    @apply flex-1 overflow-y-auto overflow-x-hidden px-3 py-6;
   }
 
   .message-bubble {
-    @apply rounded-lg px-4 py-3 max-w-[80%] animate-fade-in;
+    @apply rounded-lg px-4 py-3 max-w-[85%] animate-fade-in;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
 
   .message-bubble-user {
@@ -58,5 +86,13 @@
 
   .streaming-cursor {
     @apply inline-block w-0.5 h-4 bg-shell-400 ml-0.5 animate-pulse-dot;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;          /* Firefox */
+    -ms-overflow-style: none;       /* IE/Edge */
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;                  /* Chrome/Safari */
   }
 }

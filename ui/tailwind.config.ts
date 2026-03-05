@@ -21,21 +21,21 @@ export default {
           950: '#052e16',
         },
         surface: {
-          0: '#0a0a0b',     // Deepest background
-          1: '#111113',     // Card background
-          2: '#1a1a1d',     // Elevated surface
-          3: '#232326',     // Input background
-          4: '#2c2c30',     // Hover state
+          0: 'rgb(var(--surface-0) / <alpha-value>)',
+          1: 'rgb(var(--surface-1) / <alpha-value>)',
+          2: 'rgb(var(--surface-2) / <alpha-value>)',
+          3: 'rgb(var(--surface-3) / <alpha-value>)',
+          4: 'rgb(var(--surface-4) / <alpha-value>)',
         },
         border: {
-          DEFAULT: '#2c2c30',
-          muted: '#1f1f23',
+          DEFAULT: 'rgb(var(--border-default) / <alpha-value>)',
+          muted: 'rgb(var(--border-muted) / <alpha-value>)',
           accent: '#22c55e',
         },
         text: {
-          primary: '#fafafa',
-          secondary: '#a1a1aa',
-          muted: '#71717a',
+          primary: 'rgb(var(--text-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--text-secondary) / <alpha-value>)',
+          muted: 'rgb(var(--text-muted) / <alpha-value>)',
           accent: '#4ade80',
         },
       },

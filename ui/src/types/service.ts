@@ -111,7 +111,7 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
     description: 'Connect HubSpot CRM for contacts, deals, and marketing',
     icon: '🟠',
     oauthSupported: true,
-    status: 'coming_soon',
+    status: 'available',
   },
   {
     category: 'calendar',
@@ -120,7 +120,7 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
     description: 'Manage events, scheduling, and availability',
     icon: '📅',
     oauthSupported: true,
-    status: 'coming_soon',
+    status: 'available',
   },
   {
     category: 'communication',
@@ -137,8 +137,8 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
     label: 'Workday',
     description: 'HR and workforce management integration',
     icon: '💼',
-    oauthSupported: true,
-    status: 'coming_soon',
+    oauthSupported: false,
+    status: 'available',
   },
   {
     category: 'platform',

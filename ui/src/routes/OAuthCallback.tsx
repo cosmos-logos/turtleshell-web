@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { exchangeCodeForTokens } from '@/lib/api/salesforce-client';
+import { exchangeCodeForTokens as exchangeGoogleCode } from '@/lib/api/google-client';
+import { useServiceStore } from '@/lib/store/service-store';
 
 type CallbackState = 'processing' | 'success' | 'error';
 
@@ -27,12 +30,41 @@ export function OAuthCallback() {
       return;
     }
 
-    // TODO: Exchange code for tokens via PKCE
-    // This will be implemented per provider in Phase 4
+    if (provider === 'salesforce') {
+      exchangeCodeForTokens(code)
+        .then(() => {
+          const instanceUrl = localStorage.getItem('sf_instance_url') || '';
+          useServiceStore.getState().setSalesforceConnected(instanceUrl);
+          setState('success');
+          setTimeout(() => navigate('/app/services'), 1500);
+        })
+        .catch((e) => {
+          console.error('[SF] Token exchange error:', e);
+          setState('error');
+          setError(e instanceof Error ? e.message : 'Token exchange failed');
+        });
+      return;
+    }
+
+    if (provider === 'google') {
+      const stateParam = searchParams.get('state') || '';
+      exchangeGoogleCode(code, stateParam)
+        .then((user) => {
+          useServiceStore.getState().setGoogleConnected(user.email);
+          setState('success');
+          setTimeout(() => navigate('/app/services'), 1500);
+        })
+        .catch((e) => {
+          console.error('[GOOGLE] Token exchange error:', e);
+          setState('error');
+          setError(e instanceof Error ? e.message : 'Token exchange failed');
+        });
+      return;
+    }
+
+    // Unsupported provider fallback
     console.log(`OAuth callback for ${provider} with code: ${code.substring(0, 8)}...`);
     setState('success');
-
-    // Redirect to services after brief delay
     const timer = setTimeout(() => navigate('/app/services'), 2000);
     return () => clearTimeout(timer);
   }, [provider, searchParams, navigate]);
