@@ -37,14 +37,14 @@ function extractTenant(endpointUrl: string): string {
     // Look for tenant after 'service' or 'api'
     const serviceIdx = pathParts.indexOf('service');
     if (serviceIdx >= 0 && pathParts[serviceIdx + 1]) {
-      return pathParts[serviceIdx + 1];
+      return pathParts[serviceIdx + 1] as string;
     }
     const apiIdx = pathParts.indexOf('api');
     if (apiIdx >= 0 && pathParts[apiIdx + 1]) {
-      return pathParts[apiIdx + 1];
+      return pathParts[apiIdx + 1] as string;
     }
     // Fallback: use hostname
-    return url.hostname.split('.')[0];
+    return url.hostname.split('.')[0] as string;
   } catch {
     return 'unknown';
   }
