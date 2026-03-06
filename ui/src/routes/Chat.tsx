@@ -46,6 +46,7 @@ export function Chat() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [isHoldingMic, setIsHoldingMic] = useState(false);
+  const [showInception, setShowInception] = useState(() => !localStorage.getItem('turtleshell-inception'));
   const controlsRef = useRef<HTMLDivElement>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const didHoldRef = useRef(false);
@@ -191,9 +192,26 @@ export function Chat() {
     }
   }, [messages]);
 
+  const beginInception = useCallback(() => {
+    localStorage.setItem('turtleshell-inception', '1');
+    setShowInception(false);
+    // Enable all auto modes for first-time users
+    useApolloStore.getState().setTTSAutoPlay(true);
+    useApolloStore.getState().setTTSTalkMode(true);
+    useChatStore.getState().setSaveConversation(true);
+    useChatStore.getState().setMemoryEnabled(true);
+    // Small delay so React commits refs and talk mode mic can start after TTS
+    setTimeout(() => sendRef.current?.('Who are you?'), 100);
+  }, []);
+
   useEffect(() => {
     const pending = useChatStore.getState().consumePendingInput();
-    if (pending) setInput(pending);
+    if (pending) {
+      // Auto-send pending input (from seed clicks)
+      setTimeout(() => sendRef.current?.(pending), 100);
+      return;
+    }
+    if (showInception) return; // Don't focus input — waiting for inception tap
     inputRef.current?.focus();
   }, []);
 
@@ -289,7 +307,30 @@ export function Chat() {
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* Messages area */}
       <div ref={scrollRef} className="chat-container space-y-4">
-        {messages.length === 0 && (
+        {messages.length === 0 && showInception && (
+          <div className="flex-1 flex items-center justify-center min-h-[60vh]">
+            <button
+              onClick={beginInception}
+              className="text-center space-y-4 group cursor-pointer focus:outline-none"
+            >
+              <div className="text-6xl transition-transform group-hover:scale-110 group-active:scale-95">
+                {'\ud83d\udc22'}
+              </div>
+              <h2 className="text-xl font-semibold text-text-primary">
+                Tap to begin
+              </h2>
+              <p className="text-sm text-text-muted max-w-md">
+                TurtleShell will introduce itself, then listen for your voice.
+              </p>
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-shell-500 text-white text-sm font-semibold rounded-lg group-hover:bg-shell-600 transition-all group-hover:-translate-y-px group-hover:shadow-lg group-hover:shadow-shell-500/30">
+                <Mic size={16} />
+                Start Conversation
+              </div>
+            </button>
+          </div>
+        )}
+
+        {messages.length === 0 && !showInception && (
           <div className="flex-1 flex items-center justify-center min-h-[60vh]">
             <div className="text-center space-y-4">
               <div className="text-5xl">{'\ud83d\udc22'}</div>
@@ -383,6 +424,26 @@ export function Chat() {
           </div>
         )}
       </div>
+
+      {/* Mic status */}
+      {apollo.isTalkMode && (
+        <div className="flex-shrink-0 px-3 sm:px-4">
+          <div className="max-w-3xl mx-auto flex items-center justify-center gap-2 py-1.5 text-2xs">
+            {apollo.micError ? (
+              <span className="text-red-400">{apollo.micError}</span>
+            ) : apollo.isListening ? (
+              <>
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-text-muted">Listening...</span>
+              </>
+            ) : apollo.isPlaying ? (
+              <span className="text-text-muted">Speaking...</span>
+            ) : (
+              <span className="text-text-muted/50">Mic idle</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Input bar */}
       <div className="flex-shrink-0 border-t border-border-muted px-3 py-3 sm:px-4 sm:py-4">

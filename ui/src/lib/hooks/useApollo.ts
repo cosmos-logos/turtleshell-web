@@ -6,8 +6,29 @@ interface UseApolloOptions {
   onTranscript?: (text: string) => void;
 }
 
+// Module-level mic permission cache — request once per page load
+let micPermission: 'unknown' | 'granted' | 'denied' = 'unknown';
+
+async function ensureMicPermission(): Promise<boolean> {
+  if (micPermission === 'granted') return true;
+  if (micPermission === 'denied') return false;
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((t) => t.stop());
+    micPermission = 'granted';
+    console.log('[Apollo] Microphone permission granted');
+    return true;
+  } catch (err) {
+    micPermission = 'denied';
+    console.error('[Apollo] Microphone permission denied:', err);
+    return false;
+  }
+}
+
 export function useApollo(options?: UseApolloOptions) {
   const [isListening, setIsListening] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const onTranscriptRef = useRef(options?.onTranscript);
 
@@ -25,22 +46,14 @@ export function useApollo(options?: UseApolloOptions) {
     onTranscriptRef.current = options?.onTranscript;
   }, [options?.onTranscript]);
 
-  // Resume mic after TTS playback ends (talk mode)
-  useEffect(() => {
-    if (resumeMicAfterPlay) {
-      useApolloStore.setState({ _resumeMicAfterPlay: false });
-      if (ttsTalkMode) {
-        startListeningInternal();
-      }
-    }
-  }, [resumeMicAfterPlay, ttsTalkMode]);
-
   // --- Microphone / Speech Recognition ---
 
-  const startListeningInternal = useCallback(() => {
+  // Synchronous recognition start (after permission is already granted)
+  const startRecognition = useCallback(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
       console.warn('[Apollo] SpeechRecognition not supported');
+      setMicError('Speech recognition not supported in this browser');
       return;
     }
 
@@ -56,6 +69,7 @@ export function useApollo(options?: UseApolloOptions) {
       const last = event.results[event.results.length - 1];
       if (last?.isFinal) {
         const transcript = last[0]?.transcript.trim();
+        console.log('[Apollo] Transcript:', transcript);
         if (transcript && onTranscriptRef.current) {
           onTranscriptRef.current(transcript);
         }
@@ -64,39 +78,82 @@ export function useApollo(options?: UseApolloOptions) {
 
     recognition.onend = () => {
       setIsListening(false);
+      // In talk mode, restart recognition loop (unless TTS is playing)
       if (useApolloStore.getState().ttsTalkMode && !useApolloStore.getState()._isPlaying) {
         setTimeout(() => {
-          if (useApolloStore.getState().ttsTalkMode) startListeningInternal();
+          if (useApolloStore.getState().ttsTalkMode) startRecognition();
         }, 300);
       }
     };
 
     recognition.onerror = (event: Event & { error?: string }) => {
-      if (event.error !== 'aborted' && event.error !== 'no-speech') {
-        console.error('[Apollo] Speech recognition error:', event.error);
+      const err = event.error || 'unknown';
+      if (err === 'no-speech') {
+        // Normal — user just didn't say anything this cycle, let onend restart
+        console.log('[Apollo] No speech detected, will retry...');
+      } else if (err === 'aborted') {
+        // Intentional abort — ignore
+      } else if (err === 'not-allowed') {
+        console.error('[Apollo] Mic not allowed — check browser permissions');
+        setMicError('Microphone access denied. Check browser permissions.');
+        micPermission = 'denied';
+      } else {
+        console.error('[Apollo] Recognition error:', err);
+        setMicError(`Mic error: ${err}`);
       }
       setIsListening(false);
     };
 
-    recognition.start();
-    setIsListening(true);
+    try {
+      recognition.start();
+      setIsListening(true);
+      setMicError(null);
+      console.log('[Apollo] Listening...');
+    } catch (err) {
+      console.error('[Apollo] Failed to start recognition:', err);
+      setMicError('Failed to start speech recognition');
+      setIsListening(false);
+    }
   }, []);
 
-  const startListening = useCallback(() => startListeningInternal(), [startListeningInternal]);
+  // Async entry point that ensures permission first, then starts recognition
+  const startListeningInternal = useCallback(async () => {
+    const ok = await ensureMicPermission();
+    if (!ok) {
+      setMicError('Microphone access denied. Check browser permissions.');
+      return;
+    }
+    startRecognition();
+  }, [startRecognition]);
+
+  const startListening = useCallback(() => { startListeningInternal(); }, [startListeningInternal]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop(); // stop() lets pending results fire; abort() discards them
+      recognitionRef.current.stop();
       recognitionRef.current = null;
     }
     setIsListening(false);
   }, []);
 
+  // Resume mic after TTS playback ends (talk mode)
+  useEffect(() => {
+    if (resumeMicAfterPlay) {
+      useApolloStore.setState({ _resumeMicAfterPlay: false });
+      if (ttsTalkMode) {
+        console.log('[Apollo] TTS ended, resuming mic...');
+        startListeningInternal();
+      }
+    }
+  }, [resumeMicAfterPlay, ttsTalkMode, startListeningInternal]);
+
   // Start/stop mic when Talk Mode is toggled
   useEffect(() => {
     if (ttsTalkMode) {
+      console.log('[Apollo] Talk mode ON — starting mic');
       startListeningInternal();
     } else {
+      console.log('[Apollo] Talk mode OFF — stopping mic');
       if (recognitionRef.current) {
         recognitionRef.current.abort();
         recognitionRef.current = null;
@@ -123,6 +180,7 @@ export function useApollo(options?: UseApolloOptions) {
     // Microphone state
     isListening,
     isTalkMode: ttsTalkMode,
+    micError,
 
     // Playback controls (delegate to global manager)
     speak: audioManager.speak,

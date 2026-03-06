@@ -32,7 +32,7 @@ export const useChatStore = create<ChatStore>()(
       error: null,
       currentConversationId: null,
       memoryEnabled: true,
-      saveConversation: false,
+      saveConversation: true,
       pendingInput: null,
 
       addMessage: (message) =>

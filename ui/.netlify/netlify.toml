@@ -7,10 +7,10 @@ plugins = []
 [functions."*"]
 
 [build]
-publish = "/Users/gregory/dev/repos/olympus-616/turtleshell-web/ui/dist"
+publish = "D:\\dev\\repos\\olympus-616\\turtleshell-web\\ui\\dist"
 publishOrigin = "config"
 commandOrigin = "config"
-base = "/Users/gregory/dev/repos/olympus-616/turtleshell-web/ui"
+base = "D:\\dev\\repos\\olympus-616\\turtleshell-web\\ui"
 command = "npm run build"
 
 [build.environment]
@@ -34,7 +34,7 @@ for = "/*"
 X-Frame-Options = "DENY"
 X-Content-Type-Options = "nosniff"
 Referrer-Policy = "strict-origin-when-cross-origin"
-Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+Permissions-Policy = "camera=(), microphone=(self), geolocation=()"
 
 [[headers]]
 for = "/.well-known/apple-app-site-association"

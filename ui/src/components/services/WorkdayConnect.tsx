@@ -14,10 +14,9 @@ interface WorkdayConnectProps {
 
 export function WorkdayConnect({ open, onOpenChange }: WorkdayConnectProps) {
   const [tab, setTab] = useState<Tab>('basic');
-  // DEBUG defaults from iOS WorkdayServiceSetupView.swift — remove before production
-  const [endpoint, setEndpoint] = useState('https://wd2-impl-services1.workday.com/ccx/service/procasemanagement/Revenue_Management/v44.1');
-  const [username, setUsername] = useState('ISU_INT_Salesforce_Customers@procasemanagement');
-  const [password, setPassword] = useState('t8#UEWYv**n^b3');
+  const [endpoint, setEndpoint] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -30,9 +29,9 @@ export function WorkdayConnect({ open, onOpenChange }: WorkdayConnectProps) {
   const resetState = useCallback(() => {
     setTimeout(() => {
       setTab('basic');
-      setEndpoint('https://wd2-impl-services1.workday.com/ccx/service/procasemanagement/Revenue_Management/v44.1');
-      setUsername('ISU_INT_Salesforce_Customers@procasemanagement');
-      setPassword('t8#UEWYv**n^b3');
+      setEndpoint('');
+      setUsername('');
+      setPassword('');
       setShowPassword(false);
       setLoading(false);
       setError('');
