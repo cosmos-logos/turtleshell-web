@@ -31,6 +31,13 @@ const HERMES_URLS: Record<AppEnvironment, string> = {
   custom: '',
 };
 
+// Mnemosyne base URL — used for conversation history
+const MNEMOSYNE_URLS: Record<AppEnvironment, string> = {
+  cloud: 'https://us-west-1-api-int.olympus-grid.ai/v1/mnemosyne',
+  offgrid: 'http://localhost:3711/v1/mnemosyne',
+  custom: '',
+};
+
 interface EnvironmentStore {
   current: AppEnvironment;
   customEndpoint: string;
@@ -43,6 +50,7 @@ interface EnvironmentStore {
   getGatewayUrl: () => string;
   getPoseidonMcpUrl: () => string;
   getHermesUrl: () => string;
+  getMnemosyneUrl: () => string;
 }
 
 export const useEnvironmentStore = create<EnvironmentStore>()(
@@ -99,6 +107,18 @@ export const useEnvironmentStore = create<EnvironmentStore>()(
           }
         }
         return HERMES_URLS[state.current];
+      },
+
+      getMnemosyneUrl: () => {
+        const state = get();
+        if (state.current === 'custom') {
+          try {
+            return new URL(state.customEndpoint).origin + '/v1/mnemosyne';
+          } catch {
+            return state.customEndpoint;
+          }
+        }
+        return MNEMOSYNE_URLS[state.current];
       },
     }),
     { name: 'turtleshell-environment' },

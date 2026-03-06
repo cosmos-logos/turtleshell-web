@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Square, Trash2, Mic, Copy, Check, Volume2, Settings2, X, Wrench, ExternalLink } from 'lucide-react';
+import { Send, Square, Trash2, Mic, Copy, Check, Volume2, Settings2, X, Wrench, ExternalLink, Brain, Bookmark } from 'lucide-react';
 import * as audioManager from '@/lib/audio/audio-manager';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useApolloStore } from '@/lib/store/apollo-store';
@@ -49,9 +49,14 @@ export function Chat() {
   const controlsRef = useRef<HTMLDivElement>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const didHoldRef = useRef(false);
-  const { messages, isStreaming, error, addMessage, updateLastAssistantMessage, setStreaming, setError, clearMessages, currentConversationId, setConversationId } =
+  const { messages, isStreaming, error, addMessage, updateLastAssistantMessage, setStreaming, setError, clearMessages, setConversationId, memoryEnabled, saveConversation, setMemoryEnabled, setSaveConversation } =
     useChatStore();
   const developerMode = useEnvironmentStore((s) => s.developerMode);
+  const [resumedAt] = useState(() =>
+    useChatStore.getState().messages.length > 0 && useChatStore.getState().currentConversationId
+      ? new Date()
+      : null
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -99,11 +104,11 @@ export function Chat() {
     try {
       let accumulated = '';
       const isDev = useEnvironmentStore.getState().developerMode;
-      const convId = useChatStore.getState().currentConversationId;
-      for await (const token of streamChat(prompt, controller.signal, convId)) {
+      const { currentConversationId: convId, memoryEnabled: mem, saveConversation: save } = useChatStore.getState();
+      for await (const token of streamChat(prompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save })) {
         // Handle metadata objects (conversationId)
         if (typeof token === 'object' && 'conversationId' in token) {
-          setConversationId(token.conversationId);
+          if (mem) setConversationId(token.conversationId);
           continue;
         }
         accumulated += token;
@@ -187,6 +192,8 @@ export function Chat() {
   }, [messages]);
 
   useEffect(() => {
+    const pending = useChatStore.getState().consumePendingInput();
+    if (pending) setInput(pending);
     inputRef.current?.focus();
   }, []);
 
@@ -294,6 +301,14 @@ export function Chat() {
                 from the Services tab to enable MCP-powered workflows.
               </p>
             </div>
+          </div>
+        )}
+
+        {resumedAt && messages.length > 0 && (
+          <div className="flex items-center gap-3 py-2 text-text-muted/40 text-2xs select-none">
+            <div className="flex-1 border-t border-border-muted/30" />
+            <span>Resumed · {resumedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+            <div className="flex-1 border-t border-border-muted/30" />
           </div>
         )}
 
@@ -422,6 +437,43 @@ export function Chat() {
                     <div className="text-[9px] text-text-muted/60">Hands-free voice loop</div>
                   </div>
                   <div className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${apollo.isTalkMode ? 'bg-shell-400' : 'bg-surface-3'}`} />
+                </button>
+
+                {/* Memory */}
+                <button
+                  onClick={() => setMemoryEnabled(!memoryEnabled)}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors text-left ${
+                    memoryEnabled
+                      ? 'text-shell-400 bg-shell-500/10'
+                      : 'text-text-muted hover:text-text-secondary hover:bg-surface-2'
+                  }`}
+                >
+                  <Brain size={15} className="flex-shrink-0" />
+                  <div>
+                    <div className="text-xs font-medium">Memory</div>
+                    <div className="text-[9px] text-text-muted/60">Remember conversation context</div>
+                  </div>
+                  <div className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${memoryEnabled ? 'bg-shell-400' : 'bg-surface-3'}`} />
+                </button>
+
+                {/* Auto-Save */}
+                <button
+                  onClick={() => setSaveConversation(!saveConversation)}
+                  disabled={!memoryEnabled}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors text-left ${
+                    !memoryEnabled
+                      ? 'opacity-40 pointer-events-none text-text-muted'
+                      : saveConversation
+                        ? 'text-shell-400 bg-shell-500/10'
+                        : 'text-text-muted hover:text-text-secondary hover:bg-surface-2'
+                  }`}
+                >
+                  <Bookmark size={15} className="flex-shrink-0" />
+                  <div>
+                    <div className="text-xs font-medium">Auto-Save</div>
+                    <div className="text-[9px] text-text-muted/60">Save conversations to history</div>
+                  </div>
+                  <div className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${saveConversation ? 'bg-shell-400' : 'bg-surface-3'}`} />
                 </button>
 
                 {/* Clear Chat */}

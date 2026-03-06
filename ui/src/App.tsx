@@ -14,6 +14,8 @@ import { Docs } from './routes/Docs';
 import { OAuthCallback } from './routes/OAuthCallback';
 import { AuthCallback } from './routes/AuthCallback';
 import { ServiceDesk } from './routes/ServiceDesk';
+import { History } from './routes/History';
+import { Memory } from './routes/Memory';
 
 export function App() {
   useStartupRefresh();
@@ -36,6 +38,8 @@ export function App() {
       <Route path="/app" element={<AppShell />}>
         <Route index element={<Navigate to="/app/chat" replace />} />
         <Route path="chat" element={<Chat />} />
+        <Route path="history" element={<History />} />
+        <Route path="memory" element={<Memory />} />
         <Route path="services" element={<Services />} />
         <Route path="service-desk" element={<ServiceDesk />} />
         <Route path="agents" element={<Agents />} />

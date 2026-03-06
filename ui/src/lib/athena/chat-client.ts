@@ -16,6 +16,7 @@ export async function* streamChat(
   prompt: string,
   signal?: AbortSignal,
   conversationId?: string | null,
+  options?: { memoryEnabled?: boolean; saveConversation?: boolean },
 ): AsyncGenerator<string | { conversationId: string }, void, unknown> {
   const baseUrl = useEnvironmentStore.getState().getBaseUrl();
   const mcpHeaders = buildMCPHeaders();
@@ -35,7 +36,14 @@ export async function* streamChat(
     method: 'POST',
     headers,
     credentials: 'include',
-    body: JSON.stringify({ prompt, ...(conversationId ? { conversationId } : {}) }),
+    body: JSON.stringify({
+      prompt,
+      shell_id: 'shell-default',
+      tenant_id: 'tenant-default',
+      ...(options?.memoryEnabled !== false && conversationId ? { conversationId } : {}),
+      ...(options?.memoryEnabled === false ? { memoryEnabled: false } : {}),
+      ...(options?.saveConversation ? { saveConversation: true } : {}),
+    }),
     signal,
   });
 

@@ -1,8 +1,9 @@
-import { Cloud, House, Settings as SettingsIcon, Wrench, Info, Volume2, Sun, Moon } from 'lucide-react';
+import { Cloud, House, Settings as SettingsIcon, Wrench, Info, Volume2, Sun, Moon, Brain } from 'lucide-react';
 import {
   useEnvironmentStore,
 } from '@/lib/store/environment-store';
 import { useApolloStore, type TTSEnvironment } from '@/lib/store/apollo-store';
+import { useChatStore } from '@/lib/store/chat-store';
 import { useThemeStore } from '@/lib/store/theme-store';
 
 export function Settings() {
@@ -16,6 +17,7 @@ export function Settings() {
   } = useEnvironmentStore();
 
   const { theme, setTheme } = useThemeStore();
+  const { memoryEnabled, setMemoryEnabled } = useChatStore();
 
   const {
     ttsMode,
@@ -308,6 +310,40 @@ export function Settings() {
             </div>
           </section>
         )}
+
+        {/* Memory */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+            <Brain size={14} /> Memory
+          </h2>
+          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold">Memory</div>
+                <div className="text-2xs text-text-muted mt-0.5">
+                  Remember conversation context within a session
+                </div>
+              </div>
+              <button
+                onClick={() => setMemoryEnabled(!memoryEnabled)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${
+                  memoryEnabled ? 'bg-shell-500' : 'bg-surface-3'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+                    memoryEnabled ? 'translate-x-5' : ''
+                  }`}
+                />
+              </button>
+            </div>
+            {!memoryEnabled && (
+              <div className="mt-3 text-2xs text-yellow-400/80 bg-yellow-500/5 border border-yellow-500/10 rounded-lg px-3 py-2">
+                Memory is disabled. Conversations are fully stateless.
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* About */}
         <section className="space-y-3">
