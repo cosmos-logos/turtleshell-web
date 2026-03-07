@@ -123,7 +123,7 @@ function PhoneMockup({ label }: { label: string }) {
           {/* App header */}
           <div className="px-4 py-2 border-b border-border-muted flex items-center gap-2">
             <div className="w-6 h-6 rounded-full bg-shell-500/20 flex items-center justify-center text-xs">🐢</div>
-            <span className="text-xs font-semibold text-text-primary">TurtleShell</span>
+            <span className="text-xs font-semibold text-text-primary">TurtleShell.ai</span>
           </div>
           {/* Chat */}
           <div className="flex-1 p-3 space-y-2.5">
@@ -164,11 +164,11 @@ function PhoneMockup({ label }: { label: string }) {
 }
 
 function IPhoneMockup() {
-  return <PhoneMockup label="TurtleShell" />;
+  return <PhoneMockup label="TurtleShell.ai" />;
 }
 
 function AndroidMockup() {
-  return <PhoneMockup label="TurtleShell" />;
+  return <PhoneMockup label="TurtleShell.ai" />;
 }
 
 function DesktopMockup() {
@@ -181,7 +181,7 @@ function DesktopMockup() {
           <div className="w-2.5 h-2.5 rounded-full bg-yellow-500" />
           <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
         </div>
-        <span className="text-2xs text-text-muted font-medium">TurtleShell — Desktop App</span>
+        <span className="text-2xs text-text-muted font-medium">TurtleShell.ai — Desktop App</span>
         <div className="w-16" />
       </div>
       <div className="flex min-h-[240px]">
@@ -266,7 +266,7 @@ function SalesforceMockup() {
         <span className="text-2xs py-1">Accounts</span>
         <span className="text-2xs py-1">Contacts</span>
         <span className="text-2xs py-1">Opportunities</span>
-        <span className="text-2xs py-1 text-white font-medium">TurtleShell</span>
+        <span className="text-2xs py-1 text-white font-medium">TurtleShell.ai</span>
       </div>
       <div className="flex min-h-[220px]">
         {/* Main content area */}
@@ -274,7 +274,7 @@ function SalesforceMockup() {
           <div className="flex items-center gap-2 mb-3">
             <div className="w-7 h-7 rounded-lg bg-shell-500/20 flex items-center justify-center text-sm">🐢</div>
             <div>
-              <p className="text-xs font-semibold text-text-primary">TurtleShell Assistant</p>
+              <p className="text-xs font-semibold text-text-primary">TurtleShell.ai Assistant</p>
               <p className="text-2xs text-text-muted">Embedded in your Salesforce workspace</p>
             </div>
           </div>
@@ -704,7 +704,7 @@ export function Landing() {
               to="/app/chat"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-shell-500 text-white hover:bg-shell-600 transition-all hover:-translate-y-px hover:shadow-lg hover:shadow-shell-500/30"
             >
-              Launch TurtleShell →
+              Launch TurtleShell.ai →
             </Link>
           </div>
         </div>

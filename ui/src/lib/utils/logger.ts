@@ -23,7 +23,7 @@ const CATEGORY_ICONS: Record<LogCategory, string> = {
   store: '🪙',
 };
 
-const PREFIX = '🐢 [TurtleShell]';
+const PREFIX = '🐢 [TurtleShell.ai]';
 
 export function log(category: LogCategory, message: string, data?: unknown) {
   const icon = CATEGORY_ICONS[category];

@@ -314,7 +314,7 @@ export function GitHubConnect({ open, onOpenChange }: GitHubConnectProps) {
                     <code className="text-text-primary text-xs">read:org</code> scopes.
                   </p>
                   <a
-                    href="https://github.com/settings/tokens/new?scopes=repo,read:user,read:org&description=TurtleShell"
+                    href="https://github.com/settings/tokens/new?scopes=repo,read:user,read:org&description=TurtleShell.ai"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-block text-xs text-shell-400 hover:underline"

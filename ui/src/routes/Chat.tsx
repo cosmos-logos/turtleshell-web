@@ -320,7 +320,7 @@ export function Chat() {
                 Tap to begin
               </h2>
               <p className="text-sm text-text-muted max-w-md">
-                TurtleShell will introduce itself, then listen for your voice.
+                TurtleShell.ai will introduce itself, then listen for your voice.
               </p>
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-shell-500 text-white text-sm font-semibold rounded-lg group-hover:bg-shell-600 transition-all group-hover:-translate-y-px group-hover:shadow-lg group-hover:shadow-shell-500/30">
                 <Mic size={16} />
