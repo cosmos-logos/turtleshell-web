@@ -159,6 +159,8 @@ export function Chat() {
     } finally {
       setStreaming(false);
       abortRef.current = null;
+      // Notify sidebar badge to refresh shell balance
+      window.dispatchEvent(new CustomEvent('shells:updated'));
     }
   }, [isStreaming, addMessage, updateLastAssistantMessage, setStreaming, setError]);
 
