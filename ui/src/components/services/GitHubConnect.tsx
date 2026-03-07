@@ -224,7 +224,7 @@ export function GitHubConnect({ open, onOpenChange }: GitHubConnectProps) {
                   {deviceState === 'idle' && (
                     <>
                       <p className="text-sm text-text-secondary">
-                        Authorize TurtleShell to access GitHub without managing a token.
+                        Authorize TurtleShell.ai to access GitHub without managing a token.
                       </p>
                       <div className="text-2xs text-text-muted">
                         Required scopes: <code className="text-text-secondary">repo</code>{' '}

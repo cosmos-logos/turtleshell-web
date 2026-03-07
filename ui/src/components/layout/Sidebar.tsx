@@ -1,4 +1,5 @@
-import { NavLink } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { NavLink, Link } from 'react-router-dom';
 import {
   MessageSquare,
   Plug,
@@ -13,9 +14,11 @@ import {
   X,
   Cloud,
   House,
+  Shell,
 } from 'lucide-react';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import type { AppEnvironment } from '@/lib/store/environment-store';
+import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
 
 interface SidebarProps {
   open: boolean;
@@ -32,6 +35,7 @@ const navItems = [
   { to: '/app/service-desk', icon: LifeBuoy, label: 'Service Desk' },
   { to: '/app/agents', icon: Bot, label: 'Agents' },
   { to: '/app/docs', icon: BookOpen, label: 'Docs' },
+  { to: '/app/shells', icon: Shell, label: 'Sea Shells' },
   { to: '/app/settings', icon: Settings, label: 'Settings' },
 ];
 
@@ -40,6 +44,58 @@ const envConfig: Record<AppEnvironment, { Icon: typeof Cloud; label: string }> =
   offgrid: { Icon: House, label: 'OFF-GRID' },
   custom: { Icon: Settings, label: 'CUSTOM' },
 };
+
+function SeaShellBadge({ expanded }: { expanded: boolean }) {
+  const [quota, setQuota] = useState<QuotaResponse | null>(null);
+
+  useEffect(() => {
+    const fetch = () => plutusClient.getQuota('shell-default').then(setQuota).catch(() => {});
+    fetch();
+    window.addEventListener('shells:updated', fetch);
+    return () => window.removeEventListener('shells:updated', fetch);
+  }, []);
+
+  const cachedTier = localStorage.getItem('turtleshell-cached-tier');
+  const plutusTier = quota?.tier ?? 'free';
+  const effectiveTier = (plutusTier !== 'free' ? plutusTier : cachedTier) ?? 'free';
+
+  if (!quota && !cachedTier) return null;
+
+  const isFree = effectiveTier === 'free';
+  const shellsRemaining = quota?.shells_remaining ?? null;
+  const isUnlimited = shellsRemaining === null && !isFree;
+
+  let label: string;
+  let colorClass: string;
+  if (quota?.blocked) {
+    label = expanded ? 'Empty — Upgrade' : '!';
+    colorClass = 'text-red-400 bg-red-500/10 border-red-500/30';
+  } else if (isFree) {
+    label = expanded ? (shellsRemaining !== null ? `${shellsRemaining.toLocaleString()} shells` : 'Free tier') : (shellsRemaining !== null ? `${shellsRemaining.toLocaleString()}` : 'Free');
+    colorClass = 'text-text-muted bg-surface-2 border-border-muted';
+  } else if (isUnlimited) {
+    label = expanded ? 'Unlimited' : '∞';
+    colorClass = 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+  } else {
+    label = expanded ? `${shellsRemaining!.toLocaleString()} shells` : `${shellsRemaining!.toLocaleString()}`;
+    colorClass = 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+  }
+
+  return (
+    <div className="px-2 pb-1">
+      <Link
+        to="/app/shells"
+        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition-colors hover:opacity-80 no-underline ${colorClass} ${
+          expanded ? '' : 'justify-center'
+        }`}
+        title={expanded ? undefined : `🐚 ${label}`}
+      >
+        <span className="flex-shrink-0">🐚</span>
+        {expanded && <span className="whitespace-nowrap">{label}</span>}
+      </Link>
+    </div>
+  );
+}
 
 function EnvironmentBadge() {
   const current = useEnvironmentStore((s) => s.current);
@@ -108,6 +164,8 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
           ))}
         </nav>
 
+        {/* Sea Shell balance badge */}
+        <SeaShellBadge expanded />
         {/* Environment badge (developer mode only) */}
         <EnvironmentBadge />
       </aside>
@@ -166,7 +224,8 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Bottom: env badge (expanded) or expand button (collapsed) */}
+      {/* Bottom: shell badge + env badge (expanded) or expand button (collapsed) */}
+      <SeaShellBadge expanded={open} />
       {open ? (
         <EnvironmentBadge />
       ) : (

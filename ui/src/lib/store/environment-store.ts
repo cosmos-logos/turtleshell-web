@@ -38,6 +38,13 @@ const MNEMOSYNE_URLS: Record<AppEnvironment, string> = {
   custom: '',
 };
 
+// Plutus base URL — used for billing, metering, and Stripe checkout
+const PLUTUS_URLS: Record<AppEnvironment, string> = {
+  cloud: 'https://athena-616.ngrok.io/v1/plutus/api',
+  offgrid: 'https://athena-616.ngrok.io/v1/plutus/api',
+  custom: '',
+};
+
 interface EnvironmentStore {
   current: AppEnvironment;
   customEndpoint: string;
@@ -51,6 +58,7 @@ interface EnvironmentStore {
   getPoseidonMcpUrl: () => string;
   getHermesUrl: () => string;
   getMnemosyneUrl: () => string;
+  getPlutusUrl: () => string;
 }
 
 export const useEnvironmentStore = create<EnvironmentStore>()(
@@ -119,6 +127,18 @@ export const useEnvironmentStore = create<EnvironmentStore>()(
           }
         }
         return MNEMOSYNE_URLS[state.current];
+      },
+
+      getPlutusUrl: () => {
+        const state = get();
+        if (state.current === 'custom') {
+          try {
+            return new URL(state.customEndpoint).origin + '/v1/plutus/api';
+          } catch {
+            return state.customEndpoint;
+          }
+        }
+        return PLUTUS_URLS[state.current];
       },
     }),
     { name: 'turtleshell-environment' },

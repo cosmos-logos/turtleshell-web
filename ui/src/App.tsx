@@ -16,6 +16,7 @@ import { AuthCallback } from './routes/AuthCallback';
 import { ServiceDesk } from './routes/ServiceDesk';
 import { History } from './routes/History';
 import { Memory } from './routes/Memory';
+import { Shells } from './routes/Shells';
 
 export function App() {
   useStartupRefresh();
@@ -43,6 +44,7 @@ export function App() {
         <Route path="services" element={<Services />} />
         <Route path="service-desk" element={<ServiceDesk />} />
         <Route path="agents" element={<Agents />} />
+        <Route path="shells" element={<Shells />} />
         <Route path="settings" element={<Settings />} />
         <Route path="docs/*" element={<Docs />} />
       </Route>
