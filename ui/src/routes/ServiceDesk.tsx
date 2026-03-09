@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2, RefreshCw, Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { useServiceStore } from '@/lib/store/service-store';
+import { useAgentStore } from '@/lib/store/agent-store';
 import { listCases, createCase, isOlympusGridTokenPresent } from '@/lib/api/olympus-grid-client';
 import type { CaseRecord } from '@/types/service';
 
@@ -43,6 +44,7 @@ export function ServiceDesk() {
     } catch (e) {
       if (e instanceof Error && /40[13]/.test(e.message)) {
         disconnectOlympusGrid();
+        useAgentStore.getState().refreshAuth();
       }
     } finally {
       setLoading(false);

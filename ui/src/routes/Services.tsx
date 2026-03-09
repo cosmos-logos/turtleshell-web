@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plug, ExternalLink, Trash2, Plus, Zap, Loader2 } from 'lucide-react';
 import { useServiceStore } from '@/lib/store/service-store';
+import { useAgentStore } from '@/lib/store/agent-store';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { SERVICE_CATALOG } from '@/types/service';
 import { OlympusGridConnect } from '@/components/services/OlympusGridConnect';
@@ -283,7 +284,7 @@ export function Services() {
                       </div>
                       <button
                         onClick={() => {
-                          if (service.provider === 'olympus-grid') disconnectOlympusGrid();
+                          if (service.provider === 'olympus-grid') { disconnectOlympusGrid(); useAgentStore.getState().refreshAuth(); }
                           else if (service.provider === 'salesforce') disconnectSalesforce();
                           else if (service.provider === 'github') disconnectGitHub();
                           else if (service.provider === 'google') disconnectGoogle();
