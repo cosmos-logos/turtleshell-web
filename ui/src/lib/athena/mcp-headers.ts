@@ -13,6 +13,10 @@ export function buildMCPHeaders(): Record<string, string> {
   // Always include developer key
   headers['x-developer-key'] = 'ts-web-int-2026';
 
+  // Selected agent — defaults to turtle (unauth) or athena (auth)
+  const selectedAgent = localStorage.getItem('selected_agent') || 'turtle';
+  headers['x-agent-id'] = selectedAgent;
+
   // Salesforce — only if connected
   const sfToken = localStorage.getItem('sf_access_token');
   const sfInstanceUrl = localStorage.getItem('sf_instance_url');

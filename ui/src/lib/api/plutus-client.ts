@@ -18,9 +18,19 @@ function getBaseUrl(): string {
   return useEnvironmentStore.getState().getPlutusUrl();
 }
 
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const token = localStorage.getItem('olympus_grid_access_token');
+  if (token) headers['x-user-identity'] = token;
+  return headers;
+}
+
+
 export const plutusClient = {
   getQuota: async (shellId: string): Promise<QuotaResponse> => {
-    const res = await fetch(`${getBaseUrl()}/quota/${shellId}`);
+    const res = await fetch(`${getBaseUrl()}/quota/${shellId}`, {
+      headers: authHeaders(),
+    });
     if (!res.ok) throw new Error('Quota fetch failed');
     return res.json();
   },
@@ -33,7 +43,7 @@ export const plutusClient = {
   ): Promise<{ checkout_url: string }> => {
     const res = await fetch(`${getBaseUrl()}/stripe/checkout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({
         shell_id: shellId,
         tier,
@@ -51,7 +61,7 @@ export const plutusClient = {
   ): Promise<{ ok: boolean; tier: string }> => {
     const res = await fetch(`${getBaseUrl()}/stripe/change-plan`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ shell_id: shellId, tier }),
     });
     if (!res.ok) throw new Error('Plan change failed');
@@ -64,7 +74,7 @@ export const plutusClient = {
   ): Promise<{ portal_url: string }> => {
     const res = await fetch(`${getBaseUrl()}/stripe/portal`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ shell_id: shellId, return_url: returnUrl }),
     });
     if (!res.ok) throw new Error('Portal session creation failed');

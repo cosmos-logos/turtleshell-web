@@ -15,15 +15,6 @@ const GATEWAY_URLS: Record<AppEnvironment, string> = {
   custom: '',
 };
 
-// Poseidon MCP endpoint — full URL including path
-// Cloud: goes through ALB which routes /v1/poseidon/* directly to container
-// Offgrid: goes direct to localhost (Ares/Hermes proxy mangles the path)
-const POSEIDON_MCP_URLS: Record<AppEnvironment, string> = {
-  cloud: 'https://us-west-1-api-int.olympus-grid.ai/v1/poseidon/mcp/poc/mcp',
-  offgrid: 'http://localhost:3431/v1/poseidon/mcp/poc/mcp',
-  custom: '',
-};
-
 // Hermes base URL — used for OAuth relay endpoints
 const HERMES_URLS: Record<AppEnvironment, string> = {
   cloud: 'https://us-west-1-api-int.olympus-grid.ai/v1/hermes',
@@ -55,7 +46,6 @@ interface EnvironmentStore {
   setDeveloperMode: (enabled: boolean) => void;
   getBaseUrl: () => string;
   getGatewayUrl: () => string;
-  getPoseidonMcpUrl: () => string;
   getHermesUrl: () => string;
   getMnemosyneUrl: () => string;
   getPlutusUrl: () => string;
@@ -90,19 +80,6 @@ export const useEnvironmentStore = create<EnvironmentStore>()(
           }
         }
         return GATEWAY_URLS[state.current];
-      },
-
-      getPoseidonMcpUrl: () => {
-        const state = get();
-        if (state.current === 'custom') {
-          // Assume custom endpoint is an Athena URL; derive Poseidon from same origin
-          try {
-            return new URL(state.customEndpoint).origin + '/v1/poseidon/mcp/poc/mcp';
-          } catch {
-            return state.customEndpoint;
-          }
-        }
-        return POSEIDON_MCP_URLS[state.current];
       },
 
       getHermesUrl: () => {

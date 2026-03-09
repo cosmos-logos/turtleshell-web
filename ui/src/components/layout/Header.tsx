@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { Menu, ChevronRight, Zap } from 'lucide-react';
-import { useAgentStore } from '@/lib/store/agent-store';
+import { Menu, ChevronRight } from 'lucide-react';
 import { useAgentStatus } from '@/lib/hooks/useAgentStatus';
 import type { AgentStatus } from '@/lib/hooks/useAgentStatus';
+import { AgentPicker } from './AgentPicker';
 
 interface HeaderProps {
   desktopSidebarOpen: boolean;
@@ -64,7 +64,6 @@ function StatusPanel({ status, onClose }: { status: AgentStatus; onClose: () => 
 }
 
 export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMenuToggle }: HeaderProps) {
-  const activeAgent = useAgentStore((s) => s.activeAgent);
   const { connectionState, agentStatus } = useAgentStatus();
   const [statusOpen, setStatusOpen] = useState(false);
 
@@ -91,29 +90,19 @@ export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMen
           </button>
         )}
 
-        {/* Mobile: TurtleShell logo */}
-        <a href="/" className="flex items-center gap-2 no-underline md:hidden">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-xs">
-            🐢
-          </div>
-          <span className="font-semibold text-sm tracking-tight text-text-primary">
-            TurtleShell<span className="text-shell-400">.ai</span>
-          </span>
-        </a>
+        {/* Mobile: TurtleShell logo + agent picker */}
+        <div className="flex items-center gap-2 md:hidden">
+          <a href="/" className="flex items-center gap-2 no-underline">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-xs">
+              {'\ud83d\udc22'}
+            </div>
+          </a>
+          <AgentPicker compact />
+        </div>
 
-        {/* Desktop: agent info */}
+        {/* Desktop: agent picker */}
         <div className="hidden md:flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center">
-            <Zap size={14} className="text-white" />
-          </div>
-          <div>
-            <div className="text-sm font-semibold leading-tight">
-              {activeAgent?.name ?? 'Athena'}
-            </div>
-            <div className="text-2xs text-text-muted">
-              {activeAgent?.description ?? 'Sovereign AI Assistant'}
-            </div>
-          </div>
+          <AgentPicker />
         </div>
       </div>
 

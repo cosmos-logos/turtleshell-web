@@ -5,8 +5,6 @@ import { isGitHubConnected, validateGitHubToken } from '@/lib/api/github-client'
 import { isGoogleConnected, isGoogleTokenExpired, refreshGoogleToken } from '@/lib/api/google-client';
 import { isHubSpotConnected, validateHubSpotToken } from '@/lib/api/hubspot-client';
 import { isWorkdayConnected, validateWorkdayConnection } from '@/lib/api/workday-client';
-import { initializePoseidonSession } from '@/lib/mcp/poseidon-session';
-
 export function useStartupRefresh(): { refreshing: boolean } {
   const [refreshing, setRefreshing] = useState(false);
   const ran = useRef(false);
@@ -69,12 +67,6 @@ export function useStartupRefresh(): { refreshing: boolean } {
 
     setRefreshing(true);
     Promise.allSettled(tasks)
-      .then(() => {
-        // After tokens are refreshed, initialize Poseidon MCP session
-        return initializePoseidonSession().catch((err) =>
-          console.warn('[MCP] Poseidon session init failed — tools may not be available', err),
-        );
-      })
       .finally(() => setRefreshing(false));
   }, []);
 
