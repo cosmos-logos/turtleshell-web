@@ -1,11 +1,16 @@
 /**
  * Build MCP headers for Athena/Poseidon requests.
  *
- * Reads credentials directly from localStorage so we always
- * send the latest tokens without depending on Zustand hydration.
+ * Auth-related headers (x-user-identity, x-github-token, x-google-token,
+ * x-hubspot-api-key, authorization) are now injected server-side by
+ * Ares cookieToHeader middleware. The browser sends httpOnly cookies
+ * automatically via `credentials: 'include'` on every fetch call.
  *
- * Headers are consumed by Athena (forwarded to Poseidon) and
- * by Poseidon directly for tool execution.
+ * Only non-auth headers are constructed here:
+ * - x-developer-key (hardcoded app key)
+ * - x-agent-id (user's selected agent)
+ * - salesforce-url / x-olympus-grid-url (display-only localStorage values)
+ * - x-workday-* headers are DEPRECATED here (see migration note below)
  */
 export function buildMCPHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -17,19 +22,15 @@ export function buildMCPHeaders(): Record<string, string> {
   const selectedAgent = localStorage.getItem('selected_agent') || 'turtle';
   headers['x-agent-id'] = selectedAgent;
 
-  // Salesforce — only if connected
-  const sfToken = localStorage.getItem('sf_access_token');
+  // Salesforce instance URL — non-sensitive display value kept in localStorage
   const sfInstanceUrl = localStorage.getItem('sf_instance_url');
-  if (sfToken && sfInstanceUrl) {
-    headers['authorization'] = `Bearer ${sfToken}`;
+  if (sfInstanceUrl) {
     headers['salesforce-url'] = sfInstanceUrl;
   }
 
-  // Olympus-Grid — only if connected
-  const ogToken = localStorage.getItem('olympus_grid_access_token');
+  // Olympus-Grid service URL — non-sensitive display value kept in localStorage
   const ogUrl = localStorage.getItem('olympus_grid_service_url');
-  if (ogToken && ogUrl) {
-    headers['x-user-identity'] = ogToken;
+  if (ogUrl) {
     headers['x-olympus-grid-url'] = ogUrl;
     // If SF not connected, use OG service URL as salesforce-url
     // so Poseidon can still route to Olympus-Grid Apex REST tools
@@ -38,33 +39,12 @@ export function buildMCPHeaders(): Record<string, string> {
     }
   }
 
-  // GitHub — only if connected
-  const ghToken = localStorage.getItem('gh_access_token');
-  if (ghToken) {
-    headers['x-github-token'] = ghToken;
-  }
-
-  // Google — only if connected
-  const googleToken = localStorage.getItem('google_access_token');
-  if (googleToken) {
-    headers['x-google-token'] = googleToken;
-  }
-
-  // HubSpot — only if connected
-  const hsToken = localStorage.getItem('hs_access_token');
-  if (hsToken) {
-    headers['x-hubspot-api-key'] = hsToken;
-  }
-
-  // Workday — only if connected (3 headers: user, password, endpoint)
-  const wdUsername = localStorage.getItem('wd_username');
-  const wdPassword = localStorage.getItem('wd_password');
-  const wdEndpoint = localStorage.getItem('wd_endpoint_url');
-  if (wdUsername && wdPassword && wdEndpoint) {
-    headers['x-workday-user'] = wdUsername;
-    headers['x-workday-password'] = wdPassword;
-    headers['x-workday-endpoint'] = wdEndpoint;
-  }
+  // Workday — DEPRECATED: localStorage credential storage disabled.
+  // Migration path: pack {user, password, endpoint} into a single
+  // __Host-wd_creds httpOnly cookie (base64 JSON). Ares decodes and
+  // fans out to x-workday-user, x-workday-password, x-workday-endpoint
+  // headers via cookieToHeader middleware. Service is marked coming_soon
+  // in SERVICE_CATALOG until a proper test environment is available.
 
   console.log(
     '[MCP] Headers built — active:',

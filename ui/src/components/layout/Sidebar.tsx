@@ -19,6 +19,7 @@ import {
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import type { AppEnvironment } from '@/lib/store/environment-store';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
+import { getShellId } from '@/lib/api/olympus-grid-client';
 
 interface SidebarProps {
   open: boolean;
@@ -49,7 +50,7 @@ function SeaShellBadge({ expanded }: { expanded: boolean }) {
   const [quota, setQuota] = useState<QuotaResponse | null>(null);
 
   useEffect(() => {
-    const fetch = () => plutusClient.getQuota('shell-default').then(setQuota).catch(() => {});
+    const fetch = () => plutusClient.getQuota(getShellId()).then(setQuota).catch(() => {});
     fetch();
     window.addEventListener('shells:updated', fetch);
     return () => window.removeEventListener('shells:updated', fetch);

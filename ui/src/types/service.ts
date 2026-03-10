@@ -135,10 +135,10 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
     category: 'identity',
     provider: 'workday',
     label: 'Workday',
-    description: 'HR and workforce management integration',
+    description: 'HR and workforce management — pending httpOnly cookie migration',
     icon: '💼',
     oauthSupported: false,
-    status: 'available',
+    status: 'coming_soon',
   },
   {
     category: 'platform',

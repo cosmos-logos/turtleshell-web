@@ -49,9 +49,13 @@ export const AGENT_CATALOG: Agent[] = [
   },
 ];
 
-/** Check if the user has an Olympus Grid token in localStorage. */
+/**
+ * Sync check for whether the user has logged into Olympus Grid.
+ * Uses olympus_grid_email as a proxy — the actual auth token is
+ * in an httpOnly cookie and cannot be read from JS.
+ */
 export function hasOlympusGridToken(): boolean {
-  return !!localStorage.getItem('olympus_grid_access_token');
+  return !!localStorage.getItem('olympus_grid_email');
 }
 
 /** Return the correct default agent based on auth state. */

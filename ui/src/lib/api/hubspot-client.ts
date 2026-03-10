@@ -1,12 +1,12 @@
 // ── HubSpot Private App Token Client ─────────────────────────
-// Uses x-hubspot-api-key header for Poseidon MCP tool calls.
-// HubSpot Private Apps use a static Bearer token (no OAuth flow).
-// All API calls are relayed through Hermes to bypass browser CORS.
+// Auth tokens are httpOnly cookies managed by Ares.
+// Token validation: TSW → Ares → Hermes → api.hubapi.com
+// API calls: TSW → Ares → Hermes → api.hubapi.com (cookie → header injection)
 
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 
-function getHermesUrl(): string {
-  return useEnvironmentStore.getState().getHermesUrl();
+function getGatewayUrl(): string {
+  return useEnvironmentStore.getState().getGatewayUrl();
 }
 
 // ── Types ────────────────────────────────────────────────────
@@ -17,55 +17,61 @@ export interface HubSpotAccount {
   domain: string;
 }
 
-// ── Hermes-relayed fetch helper ──────────────────────────────
+// ── Gateway-relayed fetch helper ─────────────────────────────
 
-async function hsRelay(path: string, token: string, options?: RequestInit): Promise<Response> {
-  const url = `${getHermesUrl()}/hubspot/${path}`;
-  return fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'x-hubspot-api-key': token,
-      ...(options?.headers || {}),
-    },
+async function hsRelay(path: string): Promise<Response> {
+  // Token flows as: __Host-hs_access cookie → x-hubspot-api-key header (Ares)
+  // → Authorization: Bearer (Hermes HubSpot relay)
+  return fetch(`${getGatewayUrl()}/v1/hubspot/${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
   });
 }
 
 // ── Token Validation ─────────────────────────────────────────
 
+/**
+ * Validate HubSpot Private App token via Ares → Hermes → HubSpot.
+ * Ares validates, sets __Host-hs_access cookie, returns account info.
+ */
 export async function validateAndStoreToken(apiKey: string): Promise<HubSpotAccount> {
-  console.log('[HS] Validating Private App token...');
+  console.log('[HS] Validating Private App token via Ares...');
 
-  const res = await hsRelay('account-info/v3/details', apiKey);
+  const res = await fetch(`${getGatewayUrl()}/v1/hubspot/auth/connect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ token: apiKey }),
+  });
+
+  const json = await res.json();
 
   if (!res.ok) {
-    const json = await res.json().catch(() => null);
     const msg = json?.message || `HubSpot returned ${res.status}`;
     console.error('[HS] Token validation failed:', msg);
     throw new Error(msg);
   }
 
-  const json = await res.json();
-
-  localStorage.setItem('hs_access_token', apiKey);
-  localStorage.setItem('hs_portal_id', String(json.portalId));
-  localStorage.setItem('hs_company_name', json.companyDomain ?? json.accountType ?? '');
-  localStorage.setItem('hs_domain', json.uiDomain ?? '');
-
-  const account: HubSpotAccount = {
-    portalId: String(json.portalId),
-    companyName: json.companyDomain ?? json.accountType ?? '',
-    domain: json.uiDomain ?? '',
-  };
+  const account = json.account;
+  localStorage.setItem('hs_portal_id', String(account.portalId));
+  localStorage.setItem('hs_company_name', account.companyDomain ?? account.accountType ?? '');
+  localStorage.setItem('hs_domain', account.uiDomain ?? '');
 
   console.log('[HS] Token validated — portal:', account.portalId);
-  return account;
+  return {
+    portalId: String(account.portalId),
+    companyName: account.companyDomain ?? account.accountType ?? '',
+    domain: account.uiDomain ?? '',
+  };
 }
 
 // ── Disconnect ───────────────────────────────────────────────
 
 export function disconnectHubSpot(): void {
-  localStorage.removeItem('hs_access_token');
+  fetch(`${getGatewayUrl()}/v1/hubspot/auth/revoke`, {
+    method: 'POST',
+    credentials: 'include',
+  }).catch(() => {}); // fire and forget
   localStorage.removeItem('hs_portal_id');
   localStorage.removeItem('hs_company_name');
   localStorage.removeItem('hs_domain');
@@ -75,7 +81,7 @@ export function disconnectHubSpot(): void {
 // ── Status ───────────────────────────────────────────────────
 
 export function isHubSpotConnected(): boolean {
-  return !!localStorage.getItem('hs_access_token');
+  return !!localStorage.getItem('hs_portal_id');
 }
 
 export function getStoredHubSpotAccount(): HubSpotAccount | null {
@@ -91,12 +97,12 @@ export function getStoredHubSpotAccount(): HubSpotAccount | null {
 // ── Startup Validation ───────────────────────────────────────
 
 export async function validateHubSpotToken(): Promise<void> {
-  const token = localStorage.getItem('hs_access_token');
-  if (!token) return;
+  const portalId = localStorage.getItem('hs_portal_id');
+  if (!portalId) return;
 
-  console.log('[HS] Validating stored token...');
+  console.log('[HS] Validating stored session via cookie...');
   try {
-    const res = await hsRelay('account-info/v3/details', token);
+    const res = await hsRelay('account-info/v3/details');
 
     if (res.status === 401) {
       console.warn('[HS] Stored token is invalid — clearing');
@@ -130,19 +136,19 @@ export interface HsTestConnectionResult {
 
 export async function testHubSpotConnection(): Promise<HsTestConnectionResult> {
   const steps: HsTestStep[] = [];
-  const token = localStorage.getItem('hs_access_token');
+  const portalId = localStorage.getItem('hs_portal_id');
 
   console.log('[HS] TEST -- Connection Test Start --');
 
-  if (!token) {
-    steps.push({ label: 'Token check', status: 'fail', detail: 'No access token in localStorage', durationMs: 0 });
+  if (!portalId) {
+    steps.push({ label: 'Connection check', status: 'fail', detail: 'No HubSpot portal — not connected', durationMs: 0 });
     return { overall: 'fail', steps };
   }
 
-  // 1. Account info
+  // 1. Account info — token sent via httpOnly cookie through Ares → Hermes relay
   const t0 = performance.now();
   try {
-    const res = await hsRelay('account-info/v3/details', token);
+    const res = await hsRelay('account-info/v3/details');
     const json = await res.json();
     const ms = Math.round(performance.now() - t0);
     if (res.ok) {
@@ -158,7 +164,7 @@ export async function testHubSpotConnection(): Promise<HsTestConnectionResult> {
   // 2. Contacts access
   const t1 = performance.now();
   try {
-    const res = await hsRelay('crm/v3/objects/contacts?limit=1', token);
+    const res = await hsRelay('crm/v3/objects/contacts?limit=1');
     const ms = Math.round(performance.now() - t1);
     if (res.ok) {
       steps.push({ label: 'Contacts access', status: 'pass', detail: `200 (${ms}ms)`, durationMs: ms });
@@ -174,7 +180,7 @@ export async function testHubSpotConnection(): Promise<HsTestConnectionResult> {
   // 3. Companies access
   const t2 = performance.now();
   try {
-    const res = await hsRelay('crm/v3/objects/companies?limit=1', token);
+    const res = await hsRelay('crm/v3/objects/companies?limit=1');
     const ms = Math.round(performance.now() - t2);
     if (res.ok) {
       steps.push({ label: 'Companies access', status: 'pass', detail: `200 (${ms}ms)`, durationMs: ms });

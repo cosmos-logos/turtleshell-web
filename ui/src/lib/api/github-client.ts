@@ -1,7 +1,8 @@
 // ── GitHub OAuth Device Flow + PAT Client ─────────────────────
-// Uses x-github-token header for Poseidon MCP tool calls.
+// Auth tokens are httpOnly cookies managed by Ares.
+// Token exchange: TSW → Ares → Hermes → github.com
+// API calls: TSW → Ares → Hermes → api.github.com (cookie → header injection)
 // Device Flow requires no client_secret (public OAuth App).
-// OAuth requests are relayed through Hermes to avoid CORS.
 
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 
@@ -10,10 +11,8 @@ const GH_CLIENT_ID = import.meta.env.VITE_GH_CLIENT_ID || (() => {
   return '';
 })();
 
-const GH_API = 'https://api.github.com';
-
-function getHermesUrl(): string {
-  return useEnvironmentStore.getState().getHermesUrl();
+function getGatewayUrl(): string {
+  return useEnvironmentStore.getState().getGatewayUrl();
 }
 
 // ── Types ────────────────────────────────────────────────────
@@ -35,13 +34,12 @@ export interface DeviceFlowStart {
 // ── Device Flow ──────────────────────────────────────────────
 
 export async function startDeviceFlow(): Promise<DeviceFlowStart> {
-  console.log('[GH] Starting device flow...');
+  console.log('[GH] Starting device flow via Ares...');
 
-  const res = await fetch(`${getHermesUrl()}/github/device/code`, {
+  const res = await fetch(`${getGatewayUrl()}/v1/github/auth/device/code`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({
       client_id: GH_CLIENT_ID,
       scope: 'repo read:user read:org',
@@ -66,6 +64,11 @@ export async function startDeviceFlow(): Promise<DeviceFlowStart> {
   };
 }
 
+/**
+ * Poll for token via Ares → Hermes → GitHub.
+ * Ares intercepts access_token and sets __Host-gh_access cookie.
+ * Ares also fetches user info and includes it in the response.
+ */
 export async function pollForToken(
   deviceCode: string,
   expiresIn: number,
@@ -82,11 +85,10 @@ export async function pollForToken(
 
     if (signal?.aborted) throw new Error('gh_device_cancelled');
 
-    const res = await fetch(`${getHermesUrl()}/github/oauth/token`, {
+    const res = await fetch(`${getGatewayUrl()}/v1/github/auth/token`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({
         client_id: GH_CLIENT_ID,
         device_code: deviceCode,
@@ -96,12 +98,21 @@ export async function pollForToken(
 
     const json = await res.json();
 
-    if (json.access_token) {
-      const user = await fetchAndStoreUser(json.access_token);
+    // Token was intercepted by Ares (set as cookie, stripped from body).
+    // User info is included by Ares as json.user.
+    if (json.user) {
+      const user = json.user;
+      localStorage.setItem('gh_login', user.login);
+      localStorage.setItem('gh_name', user.name ?? user.login);
+      localStorage.setItem('gh_avatar_url', user.avatar_url ?? '');
       if (json.scope) localStorage.setItem('gh_token_scope', json.scope);
       if (json.token_type) localStorage.setItem('gh_token_type', json.token_type);
       console.log('[GH] Device flow complete:', user.login);
-      return user;
+      return {
+        login: user.login,
+        name: user.name ?? user.login,
+        avatarUrl: user.avatar_url ?? '',
+      };
     }
 
     const error = json.error;
@@ -116,7 +127,7 @@ export async function pollForToken(
       throw new Error('gh_device_expired');
     } else if (error === 'access_denied') {
       throw new Error('gh_device_denied');
-    } else {
+    } else if (error) {
       throw new Error(json.error_description || error || 'Unknown device flow error');
     }
   }
@@ -126,48 +137,44 @@ export async function pollForToken(
 
 // ── PAT Flow ─────────────────────────────────────────────────
 
+/**
+ * Validate a Personal Access Token via Ares → Hermes → GitHub.
+ * Ares validates, sets __Host-gh_access cookie, returns user info.
+ */
 export async function validateAndStoreToken(pat: string): Promise<GitHubUser> {
-  const res = await fetch(`${GH_API}/user`, {
-    headers: { 'Authorization': `Bearer ${pat}` },
+  const res = await fetch(`${getGatewayUrl()}/v1/github/auth/pat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ token: pat }),
   });
-
-  if (!res.ok) {
-    const json = await res.json().catch(() => null);
-    throw new Error(json?.message || `GitHub returned ${res.status}`);
-  }
-
-  const user = await fetchAndStoreUser(pat);
-  console.log('[GH] PAT validated for:', user.login);
-  return user;
-}
-
-// ── Shared ───────────────────────────────────────────────────
-
-async function fetchAndStoreUser(token: string): Promise<GitHubUser> {
-  const res = await fetch(`${GH_API}/user`, {
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch GitHub user (${res.status})`);
-  }
 
   const json = await res.json();
 
-  localStorage.setItem('gh_access_token', token);
-  localStorage.setItem('gh_login', json.login);
-  localStorage.setItem('gh_name', json.name ?? json.login);
-  localStorage.setItem('gh_avatar_url', json.avatar_url ?? '');
+  if (!res.ok) {
+    throw new Error(json?.message || json?.error || `GitHub returned ${res.status}`);
+  }
+
+  const user = json.user;
+  localStorage.setItem('gh_login', user.login);
+  localStorage.setItem('gh_name', user.name ?? user.login);
+  localStorage.setItem('gh_avatar_url', user.avatar_url ?? '');
+  console.log('[GH] PAT validated for:', user.login);
 
   return {
-    login: json.login,
-    name: json.name ?? json.login,
-    avatarUrl: json.avatar_url ?? '',
+    login: user.login,
+    name: user.name ?? user.login,
+    avatarUrl: user.avatar_url ?? '',
   };
 }
 
+// ── Disconnect ───────────────────────────────────────────────
+
 export function disconnectGitHub(): void {
-  localStorage.removeItem('gh_access_token');
+  fetch(`${getGatewayUrl()}/v1/github/auth/revoke`, {
+    method: 'POST',
+    credentials: 'include',
+  }).catch(() => {}); // fire and forget
   localStorage.removeItem('gh_login');
   localStorage.removeItem('gh_name');
   localStorage.removeItem('gh_avatar_url');
@@ -177,7 +184,7 @@ export function disconnectGitHub(): void {
 }
 
 export function isGitHubConnected(): boolean {
-  return !!localStorage.getItem('gh_access_token');
+  return !!localStorage.getItem('gh_login');
 }
 
 export function getStoredGitHubUser(): GitHubUser | null {
@@ -197,23 +204,23 @@ export function getGitHubClientId(): string {
 // ── Startup Validation ───────────────────────────────────────
 
 export async function validateGitHubToken(): Promise<void> {
-  const token = localStorage.getItem('gh_access_token');
-  if (!token) return;
+  const login = localStorage.getItem('gh_login');
+  if (!login) return;
 
-  console.log('[GH] Validating stored token...');
+  console.log('[GH] Validating stored session via cookie...');
   try {
-    const res = await fetch(`${GH_API}/user`, {
-      headers: { 'Authorization': `Bearer ${token}` },
+    // Token flows as: __Host-gh_access cookie → x-github-token header (Ares)
+    const res = await fetch(`${getGatewayUrl()}/v1/github/user`, {
+      credentials: 'include',
     });
 
-    if (res.status === 401) {
+    if (res.status === 401 || res.status === 400) {
       console.warn('[GH] Stored token is invalid/expired — clearing');
       disconnectGitHub();
       return;
     }
 
     const json = await res.json();
-    // Update cached user info
     localStorage.setItem('gh_login', json.login);
     localStorage.setItem('gh_name', json.name ?? json.login);
     localStorage.setItem('gh_avatar_url', json.avatar_url ?? '');
@@ -239,20 +246,20 @@ export interface GhTestConnectionResult {
 
 export async function testGitHubConnection(): Promise<GhTestConnectionResult> {
   const steps: GhTestStep[] = [];
-  const token = localStorage.getItem('gh_access_token');
+  const login = localStorage.getItem('gh_login');
 
   console.log('[GH] TEST -- Connection Test Start --');
 
-  if (!token) {
-    steps.push({ label: 'Token check', status: 'fail', detail: 'No access token in localStorage', durationMs: 0 });
+  if (!login) {
+    steps.push({ label: 'Connection check', status: 'fail', detail: 'No GitHub login — not connected', durationMs: 0 });
     return { overall: 'fail', steps };
   }
 
-  // 1. User endpoint
+  // 1. User endpoint — token sent via httpOnly cookie through Ares → Hermes relay
   const t0 = performance.now();
   try {
-    const res = await fetch(`${GH_API}/user`, {
-      headers: { 'Authorization': `Bearer ${token}` },
+    const res = await fetch(`${getGatewayUrl()}/v1/github/user`, {
+      credentials: 'include',
     });
     const json = await res.json();
     const ms = Math.round(performance.now() - t0);
@@ -264,24 +271,6 @@ export async function testGitHubConnection(): Promise<GhTestConnectionResult> {
   } catch (err) {
     const ms = Math.round(performance.now() - t0);
     steps.push({ label: 'Authenticated user', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
-  }
-
-  // 2. Repos list
-  const t1 = performance.now();
-  try {
-    const res = await fetch(`${GH_API}/user/repos?per_page=1`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    const ms = Math.round(performance.now() - t1);
-    if (res.ok) {
-      steps.push({ label: 'Repository access', status: 'pass', detail: `200 (${ms}ms)`, durationMs: ms });
-    } else {
-      const json = await res.json().catch(() => null);
-      steps.push({ label: 'Repository access', status: 'fail', detail: `${res.status}: ${json?.message || res.statusText}`, durationMs: ms });
-    }
-  } catch (err) {
-    const ms = Math.round(performance.now() - t1);
-    steps.push({ label: 'Repository access', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
   }
 
   const overall = steps.every((s) => s.status !== 'fail') ? 'pass' : 'fail';

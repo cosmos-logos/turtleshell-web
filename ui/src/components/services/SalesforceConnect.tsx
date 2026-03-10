@@ -96,8 +96,7 @@ export function SalesforceConnect({ open, onOpenChange }: SalesforceConnectProps
                 autoFocus
               />
               <p className="text-2xs text-text-muted mt-1.5">
-                Use your org's My Domain URL (e.g. <code className="text-text-secondary">https://mycompany.my.salesforce.com</code>).
-                CORS must allow <code className="text-text-secondary">{window.location.origin}</code> in Setup.
+                Use your org's My Domain URL or login server (e.g. <code className="text-text-secondary">https://test.salesforce.com</code>).
               </p>
             </div>
 

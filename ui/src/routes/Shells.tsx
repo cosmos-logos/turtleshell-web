@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ExternalLink, ShieldCheck, ChevronDown } from 'lucide-react';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
-
-const SHELL_ID = 'shell-default';
+import { getShellId } from '@/lib/api/olympus-grid-client';
 
 const TIER_PRICES: Record<string, string> = {
   beachcomber: '$4.99',
@@ -230,7 +229,7 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
     setActionError(null);
     try {
       const { portal_url } = await plutusClient.createPortalSession(
-        'shell-default',
+        getShellId(),
         `${window.location.origin}/app/shells?t=${Date.now()}`,
       );
       window.location.href = portal_url;
@@ -245,11 +244,11 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
     setChangingTo(tierId);
     setActionError(null);
     try {
-      await plutusClient.changePlan('shell-default', tierId);
+      await plutusClient.changePlan(getShellId(), tierId);
       // Poll until webhook updates Plutus (keeps spinner active)
       for (let i = 0; i < 10; i++) {
         await new Promise((r) => setTimeout(r, 1500));
-        const data = await plutusClient.getQuota('shell-default');
+        const data = await plutusClient.getQuota(getShellId());
         if (data.tier === tierId) break;
       }
       onPlanChanged();
@@ -641,7 +640,7 @@ export function Shells() {
 
   const fetchQuota = useCallback(async () => {
     try {
-      const data = await plutusClient.getQuota(SHELL_ID);
+      const data = await plutusClient.getQuota(getShellId());
       setQuota(data);
       window.dispatchEvent(new Event('shells:updated'));
     } catch {
@@ -685,7 +684,7 @@ export function Shells() {
     setError(null);
     try {
       const { checkout_url } = await plutusClient.createCheckout(
-        SHELL_ID,
+        getShellId(),
         tierId,
         `${window.location.origin}/app/shells?success=${tierId}`,
         `${window.location.origin}/app/shells`,
@@ -708,7 +707,7 @@ export function Shells() {
       ? { ...quota, tier: effectiveTier, usage_pct: 0, quota_status: 'ok', blocked: false, shells_remaining: cachedTierShells, shells_limit: cachedTierShells }
       : quota
     : effectiveTier !== 'free'
-      ? { shell_id: SHELL_ID, tier: effectiveTier, usage_pct: 0, quota_status: 'ok', blocked: false, period_ends: '', shells_remaining: cachedTierShells, shells_limit: cachedTierShells }
+      ? { shell_id: getShellId(), tier: effectiveTier, usage_pct: 0, quota_status: 'ok', blocked: false, period_ends: '', shells_remaining: cachedTierShells, shells_limit: cachedTierShells }
       : null;
 
   return (

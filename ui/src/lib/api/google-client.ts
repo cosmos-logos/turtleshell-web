@@ -1,6 +1,7 @@
 // ── Google OAuth 2.0 + PKCE Client ────────────────────────────
-// Uses x-google-token header for Poseidon MCP tool calls.
-// PKCE flow — client_secret injected server-side by Hermes relay.
+// Auth tokens are httpOnly cookies managed by Ares.
+// Token exchange: TSW → Ares → Hermes → googleapis.com
+// API calls: TSW → Ares → Hermes → googleapis.com (cookie → header injection)
 
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 
@@ -13,8 +14,8 @@ const GOOGLE_CLIENT_ID =
 
 const GOOGLE_CALLBACK_URL = `${window.location.origin}/oauth/callback/google`;
 
-function getHermesUrl(): string {
-  return useEnvironmentStore.getState().getHermesUrl();
+function getGatewayUrl(): string {
+  return useEnvironmentStore.getState().getGatewayUrl();
 }
 
 const GOOGLE_SCOPES = [
@@ -73,8 +74,9 @@ export async function getGoogleLoginUrl(): Promise<string> {
   const challenge = await generateChallenge(verifier);
   const state = generateState();
 
-  sessionStorage.setItem('google_pkce_verifier', verifier);
-  sessionStorage.setItem('google_oauth_state', state);
+  // Store in localStorage (not sessionStorage) to survive origin changes during redirect
+  localStorage.setItem('google_pkce_verifier', verifier);
+  localStorage.setItem('google_oauth_state', state);
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -92,22 +94,28 @@ export async function getGoogleLoginUrl(): Promise<string> {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
+/**
+ * Exchange authorization code for tokens via Ares → Hermes → Google.
+ * Ares intercepts the response and sets __Host-google_access / __Host-google_refresh cookies.
+ * Ares also fetches userinfo and includes it in the response.
+ */
 export async function exchangeCodeForTokens(code: string, state: string): Promise<GoogleUser> {
-  const savedState = sessionStorage.getItem('google_oauth_state');
+  const savedState = localStorage.getItem('google_oauth_state');
   if (state !== savedState) {
     throw new Error('google_state_mismatch');
   }
 
-  const verifier = sessionStorage.getItem('google_pkce_verifier');
+  const verifier = localStorage.getItem('google_pkce_verifier');
   if (!verifier) {
     throw new Error('PKCE session data missing — please retry the login flow');
   }
 
-  console.log('[GOOGLE] Exchanging authorization code for tokens...');
+  console.log('[GOOGLE] Exchanging authorization code for tokens via Ares...');
 
-  const response = await fetch(`${getHermesUrl()}/google/oauth/token`, {
+  const response = await fetch(`${getGatewayUrl()}/v1/google/auth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({
       grant_type: 'authorization_code',
       code,
@@ -124,37 +132,50 @@ export async function exchangeCodeForTokens(code: string, state: string): Promis
     throw new Error(json.error_description || json.error || 'Token exchange failed');
   }
 
-  localStorage.setItem('google_access_token', json.access_token);
-  localStorage.setItem('google_token_expiry', String(Date.now() + (json.expires_in * 1000)));
+  console.log('[GOOGLE] Token exchange successful');
+
+  // Tokens are set as httpOnly cookies by Ares (stripped from response body).
+  // Store non-sensitive metadata only.
+  if (json.expires_in) localStorage.setItem('google_token_expiry', String(Date.now() + (json.expires_in * 1000)));
   if (json.scope) localStorage.setItem('google_token_scope', json.scope);
-  if (json.refresh_token) {
-    localStorage.setItem('google_refresh_token', json.refresh_token);
+
+  // Clean up PKCE state
+  localStorage.removeItem('google_pkce_verifier');
+  localStorage.removeItem('google_oauth_state');
+
+  // User info is included in the response by Ares
+  const user = json.user;
+  if (user) {
+    localStorage.setItem('google_user_email', user.email);
+    localStorage.setItem('google_user_name', user.name ?? user.email);
+    localStorage.setItem('google_user_picture', user.picture ?? '');
+    localStorage.setItem('google_user_id', user.sub);
+
+    return {
+      email: user.email,
+      name: user.name ?? user.email,
+      picture: user.picture ?? '',
+      sub: user.sub,
+    };
   }
 
-  sessionStorage.removeItem('google_pkce_verifier');
-  sessionStorage.removeItem('google_oauth_state');
-
-  const user = await fetchAndStoreUser(json.access_token);
-  console.log('[GOOGLE] Token exchange complete');
-  return user;
+  throw new Error('User info not available after token exchange');
 }
 
-export async function refreshGoogleToken(): Promise<string> {
-  const refreshToken = localStorage.getItem('google_refresh_token');
+/**
+ * Refresh the Google access token via Ares → Hermes → Google.
+ * Ares reads __Host-google_refresh cookie and forwards to Hermes.
+ */
+export async function refreshGoogleToken(): Promise<void> {
+  console.log('[GOOGLE] Refreshing access token via Ares...');
 
-  if (!refreshToken) {
-    throw new Error('google_refresh_failed');
-  }
-
-  console.log('[GOOGLE] Refreshing access token...');
-
-  const response = await fetch(`${getHermesUrl()}/google/oauth/token`, {
+  const response = await fetch(`${getGatewayUrl()}/v1/google/auth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({
       grant_type: 'refresh_token',
       client_id: GOOGLE_CLIENT_ID,
-      refresh_token: refreshToken,
     }),
   });
 
@@ -167,51 +188,26 @@ export async function refreshGoogleToken(): Promise<string> {
   }
 
   console.log('[GOOGLE] Token refreshed');
-  localStorage.setItem('google_access_token', json.access_token);
-  localStorage.setItem('google_token_expiry', String(Date.now() + (json.expires_in * 1000)));
-
-  return json.access_token;
+  if (json.expires_in) localStorage.setItem('google_token_expiry', String(Date.now() + (json.expires_in * 1000)));
 }
 
 // ── User Info ────────────────────────────────────────────────
 
-async function fetchAndStoreUser(token: string): Promise<GoogleUser> {
-  const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch Google user info (${res.status})`);
-  }
-
-  const json = await res.json();
-
-  localStorage.setItem('google_user_email', json.email);
-  localStorage.setItem('google_user_name', json.name ?? json.email);
-  localStorage.setItem('google_user_picture', json.picture ?? '');
-  localStorage.setItem('google_user_id', json.sub);
-
-  return {
-    email: json.email,
-    name: json.name ?? json.email,
-    picture: json.picture ?? '',
-    sub: json.sub,
-  };
-}
-
 export async function getGoogleUser(): Promise<GoogleUser> {
-  const token = localStorage.getItem('google_access_token');
-  if (!token) throw new Error('Not connected to Google');
+  const email = localStorage.getItem('google_user_email');
+  if (!email) throw new Error('Not connected to Google');
 
-  let res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-    headers: { 'Authorization': `Bearer ${token}` },
+  // Token flows as: __Host-google_access cookie → x-google-token header (Ares)
+  // → Authorization: Bearer (Hermes Google relay)
+  let res = await fetch(`${getGatewayUrl()}/v1/google/userinfo`, {
+    credentials: 'include',
   });
 
   if (res.status === 401) {
     console.log('[GOOGLE] 401 received — attempting token refresh...');
-    const newToken = await refreshGoogleToken();
-    res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { 'Authorization': `Bearer ${newToken}` },
+    await refreshGoogleToken();
+    res = await fetch(`${getGatewayUrl()}/v1/google/userinfo`, {
+      credentials: 'include',
     });
     if (!res.ok) throw new Error('google_token_invalid');
   }
@@ -229,24 +225,31 @@ export async function getGoogleUser(): Promise<GoogleUser> {
 
 // ── Disconnect ───────────────────────────────────────────────
 
+/**
+ * Disconnect — clear httpOnly cookies via Ares, clean up localStorage.
+ */
 export function disconnectGoogle(): void {
+  fetch(`${getGatewayUrl()}/v1/google/auth/revoke`, {
+    method: 'POST',
+    credentials: 'include',
+  }).catch(() => {}); // fire and forget
   clearGoogleTokens();
   console.log('[GOOGLE] Disconnected');
 }
 
 function clearGoogleTokens(): void {
-  localStorage.removeItem('google_access_token');
-  localStorage.removeItem('google_refresh_token');
   localStorage.removeItem('google_token_expiry');
   localStorage.removeItem('google_token_scope');
   localStorage.removeItem('google_user_email');
   localStorage.removeItem('google_user_name');
   localStorage.removeItem('google_user_picture');
   localStorage.removeItem('google_user_id');
+  localStorage.removeItem('google_pkce_verifier');
+  localStorage.removeItem('google_oauth_state');
 }
 
 export function isGoogleConnected(): boolean {
-  return !!localStorage.getItem('google_access_token');
+  return !!localStorage.getItem('google_user_email');
 }
 
 export function isGoogleTokenExpired(): boolean {
@@ -286,20 +289,20 @@ export interface GoogleTestConnectionResult {
 
 export async function testGoogleConnection(): Promise<GoogleTestConnectionResult> {
   const steps: GoogleTestStep[] = [];
-  const token = localStorage.getItem('google_access_token');
+  const email = localStorage.getItem('google_user_email');
 
   console.log('[GOOGLE] TEST -- Connection Test Start --');
 
-  if (!token) {
-    steps.push({ label: 'Token check', status: 'fail', detail: 'No access token in localStorage', durationMs: 0 });
+  if (!email) {
+    steps.push({ label: 'Connection check', status: 'fail', detail: 'No Google email — not connected', durationMs: 0 });
     return { overall: 'fail', steps };
   }
 
-  // 1. User info endpoint
+  // 1. User info endpoint — token sent via httpOnly cookie through Ares → Hermes relay
   const t0 = performance.now();
   try {
-    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { 'Authorization': `Bearer ${token}` },
+    const res = await fetch(`${getGatewayUrl()}/v1/google/userinfo`, {
+      credentials: 'include',
     });
     const json = await res.json();
     const ms = Math.round(performance.now() - t0);
@@ -313,40 +316,33 @@ export async function testGoogleConnection(): Promise<GoogleTestConnectionResult
     steps.push({ label: 'Authenticated user', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
   }
 
-  // 2. Calendar access
+  // 2. Token refresh
   const t1 = performance.now();
   try {
-    const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary', {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
+    await refreshGoogleToken();
     const ms = Math.round(performance.now() - t1);
-    if (res.ok) {
-      steps.push({ label: 'Calendar access', status: 'pass', detail: `200 (${ms}ms)`, durationMs: ms });
-    } else {
-      const json = await res.json().catch(() => null);
-      steps.push({ label: 'Calendar access', status: 'fail', detail: `${res.status}: ${json?.error?.message || res.statusText}`, durationMs: ms });
-    }
+    steps.push({ label: 'Token refresh', status: 'pass', detail: `Refresh successful (${ms}ms)`, durationMs: ms });
   } catch (err) {
     const ms = Math.round(performance.now() - t1);
-    steps.push({ label: 'Calendar access', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
+    steps.push({ label: 'Token refresh', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
   }
 
-  // 3. Token refresh
-  const refreshToken = localStorage.getItem('google_refresh_token');
-  if (refreshToken) {
-    const originalToken = localStorage.getItem('google_access_token');
-    const t2 = performance.now();
-    try {
-      const newToken = await refreshGoogleToken();
-      const ms = Math.round(performance.now() - t2);
-      const changed = newToken !== originalToken;
-      steps.push({ label: 'Token refresh', status: 'pass', detail: `New token issued (${ms}ms)${changed ? '' : ' — same token returned'}`, durationMs: ms });
-    } catch (err) {
-      const ms = Math.round(performance.now() - t2);
-      steps.push({ label: 'Token refresh', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
+  // 3. Post-refresh API call
+  const t2 = performance.now();
+  try {
+    const res = await fetch(`${getGatewayUrl()}/v1/google/userinfo`, {
+      credentials: 'include',
+    });
+    const json = await res.json();
+    const ms = Math.round(performance.now() - t2);
+    if (res.ok) {
+      steps.push({ label: 'Post-refresh API call', status: 'pass', detail: `${json.email} (${ms}ms)`, durationMs: ms });
+    } else {
+      steps.push({ label: 'Post-refresh API call', status: 'fail', detail: `${res.status}: ${json.error?.message || res.statusText}`, durationMs: ms });
     }
-  } else {
-    steps.push({ label: 'Token refresh', status: 'skip', detail: 'No refresh token in localStorage', durationMs: 0 });
+  } catch (err) {
+    const ms = Math.round(performance.now() - t2);
+    steps.push({ label: 'Post-refresh API call', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
   }
 
   const overall = steps.every((s) => s.status !== 'fail') ? 'pass' : 'fail';

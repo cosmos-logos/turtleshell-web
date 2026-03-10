@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { CheckCircle, Loader2, X, ChevronDown, ChevronRight } from 'lucide-react';
-import { requestMagicLink, verifyCode, getServiceUrl, getServiceUrlOverride, setServiceUrlOverride } from '@/lib/api/olympus-grid-client';
+import { requestMagicLink, verifyCode, getServiceUrl } from '@/lib/api/olympus-grid-client';
 import { useServiceStore } from '@/lib/store/service-store';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 
@@ -20,7 +20,6 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [devExpanded, setDevExpanded] = useState(false);
-  const [serviceUrlInput, setServiceUrlInput] = useState('');
   const [serviceNameInput, setServiceNameInput] = useState('');
 
   const developerMode = useEnvironmentStore((s) => s.developerMode);
@@ -28,7 +27,6 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
   // Sync override inputs from localStorage when modal opens
   useEffect(() => {
     if (open) {
-      setServiceUrlInput(getServiceUrlOverride());
       setServiceNameInput(localStorage.getItem('olympus_grid_service_name_override') || '');
     }
   }, [open]);
@@ -54,14 +52,12 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
   );
 
   const persistDevOverrides = () => {
-    setServiceUrlOverride(serviceUrlInput.trim());
     if (serviceNameInput.trim()) {
       localStorage.setItem('olympus_grid_service_name_override', serviceNameInput.trim());
     } else {
       localStorage.removeItem('olympus_grid_service_name_override');
     }
-    const resolvedUrl = getServiceUrl();
-    console.log('[OG] Developer overrides saved — serviceUrl:', resolvedUrl, 'serviceName:', serviceNameInput.trim() || '(default)');
+    console.log('[OG] Developer overrides saved — route:', getServiceUrl(), 'serviceName:', serviceNameInput.trim() || '(default)');
   };
 
   const handleSendCode = async () => {
@@ -179,17 +175,13 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
                         />
                       </div>
                       <div>
-                        <label className="text-2xs text-text-muted block mb-1">Service URL (SF Experience Cloud site)</label>
-                        <input
-                          type="text"
-                          value={serviceUrlInput}
-                          onChange={(e) => setServiceUrlInput(e.target.value)}
-                          placeholder={getServiceUrl()}
-                          className="w-full px-2.5 py-1.5 bg-surface-2 border border-border-muted rounded text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-400 transition-colors font-mono"
-                        />
+                        <label className="text-2xs text-text-muted block mb-1">Master Route</label>
+                        <div className="w-full px-2.5 py-1.5 bg-surface-2 border border-border-muted rounded text-xs text-text-muted font-mono truncate">
+                          {getServiceUrl()}
+                        </div>
                       </div>
                       <p className="text-2xs text-text-muted leading-relaxed">
-                        Overrides persist in localStorage. Clear to use defaults.
+                        All requests route through Ares → Hermes → Olympus-Grid.
                       </p>
                     </div>
                   )}

@@ -1,6 +1,9 @@
 // ── Salesforce Platform OAuth 2.0 + PKCE Client ──────────────
-// Completely separate from Olympus-Grid (olympus-grid-client.ts).
-// Uses Authorization: Bearer — never x-user-identity.
+// Auth tokens are httpOnly cookies managed by Ares.
+// Token exchange: TSW → Ares → Hermes → salesforce.com
+// API calls: TSW → Ares → Hermes → salesforce.com (cookie → header injection)
+
+import { useEnvironmentStore } from '@/lib/store/environment-store';
 
 const SF_CLIENT_ID =
   import.meta.env.VITE_SF_CLIENT_ID ||
@@ -12,6 +15,10 @@ const SF_CLIENT_ID =
 const SF_CALLBACK_URL =
   import.meta.env.VITE_SF_CALLBACK_URL ||
   `${window.location.origin}/oauth/callback/salesforce`;
+
+function getGatewayUrl(): string {
+  return useEnvironmentStore.getState().getGatewayUrl();
+}
 
 // ── PKCE Helpers (Web Crypto) ──────────────────────────────────
 
@@ -45,9 +52,8 @@ export async function getSalesforceLoginUrl(instanceUrl: string): Promise<string
   const challenge = await generateChallenge(verifier);
 
   // Store temporarily for the callback
-  sessionStorage.setItem('sf_pkce_verifier', verifier);
-  // Store the login server (e.g. test.salesforce.com) — token exchange will use this
-  sessionStorage.setItem('sf_login_instance_url', instanceUrl);
+  localStorage.setItem('sf_pkce_verifier', verifier);
+  localStorage.setItem('sf_login_instance_url', instanceUrl);
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -61,28 +67,32 @@ export async function getSalesforceLoginUrl(instanceUrl: string): Promise<string
   return `${instanceUrl}/services/oauth2/authorize?${params.toString()}`;
 }
 
+/**
+ * Exchange authorization code for tokens via Ares → Hermes → Salesforce.
+ * Ares intercepts the response and sets __Host-sf_access / __Host-sf_refresh cookies.
+ */
 export async function exchangeCodeForTokens(code: string): Promise<void> {
-  const verifier = sessionStorage.getItem('sf_pkce_verifier');
-  const instanceUrl = sessionStorage.getItem('sf_login_instance_url');
+  const verifier = localStorage.getItem('sf_pkce_verifier');
+  const loginUrl = localStorage.getItem('sf_login_instance_url');
 
-  if (!verifier || !instanceUrl) {
+  if (!verifier || !loginUrl) {
     throw new Error('PKCE session data missing — please retry the login flow');
   }
 
-  console.log('[SF] Exchanging authorization code for tokens...');
+  console.log('[SF] Exchanging authorization code for tokens via Ares...');
 
-  const body = new URLSearchParams({
-    grant_type: 'authorization_code',
-    client_id: SF_CLIENT_ID,
-    redirect_uri: SF_CALLBACK_URL,
-    code,
-    code_verifier: verifier,
-  });
-
-  const response = await fetch(`${instanceUrl}/services/oauth2/token`, {
+  const response = await fetch(`${getGatewayUrl()}/v1/salesforce/auth/token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      grant_type: 'authorization_code',
+      client_id: SF_CLIENT_ID,
+      redirect_uri: SF_CALLBACK_URL,
+      code,
+      code_verifier: verifier,
+      login_url: loginUrl,
+    }),
   });
 
   const json = await response.json();
@@ -94,40 +104,39 @@ export async function exchangeCodeForTokens(code: string): Promise<void> {
 
   console.log('[SF] Token exchange successful — instance:', json.instance_url);
 
-  // Store tokens
-  localStorage.setItem('sf_access_token', json.access_token);
-  localStorage.setItem('sf_instance_url', json.instance_url);
-  localStorage.setItem('sf_token_type', json.token_type);
-  localStorage.setItem('sf_issued_at', json.issued_at);
-  if (json.refresh_token) {
-    localStorage.setItem('sf_refresh_token', json.refresh_token);
-  }
+  // Store non-sensitive display values only.
+  // Tokens are set as httpOnly cookies by Ares.
+  if (json.instance_url) localStorage.setItem('sf_instance_url', json.instance_url);
+  if (json.token_type) localStorage.setItem('sf_token_type', json.token_type);
+  if (json.issued_at) localStorage.setItem('sf_issued_at', json.issued_at);
 
   // Clean up session data
-  sessionStorage.removeItem('sf_pkce_verifier');
-  sessionStorage.removeItem('sf_login_instance_url');
+  localStorage.removeItem('sf_pkce_verifier');
+  localStorage.removeItem('sf_login_instance_url');
 }
 
+/**
+ * Refresh the SF access token via Ares → Hermes → Salesforce.
+ * Ares reads __Host-sf_refresh cookie and forwards to Hermes.
+ */
 export async function refreshSalesforceToken(): Promise<void> {
-  const refreshToken = localStorage.getItem('sf_refresh_token');
   const instanceUrl = localStorage.getItem('sf_instance_url');
 
-  if (!refreshToken || !instanceUrl) {
+  if (!instanceUrl) {
     throw new Error('sf_session_expired');
   }
 
-  console.log('[SF] Refreshing access token...');
+  console.log('[SF] Refreshing access token via Ares...');
 
-  const body = new URLSearchParams({
-    grant_type: 'refresh_token',
-    client_id: SF_CLIENT_ID,
-    refresh_token: refreshToken,
-  });
-
-  const response = await fetch(`${instanceUrl}/services/oauth2/token`, {
+  const response = await fetch(`${getGatewayUrl()}/v1/salesforce/auth/token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      grant_type: 'refresh_token',
+      client_id: SF_CLIENT_ID,
+      login_url: instanceUrl,
+    }),
   });
 
   const json = await response.json();
@@ -139,40 +148,39 @@ export async function refreshSalesforceToken(): Promise<void> {
   }
 
   console.log('[SF] Token refresh successful');
-  localStorage.setItem('sf_access_token', json.access_token);
-  localStorage.setItem('sf_issued_at', json.issued_at);
+  if (json.issued_at) localStorage.setItem('sf_issued_at', json.issued_at);
   if (json.instance_url) {
     localStorage.setItem('sf_instance_url', json.instance_url);
   }
 }
 
+/**
+ * Disconnect — revoke token via Ares → Hermes → Salesforce, clear cookies.
+ */
 export function disconnectSalesforce(): void {
-  const token = localStorage.getItem('sf_access_token');
   const instanceUrl = localStorage.getItem('sf_instance_url');
-
-  // Best-effort server-side revoke (fire and forget)
-  if (token && instanceUrl) {
-    fetch(`${instanceUrl}/services/oauth2/revoke`, {
+  if (instanceUrl) {
+    fetch(`${getGatewayUrl()}/v1/salesforce/auth/revoke`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `token=${encodeURIComponent(token)}`,
-    }).catch(() => {});
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ login_url: instanceUrl }),
+    }).catch(() => {}); // fire and forget
   }
-
   clearSalesforceTokens();
   console.log('[SF] Disconnected');
 }
 
 function clearSalesforceTokens(): void {
-  localStorage.removeItem('sf_access_token');
-  localStorage.removeItem('sf_refresh_token');
   localStorage.removeItem('sf_instance_url');
   localStorage.removeItem('sf_token_type');
   localStorage.removeItem('sf_issued_at');
+  localStorage.removeItem('sf_pkce_verifier');
+  localStorage.removeItem('sf_login_instance_url');
 }
 
 export function isSalesforceConnected(): boolean {
-  return !!localStorage.getItem('sf_access_token');
+  return !!localStorage.getItem('sf_instance_url');
 }
 
 export function getSalesforceInstanceUrl(): string | null {
@@ -181,26 +189,32 @@ export function getSalesforceInstanceUrl(): string | null {
 
 // ── Authenticated Platform API Requests ──────────────────────
 
+/**
+ * Make authenticated SF API calls via Ares → Hermes → Salesforce.
+ * The SF access token flows as: __Host-sf_access cookie → x-salesforce-token header (Ares)
+ * → Authorization: Bearer (Hermes SF proxy).
+ */
 export async function sfRequest(
   method: string,
   path: string,
   body?: unknown,
 ): Promise<unknown> {
-  const accessToken = localStorage.getItem('sf_access_token');
   const instanceUrl = localStorage.getItem('sf_instance_url');
 
-  if (!accessToken || !instanceUrl) {
+  if (!instanceUrl) {
     throw new Error('Not connected to Salesforce');
   }
 
-  const fullUrl = `${instanceUrl}${path}`;
-  console.log('[SF] REQUEST:', method, fullUrl);
+  // Route through Ares → Hermes SF API proxy
+  const proxyUrl = `${getGatewayUrl()}/v1/salesforce/api${path}`;
+  console.log('[SF] REQUEST:', method, proxyUrl);
 
-  let response = await fetch(fullUrl, {
+  let response = await fetch(proxyUrl, {
     method,
+    credentials: 'include',
     headers: {
-      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
+      'x-salesforce-instance-url': instanceUrl,
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
@@ -210,12 +224,12 @@ export async function sfRequest(
     console.log('[SF] 401 received — attempting token refresh...');
     try {
       await refreshSalesforceToken();
-      const newToken = localStorage.getItem('sf_access_token')!;
-      response = await fetch(fullUrl, {
+      response = await fetch(proxyUrl, {
         method,
+        credentials: 'include',
         headers: {
-          'Authorization': `Bearer ${newToken}`,
           'Content-Type': 'application/json',
+          'x-salesforce-instance-url': instanceUrl,
         },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
@@ -256,11 +270,10 @@ export async function testSalesforceConnection(): Promise<SfTestConnectionResult
 
   console.log('[SF] TEST -- Connection Test Start --');
 
-  const accessToken = localStorage.getItem('sf_access_token');
   const instanceUrl = localStorage.getItem('sf_instance_url');
 
-  if (!accessToken || !instanceUrl) {
-    steps.push({ label: 'Token check', status: 'fail', detail: 'No access token in localStorage', durationMs: 0 });
+  if (!instanceUrl) {
+    steps.push({ label: 'Connection check', status: 'fail', detail: 'No instance URL — not connected', durationMs: 0 });
     return { overall: 'fail', steps };
   }
 
@@ -287,37 +300,27 @@ export async function testSalesforceConnection(): Promise<SfTestConnectionResult
     steps.push({ label: 'SObjects catalog', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
   }
 
-  // 3. Refresh token flow
-  const refreshToken = localStorage.getItem('sf_refresh_token');
-  if (refreshToken) {
-    const originalToken = localStorage.getItem('sf_access_token');
-    const t2 = performance.now();
-    try {
-      await refreshSalesforceToken();
-      const newToken = localStorage.getItem('sf_access_token');
-      const ms = Math.round(performance.now() - t2);
-      const changed = newToken !== originalToken;
-      console.log('[SF] TEST refresh result: token changed =', changed);
-      steps.push({ label: 'Token refresh', status: 'pass', detail: `New token issued (${ms}ms)${changed ? '' : ' — same token returned'}`, durationMs: ms });
+  // 3. Token refresh flow
+  const t2 = performance.now();
+  try {
+    await refreshSalesforceToken();
+    const ms = Math.round(performance.now() - t2);
+    steps.push({ label: 'Token refresh', status: 'pass', detail: `Refresh successful (${ms}ms)`, durationMs: ms });
 
-      // 4. Verify refreshed token works
-      const t3 = performance.now();
-      try {
-        await sfRequest('GET', '/services/data/v63.0/');
-        const ms3 = Math.round(performance.now() - t3);
-        steps.push({ label: 'Post-refresh API call', status: 'pass', detail: `200 (${ms3}ms)`, durationMs: ms3 });
-      } catch (err) {
-        const ms3 = Math.round(performance.now() - t3);
-        steps.push({ label: 'Post-refresh API call', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms3 });
-      }
+    // 4. Verify refreshed token works
+    const t3 = performance.now();
+    try {
+      await sfRequest('GET', '/services/data/v63.0/');
+      const ms3 = Math.round(performance.now() - t3);
+      steps.push({ label: 'Post-refresh API call', status: 'pass', detail: `200 (${ms3}ms)`, durationMs: ms3 });
     } catch (err) {
-      const ms = Math.round(performance.now() - t2);
-      steps.push({ label: 'Token refresh', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
-      steps.push({ label: 'Post-refresh API call', status: 'skip', detail: 'Refresh failed', durationMs: 0 });
+      const ms3 = Math.round(performance.now() - t3);
+      steps.push({ label: 'Post-refresh API call', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms3 });
     }
-  } else {
-    steps.push({ label: 'Token refresh', status: 'skip', detail: 'No refresh token in localStorage', durationMs: 0 });
-    steps.push({ label: 'Post-refresh API call', status: 'skip', detail: 'No refresh token', durationMs: 0 });
+  } catch (err) {
+    const ms = Math.round(performance.now() - t2);
+    steps.push({ label: 'Token refresh', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
+    steps.push({ label: 'Post-refresh API call', status: 'skip', detail: 'Refresh failed', durationMs: 0 });
   }
 
   const overall = steps.every((s) => s.status !== 'fail') ? 'pass' : 'fail';

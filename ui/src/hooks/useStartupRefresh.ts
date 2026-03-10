@@ -4,7 +4,8 @@ import { isOlympusGridTokenPresent, refreshOlympusGridToken } from '@/lib/api/ol
 import { isGitHubConnected, validateGitHubToken } from '@/lib/api/github-client';
 import { isGoogleConnected, isGoogleTokenExpired, refreshGoogleToken } from '@/lib/api/google-client';
 import { isHubSpotConnected, validateHubSpotToken } from '@/lib/api/hubspot-client';
-import { isWorkdayConnected, validateWorkdayConnection } from '@/lib/api/workday-client';
+// Workday deprecated — coming_soon until httpOnly cookie migration
+// import { isWorkdayConnected, validateWorkdayConnection } from '@/lib/api/workday-client';
 export function useStartupRefresh(): { refreshing: boolean } {
   const [refreshing, setRefreshing] = useState(false);
   const ran = useRef(false);
@@ -23,6 +24,7 @@ export function useStartupRefresh(): { refreshing: boolean } {
       );
     }
 
+    // isOlympusGridTokenPresent() now checks olympus_grid_email as a proxy
     if (isOlympusGridTokenPresent()) {
       tasks.push(
         refreshOlympusGridToken()
@@ -55,13 +57,14 @@ export function useStartupRefresh(): { refreshing: boolean } {
       );
     }
 
-    if (isWorkdayConnected()) {
-      tasks.push(
-        validateWorkdayConnection()
-          .then(() => console.log('[WD] Connection validated on startup'))
-          .catch((err) => console.warn('[WD] Startup validation failed — may require re-auth', err)),
-      );
-    }
+    // Workday deprecated — coming_soon until httpOnly cookie migration
+    // if (isWorkdayConnected()) {
+    //   tasks.push(
+    //     validateWorkdayConnection()
+    //       .then(() => console.log('[WD] Connection validated on startup'))
+    //       .catch((err) => console.warn('[WD] Startup validation failed — may require re-auth', err)),
+    //   );
+    // }
 
     if (tasks.length === 0) return;
 

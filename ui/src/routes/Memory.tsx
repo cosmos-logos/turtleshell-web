@@ -9,6 +9,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
+import { getShellId } from '@/lib/api/olympus-grid-client';
 
 type MemoryScope = 'tenant' | 'shell' | 'agent' | 'agent-tenant' | 'agent-shell';
 type MemoryCategory = 'identity' | 'preference' | 'project' | 'relationship' | 'knowledge' | 'system';
@@ -65,7 +66,7 @@ export function Memory() {
       const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
       const params = new URLSearchParams({
         agentId: 'athena',
-        shellId: 'shell-default',
+        shellId: getShellId(),
         tenantId: 'tenant-default',
       });
       if (showInactive) params.set('showInactive', 'true');
@@ -90,7 +91,7 @@ export function Memory() {
     setForgetting(id);
     try {
       const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
-      const res = await fetch(`${mnUrl}/api/memory/${id}?agentId=athena&shellId=shell-default&tenantId=tenant-default`, {
+      const res = await fetch(`${mnUrl}/api/memory/${id}?agentId=athena&shellId=${encodeURIComponent(getShellId())}&tenantId=tenant-default`, {
         method: 'DELETE',
       });
       if (res.ok) {

@@ -46,6 +46,7 @@ interface EnvironmentStore {
   setDeveloperMode: (enabled: boolean) => void;
   getBaseUrl: () => string;
   getGatewayUrl: () => string;
+  getAresUrl: () => string;
   getHermesUrl: () => string;
   getMnemosyneUrl: () => string;
   getPlutusUrl: () => string;
@@ -80,6 +81,18 @@ export const useEnvironmentStore = create<EnvironmentStore>()(
           }
         }
         return GATEWAY_URLS[state.current];
+      },
+
+      getAresUrl: () => {
+        const state = get();
+        if (state.current === 'custom') {
+          try {
+            return new URL(state.customEndpoint).origin + '/v1/ares';
+          } catch {
+            return state.customEndpoint;
+          }
+        }
+        return GATEWAY_URLS[state.current] + '/v1/ares';
       },
 
       getHermesUrl: () => {

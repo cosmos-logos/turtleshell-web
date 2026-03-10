@@ -1,12 +1,24 @@
 // ── Workday Basic Auth Client ────────────────────────────────
-// Uses x-workday-user, x-workday-password, x-workday-endpoint
-// headers for Poseidon MCP tool calls.
-// Basic Auth: Base64(username:password)
-// All API calls relayed through Hermes to bypass browser CORS.
+// DEPRECATED — Service is marked coming_soon in SERVICE_CATALOG.
 //
-// NOTE: Storing password in localStorage is acceptable for this
-// testing phase. In production, move to a secure credential store
-// or re-prompt on each session.
+// This client stores credentials in localStorage (insecure).
+// All other services have been migrated to httpOnly cookies via Ares.
+//
+// Migration plan (when test environment is available):
+// 1. Create ares/api/src/routes/workdayAuth.ts
+//    - POST /connect: validate creds via Hermes, pack {user, password,
+//      endpoint} into a single __Host-wd_creds cookie (base64 JSON)
+//    - POST /revoke: clear cookie
+// 2. Update ares cookieToHeader.ts: decode __Host-wd_creds → fan out
+//    to x-workday-user, x-workday-password, x-workday-endpoint headers
+// 3. Rewrite this client to route through Ares gateway
+// 4. Remove localStorage credential storage
+// 5. Update mcp-headers.ts (already cleaned up)
+//
+// Poseidon MCP tools (create_workday_customer, get_workday_workers)
+// read x-workday-* headers — no Poseidon changes needed.
+//
+// Original implementation preserved below for reference.
 
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 

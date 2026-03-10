@@ -1,5 +1,6 @@
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { buildMCPHeaders } from './mcp-headers';
+import { getShellId } from '@/lib/api/olympus-grid-client';
 
 /**
  * Stream a chat message to the Athena LLM backend.
@@ -38,7 +39,7 @@ export async function* streamChat(
     credentials: 'include',
     body: JSON.stringify({
       prompt,
-      shell_id: 'shell-default',
+      shell_id: getShellId(),
       tenant_id: 'tenant-default',
       ...(options?.memoryEnabled !== false && conversationId ? { conversationId } : {}),
       ...(options?.memoryEnabled === false ? { memoryEnabled: false } : {}),

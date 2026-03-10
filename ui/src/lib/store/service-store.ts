@@ -5,7 +5,7 @@ import type {
   ServiceCategory,
   OlympusUser,
 } from '@/types/service';
-import { clearStoredTokens } from '@/lib/api/olympus-grid-client';
+import { clearStoredTokens, serverLogout } from '@/lib/api/olympus-grid-client';
 import { useAgentStore } from '@/lib/store/agent-store';
 import { disconnectSalesforce as disconnectSfTokens } from '@/lib/api/salesforce-client';
 import { disconnectGitHub as disconnectGhTokens } from '@/lib/api/github-client';
@@ -109,6 +109,8 @@ export const useServiceStore = create<ServiceStore>()(
 
       disconnectOlympusGrid: () => {
         clearStoredTokens();
+        // Fire-and-forget server-side logout to clear httpOnly cookies
+        serverLogout();
         useAgentStore.getState().refreshAuth();
         return set((state) => {
           const { 'olympus-grid': _, ...remaining } = state.services;
