@@ -4,34 +4,34 @@ import { persist } from 'zustand/middleware';
 export type AppEnvironment = 'cloud' | 'offgrid' | 'custom';
 
 const ENVIRONMENT_URLS: Record<AppEnvironment, string> = {
-  cloud: 'https://us-west-1-api-int.olympus-grid.ai/v1/athena',
+  cloud: 'https://api-int.turtleshell.ai/v1/athena',
   offgrid: 'https://athena-616.ngrok.io/v1/athena',
   custom: '',
 };
 
 const GATEWAY_URLS: Record<AppEnvironment, string> = {
-  cloud: 'https://us-west-1-api-int.olympus-grid.ai',
+  cloud: 'https://api-int.turtleshell.ai',
   offgrid: 'https://athena-616.ngrok.io',
   custom: '',
 };
 
 // Hermes base URL — used for OAuth relay endpoints
 const HERMES_URLS: Record<AppEnvironment, string> = {
-  cloud: 'https://us-west-1-api-int.olympus-grid.ai/v1/hermes',
+  cloud: 'https://api-int.turtleshell.ai/v1/hermes',
   offgrid: 'http://localhost:3411/v1/hermes',
   custom: '',
 };
 
 // Mnemosyne base URL — used for conversation history
 const MNEMOSYNE_URLS: Record<AppEnvironment, string> = {
-  cloud: 'https://us-west-1-api-int.olympus-grid.ai/v1/mnemosyne',
+  cloud: 'https://api-int.turtleshell.ai/v1/mnemosyne',
   offgrid: 'http://localhost:3711/v1/mnemosyne',
   custom: '',
 };
 
 // Plutus base URL — used for billing, metering, and Stripe checkout
 const PLUTUS_URLS: Record<AppEnvironment, string> = {
-  cloud: 'https://athena-616.ngrok.io/v1/plutus/api',
+  cloud: 'https://api-int.turtleshell.ai/v1/plutus/api',
   offgrid: 'https://athena-616.ngrok.io/v1/plutus/api',
   custom: '',
 };

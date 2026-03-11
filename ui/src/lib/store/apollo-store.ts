@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware';
 export type TTSEnvironment = 'cloud' | 'offgrid' | 'custom';
 
 const TTS_URLS: Record<TTSEnvironment, string> = {
-  cloud: 'https://us-west-1-api-int.olympus-grid.ai/v1/apollo',
+  cloud: 'https://api-int.turtleshell.ai/v1/apollo',
   offgrid: 'https://athena-616.ngrok.io/v1/apollo',
   custom: '',
 };
