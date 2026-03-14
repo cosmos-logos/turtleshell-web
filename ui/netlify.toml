@@ -36,3 +36,28 @@
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# ─────────────────────────────────────────────────────────
+# Install manifest — served to postinstall.sh via curl
+# ─────────────────────────────────────────────────────────
+
+[[headers]]
+  for = "/install/*"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+    Access-Control-Allow-Origin = "*"
+
+[[headers]]
+  for = "/install/health"
+  [headers.values]
+    Content-Type = "text/plain"
+
+[[headers]]
+  for = "/install/docker-compose.yml"
+  [headers.values]
+    Content-Type = "text/yaml; charset=utf-8"
+
+[[headers]]
+  for = "/install/.env.example"
+  [headers.values]
+    Content-Type = "text/plain; charset=utf-8"
