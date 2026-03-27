@@ -17,6 +17,8 @@ import { ServiceDesk } from './routes/ServiceDesk';
 import { History } from './routes/History';
 import { Memory } from './routes/Memory';
 import { Shells } from './routes/Shells';
+import { Journal } from './routes/Journal';
+import { AgentView } from './routes/AgentView';
 import { OffGrid } from './routes/OffGrid';
 
 export function App() {
@@ -46,6 +48,8 @@ export function App() {
         <Route path="services" element={<Services />} />
         <Route path="service-desk" element={<ServiceDesk />} />
         <Route path="agents" element={<Agents />} />
+        <Route path="journal" element={<Journal />} />
+        <Route path="agent/:agentId" element={<AgentView />} />
         <Route path="shells" element={<Shells />} />
         <Route path="settings" element={<Settings />} />
         <Route path="docs/*" element={<Docs />} />

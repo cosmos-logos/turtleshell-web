@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { NavLink, Link } from 'react-router-dom';
+import { NavLink, Link, useLocation } from 'react-router-dom';
 import {
-  MessageSquare,
+
   Plug,
   LifeBuoy,
-  Bot,
+
   Settings,
   BookOpen,
   History,
@@ -15,9 +15,12 @@ import {
   Cloud,
   House,
   Shell,
+
 } from 'lucide-react';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import type { AppEnvironment } from '@/lib/store/environment-store';
+import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
+import { useAgentStore } from '@/lib/store/agent-store';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
 import { getShellId } from '@/lib/api/olympus-grid-client';
 
@@ -28,17 +31,60 @@ interface SidebarProps {
   position: 'left' | 'right';
 }
 
-const navItems = [
-  { to: '/app/chat', icon: MessageSquare, label: 'Chat' },
-  { to: '/app/history', icon: History, label: 'History' },
-  { to: '/app/memory', icon: Brain, label: 'Memory' },
-  { to: '/app/services', icon: Plug, label: 'Services' },
-  { to: '/app/service-desk', icon: LifeBuoy, label: 'Service Desk' },
-  { to: '/app/agents', icon: Bot, label: 'Agents' },
-  { to: '/app/docs', icon: BookOpen, label: 'Docs' },
-  { to: '/app/shells', icon: Shell, label: 'Sea Shells' },
-  { to: '/app/settings', icon: Settings, label: 'Settings' },
-];
+interface NavItem {
+  to?: string;
+  label: string;
+  icon?: React.ElementType;
+  initial?: string;
+  color?: string;
+  type?: 'section';
+  /** cosmos agent ID for chat-only agents — used for active state */
+  chatAgentId?: string;
+  /** built-in agent ID — used for active state when on chat */
+  isBuiltinChat?: string;
+}
+
+function useNavItems(): NavItem[] {
+  const cosmosAgents = useCosmosLogosStore((s) => s.agents);
+  const builtinAgents = useAgentStore((s) => s.agents);
+  const hiddenIds = useAgentStore((s) => s.hiddenAgentIds);
+
+  // Built-in agents (Logos, Cosmos, Claude, OpenAI, Grok, Gemini, custom)
+  const builtinItems: NavItem[] = builtinAgents
+    .filter(a => !hiddenIds.has(a.id))
+    .map((a) => ({
+      to: `/app/chat?agent_builtin=${a.id}`,
+      label: a.name,
+      initial: a.name.charAt(0).toUpperCase(),
+      color: '#6366f1',
+      chatAgentId: undefined, // handled via agent_builtin param
+      isBuiltinChat: a.id,
+    }));
+
+  // Cosmos-logos agents (Athena, Homework Buddy, Thoth, etc.)
+  const cosmosItems: NavItem[] = cosmosAgents
+    .filter(a => !hiddenIds.has(a.id))
+    .map((a) => ({
+      to: a.manifest.display?.app_url ? `/app/agent/${a.id}` : `/app/chat?agent=${a.id}`,
+      label: a.manifest.identity.name,
+      initial: a.manifest.identity.name.charAt(0).toUpperCase(),
+      color: a.manifest.display?.color ?? '#6366f1',
+      chatAgentId: a.manifest.display?.app_url ? undefined : a.id,
+    }));
+
+  return [
+    { label: 'Agents', type: 'section' },
+    ...builtinItems,
+    ...cosmosItems,
+    { to: '/app/history', icon: History, label: 'History' },
+    { to: '/app/memory', icon: Brain, label: 'Memory' },
+    { to: '/app/services', icon: Plug, label: 'Services' },
+    { to: '/app/service-desk', icon: LifeBuoy, label: 'Service Desk' },
+    { to: '/app/docs', icon: BookOpen, label: 'Docs' },
+    { to: '/app/shells', icon: Shell, label: 'Sea Shells' },
+    { to: '/app/settings', icon: Settings, label: 'Settings' },
+  ];
+}
 
 const envConfig: Record<AppEnvironment, { Icon: typeof Cloud; label: string }> = {
   cloud: { Icon: Cloud, label: 'CLOUD' },
@@ -118,7 +164,90 @@ function EnvironmentBadge() {
   );
 }
 
+function useIsNavActive(item: NavItem): boolean {
+  const location = useLocation();
+  const activeChatAgentId = useCosmosLogosStore((s) => s.activeChatAgentId);
+  const activeBuiltinId = useAgentStore((s) => s.activeAgent.id);
+  const onChatPage = location.pathname === '/app/chat';
+
+  if (item.isBuiltinChat) {
+    // Built-in agent: active when on chat, no cosmos agent active, and this is the active built-in
+    return onChatPage && !activeChatAgentId && activeBuiltinId === item.isBuiltinChat;
+  }
+  if (item.chatAgentId) {
+    // Cosmos chat agent: active when on chat and this cosmos agent is active
+    return onChatPage && activeChatAgentId === item.chatAgentId;
+  }
+  if (item.to === '/app/chat') {
+    // Generic Chat link: hidden from nav now, but if present, active when on chat with no specific agent
+    return onChatPage && !activeChatAgentId;
+  }
+  // Iframe agents and other nav items: standard path match
+  return location.pathname.startsWith(item.to || '---never---');
+}
+
+function AgentSectionHeader({ expanded, onClick }: { expanded: boolean; onClick?: () => void }) {
+  return (
+    <div className={`flex items-center justify-between ${expanded ? 'px-3 pt-4 pb-1' : 'px-1 pt-3 pb-1'}`}>
+      {expanded ? (
+        <>
+          <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Agents</span>
+          <NavLink
+            to="/app/agents"
+            onClick={onClick}
+            className="p-1 rounded-md text-text-muted hover:text-text-secondary hover:bg-surface-2 transition-colors"
+            title="Agent Setup"
+          >
+            <Settings size={12} />
+          </NavLink>
+        </>
+      ) : (
+        <div className="w-full border-t border-border-muted mx-1" />
+      )}
+    </div>
+  );
+}
+
+function SidebarNavItem({ item, onClick, expanded = true }: { item: NavItem; onClick?: () => void; expanded?: boolean }) {
+  const isActive = useIsNavActive(item);
+  const { to, icon: Icon, label, initial, color } = item;
+  const isAgentSubItem = !!(item.isBuiltinChat || item.chatAgentId || (item.initial && !item.icon));
+
+  return (
+    <NavLink
+      key={to}
+      to={to!}
+      onClick={onClick}
+      className={`flex items-center gap-3 rounded-lg font-medium transition-colors ${
+        isAgentSubItem && expanded ? 'pl-5 pr-3 py-1.5 text-xs' : 'px-3 py-2.5 text-sm'
+      } ${
+        expanded ? '' : 'justify-center'
+      } ${
+        isActive
+          ? 'bg-surface-3 text-text-primary'
+          : 'text-text-secondary hover:text-text-primary hover:bg-surface-2'
+      }`}
+      title={expanded ? undefined : label}
+    >
+      {Icon ? (
+        <Icon size={isAgentSubItem ? 14 : 18} className="flex-shrink-0" />
+      ) : (
+        <span
+          className={`rounded flex items-center justify-center font-bold flex-shrink-0 ${
+            isAgentSubItem ? 'w-[16px] h-[16px] text-[9px]' : 'w-[18px] h-[18px] text-[10px]'
+          }`}
+          style={{ backgroundColor: `${color}25`, color }}
+        >
+          {initial}
+        </span>
+      )}
+      {expanded && <span className="whitespace-nowrap">{label}</span>}
+    </NavLink>
+  );
+}
+
 export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
+  const navItems = useNavItems();
   if (position === 'right') {
     return (
       <aside
@@ -146,23 +275,12 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
 
         {/* Navigation */}
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-          {navItems.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              onClick={onClose}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-surface-3 text-text-primary'
-                    : 'text-text-secondary hover:text-text-primary hover:bg-surface-2'
-                }`
-              }
-            >
-              <Icon size={18} className="flex-shrink-0" />
-              <span>{label}</span>
-            </NavLink>
-          ))}
+          {navItems.map((item) => {
+            if (item.type === 'section') {
+              return <AgentSectionHeader key={`section-${item.label}`} expanded onClick={onClose} />;
+            }
+            return <SidebarNavItem key={item.to} item={item} onClick={onClose} />;
+          })}
         </nav>
 
         {/* Sea Shell balance badge */}
@@ -204,25 +322,12 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-        {navItems.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                open ? '' : 'justify-center'
-              } ${
-                isActive
-                  ? 'bg-surface-3 text-text-primary'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-surface-2'
-              }`
-            }
-            title={open ? undefined : label}
-          >
-            <Icon size={18} className="flex-shrink-0" />
-            {open && <span className="whitespace-nowrap">{label}</span>}
-          </NavLink>
-        ))}
+        {navItems.map((item) => {
+          if (item.type === 'section') {
+            return <AgentSectionHeader key={`section-${item.label}`} expanded={open} />;
+          }
+          return <SidebarNavItem key={item.to} item={item} expanded={open} />;
+        })}
       </nav>
 
       {/* Bottom: shell badge + env badge (expanded) or expand button (collapsed) */}

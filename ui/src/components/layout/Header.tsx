@@ -94,7 +94,7 @@ export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMen
         <div className="flex items-center gap-2 md:hidden">
           <a href="/" className="flex items-center gap-2 no-underline">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-xs">
-              {'\ud83d\udc22'}
+              🐢
             </div>
           </a>
           <AgentPicker compact />

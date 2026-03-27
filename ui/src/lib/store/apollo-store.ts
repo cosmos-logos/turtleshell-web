@@ -3,11 +3,6 @@ import { persist } from 'zustand/middleware';
 
 export type TTSEnvironment = 'cloud' | 'offgrid' | 'custom';
 
-const TTS_URLS: Record<TTSEnvironment, string> = {
-  cloud: 'https://api-int.turtleshell.ai/v1/apollo',
-  offgrid: 'https://athena-616.ngrok.io/v1/apollo',
-  custom: '',
-};
 
 interface ApolloStore {
   // Persisted settings
@@ -34,7 +29,7 @@ interface ApolloStore {
 
 export const useApolloStore = create<ApolloStore>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       ttsMode: 'offgrid',
       ttsCustomUrl: '',
       ttsAutoPlay: true,
@@ -55,11 +50,16 @@ export const useApolloStore = create<ApolloStore>()(
       setTTSTalkMode: (ttsTalkMode) => set({ ttsTalkMode }),
 
       getTTSBaseUrl: () => {
-        const state = get();
-        if (state.ttsMode === 'custom') {
-          return state.ttsCustomUrl;
-        }
-        return TTS_URLS[state.ttsMode];
+        // Read cosmos-logos agents from persisted localStorage to avoid circular import
+        try {
+          const raw = localStorage.getItem('turtleshell-cosmos-agents');
+          if (raw) {
+            const { state } = JSON.parse(raw);
+            const ttsAgent = state?.agents?.find((a: any) => a.capabilities?.includes('x-tts'));
+            if (ttsAgent) return ttsAgent.url;
+          }
+        } catch {}
+        return '';
       },
     }),
     {
@@ -69,6 +69,7 @@ export const useApolloStore = create<ApolloStore>()(
         ttsCustomUrl: state.ttsCustomUrl,
         ttsAutoPlay: state.ttsAutoPlay,
         ttsTalkMode: state.ttsTalkMode,
+        _speed: state._speed,
       }),
     },
   ),

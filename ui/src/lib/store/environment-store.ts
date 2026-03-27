@@ -3,132 +3,103 @@ import { persist } from 'zustand/middleware';
 
 export type AppEnvironment = 'cloud' | 'offgrid' | 'custom';
 
-const ENVIRONMENT_URLS: Record<AppEnvironment, string> = {
-  cloud: 'https://api-int.turtleshell.ai/v1/athena',
-  offgrid: 'https://athena-616.ngrok.io/v1/athena',
-  custom: '',
+/** Default URLs for each service per environment preset. */
+const SERVICE_DEFAULTS: Record<AppEnvironment, ServiceEndpoints> = {
+  cloud: {
+    athena:    'https://api-int.turtleshell.ai/v1/athena',
+    hermes:    'https://api-int.turtleshell.ai/v1/hermes',
+    mnemosyne: 'https://api-int.turtleshell.ai/v1/mnemosyne',
+    plutus:    'https://api-int.turtleshell.ai/v1/plutus/api',
+    apollo:    'https://api-int.turtleshell.ai/v1/apollo',
+    ares:      'https://api-int.turtleshell.ai/v1/ares',
+  },
+  offgrid: {
+    athena:    '/v1/athena',
+    hermes:    '/v1/hermes',
+    mnemosyne: '/v1/mnemosyne',
+    plutus:    '/v1/plutus/api',
+    apollo:    '/v1/apollo',
+    ares:      '/v1/ares',
+  },
+  custom: {
+    athena:    '',
+    hermes:    '',
+    mnemosyne: '',
+    plutus:    '',
+    apollo:    '',
+    ares:      '',
+  },
 };
 
-const GATEWAY_URLS: Record<AppEnvironment, string> = {
-  cloud: 'https://api-int.turtleshell.ai',
-  offgrid: 'https://athena-616.ngrok.io',
-  custom: '',
-};
+export interface ServiceEndpoints {
+  athena:    string
+  hermes:    string
+  mnemosyne: string
+  plutus:    string
+  apollo:    string
+  ares:      string
+}
 
-// Hermes base URL — used for OAuth relay endpoints
-const HERMES_URLS: Record<AppEnvironment, string> = {
-  cloud: 'https://api-int.turtleshell.ai/v1/hermes',
-  offgrid: 'http://localhost:3411/v1/hermes',
-  custom: '',
-};
-
-// Mnemosyne base URL — used for conversation history
-const MNEMOSYNE_URLS: Record<AppEnvironment, string> = {
-  cloud: 'https://api-int.turtleshell.ai/v1/mnemosyne',
-  offgrid: 'http://localhost:3711/v1/mnemosyne',
-  custom: '',
-};
-
-// Plutus base URL — used for billing, metering, and Stripe checkout
-const PLUTUS_URLS: Record<AppEnvironment, string> = {
-  cloud: 'https://api-int.turtleshell.ai/v1/plutus/api',
-  offgrid: 'https://athena-616.ngrok.io/v1/plutus/api',
-  custom: '',
+export const SERVICE_LABELS: Record<keyof ServiceEndpoints, { label: string; description: string }> = {
+  athena:    { label: 'Athena',    description: 'LLM chat router' },
+  hermes:    { label: 'Hermes',    description: 'Message transport & SMS relay' },
+  mnemosyne: { label: 'Mnemosyne', description: 'Conversation memory & history' },
+  plutus:    { label: 'Plutus',    description: 'Billing, metering & SeaShells' },
+  apollo:    { label: 'Apollo',    description: 'Text-to-speech (TTS)' },
+  ares:      { label: 'Ares',      description: 'API gateway' },
 };
 
 interface EnvironmentStore {
   current: AppEnvironment;
-  customEndpoint: string;
+  endpoints: ServiceEndpoints;
   developerMode: boolean;
 
-  setEnvironment: (env: AppEnvironment) => void;
-  setCustomEndpoint: (url: string) => void;
+  setEnvironment:   (env: AppEnvironment) => void;
+  setEndpoint:      (service: keyof ServiceEndpoints, url: string) => void;
   setDeveloperMode: (enabled: boolean) => void;
-  getBaseUrl: () => string;
-  getGatewayUrl: () => string;
-  getAresUrl: () => string;
-  getHermesUrl: () => string;
+
+  // Getters for individual services
+  getAthenaUrl:    () => string;
+  getHermesUrl:    () => string;
   getMnemosyneUrl: () => string;
-  getPlutusUrl: () => string;
+  getPlutusUrl:    () => string;
+  getApolloUrl:    () => string;
+  getAresUrl:      () => string;
+
+  // Legacy compat
+  getBaseUrl:    () => string;
+  getGatewayUrl: () => string;
 }
 
 export const useEnvironmentStore = create<EnvironmentStore>()(
   persist(
     (set, get) => ({
-      current: 'offgrid',
-      customEndpoint: '',
+      current:       'offgrid',
+      endpoints:     SERVICE_DEFAULTS['offgrid'],
       developerMode: false,
 
-      setEnvironment: (current) => set({ current }),
-      setCustomEndpoint: (customEndpoint) => set({ customEndpoint }),
+      setEnvironment: (current) =>
+        set({ current, endpoints: SERVICE_DEFAULTS[current] }),
+
+      setEndpoint: (service, url) =>
+        set((state) => ({
+          current:   'custom',
+          endpoints: { ...state.endpoints, [service]: url },
+        })),
+
       setDeveloperMode: (developerMode) => set({ developerMode }),
 
-      getBaseUrl: () => {
-        const state = get();
-        if (state.current === 'custom') {
-          return state.customEndpoint;
-        }
-        return ENVIRONMENT_URLS[state.current];
-      },
+      getAthenaUrl:    () => get().endpoints.athena,
+      getHermesUrl:    () => get().endpoints.hermes,
+      getMnemosyneUrl: () => get().endpoints.mnemosyne,
+      getPlutusUrl:    () => get().endpoints.plutus,
+      getApolloUrl:    () => get().endpoints.apollo,
+      getAresUrl:      () => get().endpoints.ares,
 
+      // Legacy compat — was getBaseUrl (pointed at athena)
+      getBaseUrl: () => get().endpoints.athena,
       getGatewayUrl: () => {
-        const state = get();
-        if (state.current === 'custom') {
-          try {
-            return new URL(state.customEndpoint).origin;
-          } catch {
-            return state.customEndpoint;
-          }
-        }
-        return GATEWAY_URLS[state.current];
-      },
-
-      getAresUrl: () => {
-        const state = get();
-        if (state.current === 'custom') {
-          try {
-            return new URL(state.customEndpoint).origin + '/v1/ares';
-          } catch {
-            return state.customEndpoint;
-          }
-        }
-        return GATEWAY_URLS[state.current] + '/v1/ares';
-      },
-
-      getHermesUrl: () => {
-        const state = get();
-        if (state.current === 'custom') {
-          try {
-            return new URL(state.customEndpoint).origin + '/v1/hermes';
-          } catch {
-            return state.customEndpoint;
-          }
-        }
-        return HERMES_URLS[state.current];
-      },
-
-      getMnemosyneUrl: () => {
-        const state = get();
-        if (state.current === 'custom') {
-          try {
-            return new URL(state.customEndpoint).origin + '/v1/mnemosyne';
-          } catch {
-            return state.customEndpoint;
-          }
-        }
-        return MNEMOSYNE_URLS[state.current];
-      },
-
-      getPlutusUrl: () => {
-        const state = get();
-        if (state.current === 'custom') {
-          try {
-            return new URL(state.customEndpoint).origin + '/v1/plutus/api';
-          } catch {
-            return state.customEndpoint;
-          }
-        }
-        return PLUTUS_URLS[state.current];
+        try { return new URL(get().endpoints.athena).origin; } catch { return ''; }
       },
     }),
     { name: 'turtleshell-environment' },

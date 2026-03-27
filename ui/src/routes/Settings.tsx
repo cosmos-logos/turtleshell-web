@@ -1,34 +1,48 @@
-import { Cloud, House, Settings as SettingsIcon, Wrench, Info, Volume2, Sun, Moon, Brain } from 'lucide-react';
+import { Cloud, House, Info, Volume2, Sun, Moon, Brain, Wrench, Server } from 'lucide-react';
+import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import {
   useEnvironmentStore,
+  SERVICE_LABELS,
+  type AppEnvironment,
+  type ServiceEndpoints,
 } from '@/lib/store/environment-store';
-import { useApolloStore, type TTSEnvironment } from '@/lib/store/apollo-store';
+import { useApolloStore } from '@/lib/store/apollo-store';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useThemeStore } from '@/lib/store/theme-store';
+
+const PRESETS: { key: AppEnvironment; label: string; desc: string; Icon: React.ElementType }[] = [
+  { key: 'cloud',   label: 'Cloud',    desc: 'AWS Olympus-Grid',   Icon: Cloud },
+  { key: 'offgrid', label: 'Off-Grid', desc: 'ngrok / local stack', Icon: House },
+];
+
+function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`relative w-11 h-6 rounded-full transition-colors ${on ? 'bg-shell-500' : 'bg-surface-3'}`}
+    >
+      <span
+        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+          on ? 'translate-x-5' : ''
+        }`}
+      />
+    </button>
+  );
+}
 
 export function Settings() {
   const {
     current,
-    customEndpoint,
+    endpoints,
     developerMode,
     setEnvironment,
-    setCustomEndpoint,
+    setEndpoint,
     setDeveloperMode,
   } = useEnvironmentStore();
 
   const { theme, setTheme } = useThemeStore();
   const { memoryEnabled, setMemoryEnabled } = useChatStore();
-
-  const {
-    ttsMode,
-    ttsCustomUrl,
-    ttsAutoPlay,
-    ttsTalkMode,
-    setTTSMode,
-    setTTSCustomUrl,
-    setTTSAutoPlay,
-    setTTSTalkMode,
-  } = useApolloStore();
+  const { ttsAutoPlay, ttsTalkMode, setTTSAutoPlay, setTTSTalkMode } = useApolloStore();
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -53,18 +67,7 @@ export function Settings() {
                   Switch between light and dark theme
                 </div>
               </div>
-              <button
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                className={`relative w-11 h-6 rounded-full transition-colors ${
-                  theme === 'dark' ? 'bg-shell-500' : 'bg-surface-3'
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
-                    theme === 'dark' ? 'translate-x-5' : ''
-                  }`}
-                />
-              </button>
+              <Toggle on={theme === 'dark'} onToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
             </div>
           </div>
         </section>
@@ -79,237 +82,110 @@ export function Settings() {
               <div>
                 <div className="text-sm font-semibold">Developer Mode</div>
                 <div className="text-2xs text-text-muted mt-0.5">
-                  Unlock environment picker and debug features
+                  Unlock grid service configuration and debug features
                 </div>
               </div>
-              <button
-                onClick={() => setDeveloperMode(!developerMode)}
-                className={`relative w-11 h-6 rounded-full transition-colors ${
-                  developerMode ? 'bg-shell-500' : 'bg-surface-3'
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
-                    developerMode ? 'translate-x-5' : ''
-                  }`}
-                />
-              </button>
+              <Toggle on={developerMode} onToggle={() => setDeveloperMode(!developerMode)} />
             </div>
           </div>
         </section>
 
-        {/* Agent LLM — Environment Selection (developer only) */}
+        {/* Grid Services (developer only) */}
         {developerMode && (
           <section className="space-y-3 animate-fade-in">
             <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-              <Cloud size={14} /> Agent LLM
+              <Server size={14} /> Grid Services
             </h2>
-            <div className="space-y-2">
-              {(
-                [
-                  {
-                    key: 'cloud',
-                    label: 'Running in Cloud',
-                    desc: 'AWS Olympus-Grid',
-                    Icon: Cloud,
-                  },
-                  {
-                    key: 'offgrid',
-                    label: 'Running Off-Grid',
-                    desc: 'ngrok tunnel',
-                    Icon: House,
-                  },
-                  {
-                    key: 'custom',
-                    label: 'Custom',
-                    desc: 'User-defined endpoint',
-                    Icon: SettingsIcon,
-                  },
-                ] as const
-              ).map(({ key, label, desc, Icon }) => (
+
+            {/* Preset buttons */}
+            <div className="flex gap-2">
+              {PRESETS.map(({ key, label, desc, Icon }) => (
                 <button
                   key={key}
                   onClick={() => setEnvironment(key)}
-                  className={`w-full text-left p-4 rounded-xl border transition-all ${
+                  className={`flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm transition-all ${
                     current === key
-                      ? 'bg-shell-500/5 border-shell-500/30'
-                      : 'bg-surface-1 border-border-muted hover:border-border'
+                      ? 'bg-shell-500/5 border-shell-500/30 text-text-primary'
+                      : 'bg-surface-1 border-border-muted text-text-muted hover:border-border'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <Icon size={18} className="text-text-secondary flex-shrink-0" />
-                    <div>
-                      <div className="text-sm font-semibold">{label}</div>
-                      <div className="text-2xs text-text-muted">{desc}</div>
-                    </div>
-                    {current === key && (
-                      <div className="ml-auto w-2 h-2 rounded-full bg-shell-400" />
-                    )}
+                  <Icon size={14} className="flex-shrink-0" />
+                  <div className="text-left">
+                    <div className="text-xs font-semibold">{label}</div>
+                    <div className="text-2xs opacity-70">{desc}</div>
                   </div>
+                  {current === key && (
+                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-shell-400" />
+                  )}
                 </button>
               ))}
-
-              {current === 'offgrid' && (
-                <div className="p-4 bg-surface-1 border border-border-muted rounded-xl animate-fade-in">
-                  <label className="text-2xs font-medium text-text-muted block mb-2">
-                    Off-Grid Endpoint URL
-                  </label>
-                  <input
-                    type="url"
-                    value="https://athena-616.ngrok.io/v1/athena"
-                    readOnly
-                    className="w-full bg-surface-3/50 border border-border rounded-lg px-3 py-2 text-base sm:text-sm text-text-muted cursor-default focus:outline-none"
-                  />
-                </div>
-              )}
-
-              {current === 'custom' && (
-                <div className="p-4 bg-surface-1 border border-border-muted rounded-xl animate-fade-in">
-                  <label className="text-2xs font-medium text-text-muted block mb-2">
-                    Custom Endpoint URL
-                  </label>
-                  <input
-                    type="url"
-                    value={customEndpoint}
-                    onChange={(e) => setCustomEndpoint(e.target.value)}
-                    placeholder="https://your-endpoint.example.com"
-                    className="w-full bg-surface-3 border border-border rounded-lg px-3 py-2 text-base sm:text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-500/50"
-                  />
-                </div>
-              )}
             </div>
+
+            {/* Per-service URL fields */}
+            <div className="bg-surface-1 border border-border-muted rounded-xl divide-y divide-border-muted">
+              {(Object.keys(SERVICE_LABELS) as (keyof ServiceEndpoints)[]).map((service) => {
+                const { label, description } = SERVICE_LABELS[service];
+                return (
+                  <div key={service} className="px-4 py-3 space-y-1.5">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-xs font-semibold text-text-primary">{label}</span>
+                      <span className="text-2xs text-text-muted">{description}</span>
+                    </div>
+                    <input
+                      type="url"
+                      value={endpoints[service]}
+                      onChange={(e) => setEndpoint(service, e.target.value)}
+                      placeholder={`https://...`}
+                      className="w-full bg-surface-2 border border-border-muted rounded-lg px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-500/50 transition-colors"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+
+            {current === 'custom' && (
+              <p className="text-2xs text-text-muted pl-1">
+                Custom — individual service URLs override the preset.
+              </p>
+            )}
           </section>
         )}
 
-        {/* Agent TTS (developer only) */}
-        {developerMode && (
-          <section className="space-y-3 animate-fade-in">
-            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-              <Volume2 size={14} /> Agent TTS
-            </h2>
-            <div className="space-y-2">
-              {(
-                [
-                  {
-                    key: 'cloud' as TTSEnvironment,
-                    label: 'Running in Cloud',
-                    desc: 'AWS Olympus-Grid',
-                    Icon: Cloud,
-                  },
-                  {
-                    key: 'offgrid' as TTSEnvironment,
-                    label: 'Running Off-Grid',
-                    desc: 'ngrok tunnel',
-                    Icon: House,
-                  },
-                  {
-                    key: 'custom' as TTSEnvironment,
-                    label: 'Custom',
-                    desc: 'User-defined endpoint',
-                    Icon: SettingsIcon,
-                  },
-                ]
-              ).map(({ key, label, desc, Icon }) => (
-                <button
-                  key={key}
-                  onClick={() => setTTSMode(key)}
-                  className={`w-full text-left p-4 rounded-xl border transition-all ${
-                    ttsMode === key
-                      ? 'bg-shell-500/5 border-shell-500/30'
-                      : 'bg-surface-1 border-border-muted hover:border-border'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <Icon size={18} className="text-text-secondary flex-shrink-0" />
-                    <div>
-                      <div className="text-sm font-semibold">{label}</div>
-                      <div className="text-2xs text-text-muted">{desc}</div>
-                    </div>
-                    {ttsMode === key && (
-                      <div className="ml-auto w-2 h-2 rounded-full bg-shell-400" />
-                    )}
+
+        {/* Voice */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+            <Volume2 size={14} /> Voice
+          </h2>
+          {useCosmosLogosStore.getState().agents.some(a => a.capabilities.includes('x-tts')) ? (
+            <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold">Talk Mode</div>
+                  <div className="text-2xs text-text-muted mt-0.5">
+                    Microphone listens and auto-sends after you speak
                   </div>
-                </button>
-              ))}
-
-              {ttsMode === 'offgrid' && (
-                <div className="p-4 bg-surface-1 border border-border-muted rounded-xl animate-fade-in">
-                  <label className="text-2xs font-medium text-text-muted block mb-2">
-                    Off-Grid TTS Endpoint URL
-                  </label>
-                  <input
-                    type="url"
-                    value="https://athena-616.ngrok.io/v1/apollo"
-                    readOnly
-                    className="w-full bg-surface-3/50 border border-border rounded-lg px-3 py-2 text-base sm:text-sm text-text-muted cursor-default focus:outline-none"
-                  />
                 </div>
-              )}
-
-              {ttsMode === 'custom' && (
-                <div className="p-4 bg-surface-1 border border-border-muted rounded-xl animate-fade-in">
-                  <label className="text-2xs font-medium text-text-muted block mb-2">
-                    Custom TTS Endpoint URL
-                  </label>
-                  <input
-                    type="url"
-                    value={ttsCustomUrl}
-                    onChange={(e) => setTTSCustomUrl(e.target.value)}
-                    placeholder="https://your-tts-endpoint.example.com/v1/apollo"
-                    className="w-full bg-surface-3 border border-border rounded-lg px-3 py-2 text-base sm:text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-500/50"
-                  />
-                </div>
-              )}
-
-              {/* TTS Toggles */}
-              <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
-                {/* Talk Mode */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-semibold">Talk Mode</div>
-                    <div className="text-2xs text-text-muted mt-0.5">
-                      Microphone listens and auto-sends after you speak
-                    </div>
+                <Toggle on={ttsTalkMode} onToggle={() => setTTSTalkMode(!ttsTalkMode)} />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold">Auto-Play Audio</div>
+                  <div className="text-2xs text-text-muted mt-0.5">
+                    Automatically speak AI responses aloud
                   </div>
-                  <button
-                    onClick={() => setTTSTalkMode(!ttsTalkMode)}
-                    className={`relative w-11 h-6 rounded-full transition-colors ${
-                      ttsTalkMode ? 'bg-shell-500' : 'bg-surface-3'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
-                        ttsTalkMode ? 'translate-x-5' : ''
-                      }`}
-                    />
-                  </button>
                 </div>
-
-                {/* Auto-Play Audio */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-semibold">Auto-Play Audio</div>
-                    <div className="text-2xs text-text-muted mt-0.5">
-                      Automatically speak AI responses aloud
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setTTSAutoPlay(!ttsAutoPlay)}
-                    className={`relative w-11 h-6 rounded-full transition-colors ${
-                      ttsAutoPlay ? 'bg-shell-500' : 'bg-surface-3'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
-                        ttsAutoPlay ? 'translate-x-5' : ''
-                      }`}
-                    />
-                  </button>
-                </div>
+                <Toggle on={ttsAutoPlay} onToggle={() => setTTSAutoPlay(!ttsAutoPlay)} />
               </div>
             </div>
-          </section>
-        )}
+          ) : (
+            <div className="p-4 bg-surface-1 border border-border-muted rounded-xl">
+              <p className="text-2xs text-text-muted">
+                Connect a TTS agent (like Apollo) via Agent Setup to enable voice features.
+              </p>
+            </div>
+          )}
+        </section>
 
         {/* Memory */}
         <section className="space-y-3">
@@ -324,18 +200,7 @@ export function Settings() {
                   Remember conversation context within a session
                 </div>
               </div>
-              <button
-                onClick={() => setMemoryEnabled(!memoryEnabled)}
-                className={`relative w-11 h-6 rounded-full transition-colors ${
-                  memoryEnabled ? 'bg-shell-500' : 'bg-surface-3'
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
-                    memoryEnabled ? 'translate-x-5' : ''
-                  }`}
-                />
-              </button>
+              <Toggle on={memoryEnabled} onToggle={() => setMemoryEnabled(!memoryEnabled)} />
             </div>
             {!memoryEnabled && (
               <div className="mt-3 text-2xs text-yellow-400/80 bg-yellow-500/5 border border-yellow-500/10 rounded-lg px-3 py-2">

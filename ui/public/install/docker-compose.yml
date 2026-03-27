@@ -1,5 +1,5 @@
 # TurtleShell.ai Off-Grid Fleet Manifest
-# Version: 1.7.1
+# Version: 1.7.2
 # CloudPremise LLC — brain/1.7.x.x
 # Pulled by postinstall.sh at install time
 # Hosted at: install.turtleshell.ai/docker-compose.yml
@@ -234,7 +234,7 @@ services:
   # Accessible at localhost:717/nodestatus
   # Shows health of all fleet services
   turtleshell-offgrid:
-    image: ghcr.io/olympus-616/turtleshell-offgrid:1.7.0
+    image: ghcr.io/olympus-616/turtleshell-offgrid:1.7.2
     container_name: turtleshell-offgrid
     restart: unless-stopped
     ports:

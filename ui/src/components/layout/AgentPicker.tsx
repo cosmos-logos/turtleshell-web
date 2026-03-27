@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Lock } from 'lucide-react';
-import { useAgentStore, AGENT_CATALOG, hasOlympusGridToken } from '@/lib/store/agent-store';
+import { useNavigate, useMatch } from 'react-router-dom';
+import { useAgentStore, hasOlympusGridToken } from '@/lib/store/agent-store';
+import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
+import { useChatStore } from '@/lib/store/chat-store';
 import type { Agent } from '@/types/agent';
 
 interface AgentPickerProps {
@@ -9,13 +12,27 @@ interface AgentPickerProps {
 }
 
 export function AgentPicker({ compact }: AgentPickerProps) {
-  const { activeAgent, setActiveAgent } = useAgentStore();
+  const { activeAgent, setActiveAgent, agents: allBuiltinAgentsRaw, hiddenAgentIds } = useAgentStore();
+  const allBuiltinAgents = allBuiltinAgentsRaw.filter(a => !hiddenAgentIds.has(a.id));
+  const cosmosAgentsRaw = useCosmosLogosStore((s) => s.agents);
+  const cosmosAgents = cosmosAgentsRaw.filter(a => !hiddenAgentIds.has(a.id));
+  const activeChatAgentId = useCosmosLogosStore((s) => s.activeChatAgentId);
+  const setActiveChatAgent = useCosmosLogosStore((s) => s.setActiveChatAgent);
+  const navigate = useNavigate();
+  const agentViewMatch = useMatch('/app/agent/:agentId');
+
+  // Active cosmos agent: either viewing an iframe agent, or a chat-only agent is selected
+  const activeCosmosAgent = agentViewMatch
+    ? cosmosAgents.find((a) => a.id === agentViewMatch.params.agentId) ?? null
+    : activeChatAgentId
+      ? cosmosAgents.find((a) => a.id === activeChatAgentId) ?? null
+      : null;
+
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const isAuthed = hasOlympusGridToken();
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -27,7 +44,6 @@ export function AgentPicker({ compact }: AgentPickerProps) {
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  // Close on Escape
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
@@ -37,23 +53,50 @@ export function AgentPicker({ compact }: AgentPickerProps) {
     return () => document.removeEventListener('keydown', handler);
   }, [open]);
 
-  const handleSelect = (agent: Agent) => {
+  const switchAgent = useChatStore((s) => s.switchAgent);
+
+  const handleSelectBuiltin = (agent: Agent) => {
     const needsAuth = agent.requiredServices.includes('olympus_grid');
-    if (needsAuth && !isAuthed) return; // locked
+    if (needsAuth && !isAuthed) return;
+    setActiveChatAgent(null);
     setActiveAgent(agent);
+    switchAgent(agent.id);
+    setOpen(false);
+  };
+
+  const handleSelectCosmos = (agentId: string) => {
+    const agent = cosmosAgents.find((a) => a.id === agentId);
+    if (agent?.manifest.display?.app_url) {
+      setActiveChatAgent(null);
+      navigate(`/app/agent/${agentId}`);
+    } else {
+      setActiveChatAgent(agentId);
+      switchAgent(agentId);
+      navigate('/app/chat');
+    }
     setOpen(false);
   };
 
   if (compact) {
+    const compactColor = activeCosmosAgent?.manifest.display?.color ?? '#6366f1';
     return (
       <div ref={containerRef} className="relative">
         <button
           onClick={() => setOpen(!open)}
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-2 hover:bg-surface-3 transition-colors w-full"
         >
-          <span className="text-base leading-none">{activeAgent.icon}</span>
+          {activeCosmosAgent ? (
+            <span
+              className="w-5 h-5 rounded flex items-center justify-center text-[11px] font-bold flex-shrink-0"
+              style={{ backgroundColor: `${compactColor}25`, color: compactColor }}
+            >
+              {activeCosmosAgent.manifest.identity.name.charAt(0)}
+            </span>
+          ) : (
+            <span className="text-base leading-none">{activeAgent.icon}</span>
+          )}
           <span className="text-sm font-semibold text-text-primary flex-1 text-left">
-            {activeAgent.name}
+            {activeCosmosAgent ? activeCosmosAgent.manifest.identity.name : activeAgent.name}
           </span>
           <ChevronDown
             size={14}
@@ -63,13 +106,13 @@ export function AgentPicker({ compact }: AgentPickerProps) {
 
         {open && (
           <div className="absolute top-full left-0 right-0 mt-1 bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 py-1 z-50 animate-fade-in">
-            {AGENT_CATALOG.map((agent) => {
+            {allBuiltinAgents.map((agent) => {
               const locked = agent.requiredServices.includes('olympus_grid') && !isAuthed;
               const isActive = activeAgent.id === agent.id;
               return (
                 <button
                   key={agent.id}
-                  onClick={() => handleSelect(agent)}
+                  onClick={() => handleSelectBuiltin(agent)}
                   disabled={locked}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
                     locked
@@ -89,6 +132,30 @@ export function AgentPicker({ compact }: AgentPickerProps) {
                 </button>
               );
             })}
+
+            {cosmosAgents.length > 0 && (
+              <>
+                <div className="my-1 border-t border-border-muted" />
+                {cosmosAgents.map((a) => {
+                  const color = a.manifest.display?.color ?? '#6366f1';
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => handleSelectCosmos(a.id)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-2 text-text-primary transition-colors"
+                    >
+                      <span
+                        className="w-5 h-5 rounded flex items-center justify-center text-[11px] font-bold flex-shrink-0"
+                        style={{ backgroundColor: `${color}25`, color }}
+                      >
+                        {a.manifest.identity.name.charAt(0)}
+                      </span>
+                      <span className="text-sm font-medium flex-1">{a.manifest.identity.name}</span>
+                    </button>
+                  );
+                })}
+              </>
+            )}
           </div>
         )}
       </div>
@@ -96,38 +163,48 @@ export function AgentPicker({ compact }: AgentPickerProps) {
   }
 
   // Desktop: inline in header
+  const desktopColor = activeCosmosAgent?.manifest.display?.color ?? '#6366f1';
   return (
     <div ref={containerRef} className="relative">
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 hover:bg-surface-2 rounded-lg px-2 py-1.5 transition-colors group"
       >
-        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-xs flex-shrink-0">
-          {activeAgent.icon}
-        </div>
+        {activeCosmosAgent ? (
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
+            style={{ backgroundColor: `${desktopColor}25`, color: desktopColor }}
+          >
+            {activeCosmosAgent.manifest.identity.name.charAt(0)}
+          </div>
+        ) : (
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-xs flex-shrink-0">
+            {activeAgent.icon}
+          </div>
+        )}
         <div className="text-left">
           <div className="text-sm font-semibold leading-tight flex items-center gap-1">
-            {activeAgent.name}
+            {activeCosmosAgent ? activeCosmosAgent.manifest.identity.name : activeAgent.name}
             <ChevronDown
               size={12}
               className={`text-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
             />
           </div>
           <div className="text-2xs text-text-muted">
-            {activeAgent.description}
+            {activeCosmosAgent ? activeCosmosAgent.manifest.identity.purpose : activeAgent.description}
           </div>
         </div>
       </button>
 
       {open && (
         <div className="absolute top-full left-0 mt-2 w-56 bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 py-1 z-50 animate-fade-in">
-          {AGENT_CATALOG.map((agent) => {
+          {allBuiltinAgents.map((agent) => {
             const locked = agent.requiredServices.includes('olympus_grid') && !isAuthed;
             const isActive = activeAgent.id === agent.id;
             return (
               <button
                 key={agent.id}
-                onClick={() => handleSelect(agent)}
+                onClick={() => handleSelectBuiltin(agent)}
                 disabled={locked}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
                   locked
@@ -150,6 +227,36 @@ export function AgentPicker({ compact }: AgentPickerProps) {
               </button>
             );
           })}
+
+          {cosmosAgents.length > 0 && (
+            <>
+              <div className="my-1 border-t border-border-muted" />
+              <div className="px-3 py-1">
+                <span className="text-2xs text-text-muted uppercase tracking-wider font-semibold">Connected</span>
+              </div>
+              {cosmosAgents.map((a) => {
+                const color = a.manifest.display?.color ?? '#6366f1';
+                return (
+                  <button
+                    key={a.id}
+                    onClick={() => handleSelectCosmos(a.id)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-2 text-text-primary transition-colors"
+                  >
+                    <span
+                      className="w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold flex-shrink-0"
+                      style={{ backgroundColor: `${color}25`, color }}
+                    >
+                      {a.manifest.identity.name.charAt(0)}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium">{a.manifest.identity.name}</div>
+                      <div className="text-2xs text-text-muted truncate">{a.manifest.identity.purpose}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </>
+          )}
         </div>
       )}
     </div>

@@ -17,7 +17,7 @@ export async function* streamChat(
   prompt: string,
   signal?: AbortSignal,
   conversationId?: string | null,
-  options?: { memoryEnabled?: boolean; saveConversation?: boolean },
+  options?: { memoryEnabled?: boolean; saveConversation?: boolean; systemPrompt?: string; agentId?: string },
 ): AsyncGenerator<string | { conversationId: string }, void, unknown> {
   const baseUrl = useEnvironmentStore.getState().getBaseUrl();
   const mcpHeaders = buildMCPHeaders();
@@ -25,12 +25,14 @@ export async function* streamChat(
   const url = `${baseUrl}/chat`;
 
   console.log('[ATHENA] Chat request — MCP active:',
-    Object.keys(mcpHeaders).filter((k) => k !== 'x-developer-key'));
+    Object.keys(mcpHeaders).filter((k) => k !== 'x-developer-key'),
+    'system_prompt:', options?.systemPrompt ? options.systemPrompt.substring(0, 60) + '...' : '(none)');
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Origin: window.location.origin,
     ...mcpHeaders,
+    ...(options?.agentId ? { 'x-agent-id': options.agentId } : {}),
   };
 
   const response = await fetch(url, {
@@ -41,6 +43,8 @@ export async function* streamChat(
       prompt,
       shell_id: getShellId(),
       tenant_id: 'tenant-default',
+      ...(options?.agentId ? { agentId: options.agentId } : {}),
+      ...(options?.systemPrompt ? { system_prompt: options.systemPrompt } : {}),
       ...(options?.memoryEnabled !== false && conversationId ? { conversationId } : {}),
       ...(options?.memoryEnabled === false ? { memoryEnabled: false } : {}),
       ...(options?.saveConversation ? { saveConversation: true } : {}),

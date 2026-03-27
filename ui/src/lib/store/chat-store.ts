@@ -1,16 +1,29 @@
+// @ts-nocheck
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ChatMessage } from '@/types/chat';
 
-interface ChatStore {
+interface AgentThread {
   messages: ChatMessage[];
+  conversationId: string | null;
+}
+
+interface ChatStore {
+  threads: Record<string, AgentThread>;
+  activeAgentId: string;
+
+  /** Current thread's messages (synced on every mutation) */
+  messages: ChatMessage[];
+  currentConversationId: string | null;
+
   isStreaming: boolean;
   error: string | null;
-  currentConversationId: string | null;
   memoryEnabled: boolean;
   saveConversation: boolean;
   pendingInput: string | null;
 
+  switchAgent: (agentId: string) => void;
+  newThread: () => void;
   addMessage: (message: ChatMessage) => void;
   updateLastAssistantMessage: (content: string) => void;
   setStreaming: (streaming: boolean) => void;
@@ -22,79 +35,140 @@ interface ChatStore {
   resumeConversation: (id: string, turns: ChatMessage[]) => void;
   startFromSeed: (prompt: string) => void;
   consumePendingInput: () => string | null;
+  clearAllHistory: () => void;
+}
+
+function thread(threads: Record<string, AgentThread>, id: string): AgentThread {
+  return threads[id] || { messages: [], conversationId: null };
+}
+
+/** Sync messages/conversationId from the active thread */
+function syncDerived(threads: Record<string, AgentThread>, activeAgentId: string) {
+  const t = thread(threads, activeAgentId);
+  return { messages: t.messages, currentConversationId: t.conversationId };
 }
 
 export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => ({
+      threads: {},
+      activeAgentId: 'logos',
       messages: [],
+      currentConversationId: null,
       isStreaming: false,
       error: null,
-      currentConversationId: null,
       memoryEnabled: true,
       saveConversation: true,
       pendingInput: null,
 
-      addMessage: (message) =>
-        set((state) => ({ messages: [...state.messages, message] })),
+      switchAgent: (agentId) => {
+        if (agentId === get().activeAgentId) return;
+        const threads = get().threads;
+        set({
+          activeAgentId: agentId,
+          ...syncDerived(threads, agentId),
+          isStreaming: false,
+          error: null,
+          pendingInput: null,
+        });
+      },
 
-      updateLastAssistantMessage: (content) =>
-        set((state) => {
-          const messages = [...state.messages];
-          const lastIdx = messages.length - 1;
-          if (lastIdx >= 0 && messages[lastIdx]?.role === 'assistant') {
-            messages[lastIdx] = { ...messages[lastIdx], content };
-          }
-          return { messages };
-        }),
+      newThread: () => {
+        const { activeAgentId, threads } = get();
+        const updated = { ...threads, [activeAgentId]: { messages: [], conversationId: null } };
+        set({ threads: updated, ...syncDerived(updated, activeAgentId), error: null, pendingInput: null });
+      },
+
+      addMessage: (message) => {
+        const { activeAgentId, threads } = get();
+        const t = thread(threads, activeAgentId);
+        const updated = {
+          ...threads,
+          [activeAgentId]: { ...t, messages: [...t.messages, message] },
+        };
+        set({ threads: updated, ...syncDerived(updated, activeAgentId) });
+      },
+
+      updateLastAssistantMessage: (content) => {
+        const { activeAgentId, threads } = get();
+        const t = thread(threads, activeAgentId);
+        const msgs = [...t.messages];
+        const last = msgs.length - 1;
+        if (last >= 0 && msgs[last]?.role === 'assistant') {
+          msgs[last] = { ...msgs[last], content };
+        }
+        const updated = { ...threads, [activeAgentId]: { ...t, messages: msgs } };
+        set({ threads: updated, ...syncDerived(updated, activeAgentId) });
+      },
 
       setStreaming: (isStreaming) => set({ isStreaming }),
       setError: (error) => set({ error }),
-      setConversationId: (currentConversationId) => set({ currentConversationId }),
-      clearMessages: () => set({ messages: [], error: null, currentConversationId: null, pendingInput: null }),
+
+      setConversationId: (id) => {
+        const { activeAgentId, threads } = get();
+        const t = thread(threads, activeAgentId);
+        const updated = { ...threads, [activeAgentId]: { ...t, conversationId: id } };
+        set({ threads: updated, currentConversationId: id });
+      },
+
+      clearMessages: () => {
+        const { activeAgentId, threads } = get();
+        const updated = { ...threads, [activeAgentId]: { messages: [], conversationId: null } };
+        set({ threads: updated, ...syncDerived(updated, activeAgentId), error: null, pendingInput: null });
+      },
 
       setMemoryEnabled: (enabled) =>
-        set({
-          memoryEnabled: enabled,
-          ...(enabled ? {} : { saveConversation: false }),
-        }),
+        set({ memoryEnabled: enabled, ...(enabled ? {} : { saveConversation: false }) }),
 
       setSaveConversation: (enabled) =>
-        set({
-          saveConversation: enabled,
-          ...(enabled ? { memoryEnabled: true } : {}),
-        }),
+        set({ saveConversation: enabled, ...(enabled ? { memoryEnabled: true } : {}) }),
 
-      resumeConversation: (id, turns) =>
+      resumeConversation: (id, turns) => {
+        const { activeAgentId, threads } = get();
+        const updated = { ...threads, [activeAgentId]: { messages: turns, conversationId: id } };
         set({
-          currentConversationId: id,
-          messages: turns,
-          saveConversation: true,
-          memoryEnabled: true,
-          error: null,
-          pendingInput: null,
-        }),
+          threads: updated, ...syncDerived(updated, activeAgentId),
+          saveConversation: true, memoryEnabled: true, error: null, pendingInput: null,
+        });
+      },
 
-      startFromSeed: (prompt) =>
-        set({
-          messages: [],
-          currentConversationId: null,
-          error: null,
-          pendingInput: prompt,
-        }),
+      startFromSeed: (prompt) => {
+        const { activeAgentId, threads } = get();
+        const updated = { ...threads, [activeAgentId]: { messages: [], conversationId: null } };
+        set({ threads: updated, ...syncDerived(updated, activeAgentId), error: null, pendingInput: prompt });
+      },
 
       consumePendingInput: () => {
         const val = get().pendingInput;
         if (val) set({ pendingInput: null });
         return val;
       },
+
+      clearAllHistory: () => {
+        set({
+          threads: {},
+          messages: [],
+          currentConversationId: null,
+          error: null,
+          pendingInput: null,
+        });
+      },
     }),
     {
       name: 'turtleshell-chat',
       partialize: (state) => ({
+        threads: state.threads,
+        activeAgentId: state.activeAgentId,
         memoryEnabled: state.memoryEnabled,
         saveConversation: state.saveConversation,
       }),
+      onRehydrateStorage: () => (state: any) => {
+        if (state) {
+          const t = thread(state.threads, state.activeAgentId);
+          state.messages = t.messages;
+          state.currentConversationId = t.conversationId;
+        }
+      },
     },
   ),
 );

@@ -4,6 +4,8 @@
  * State is pushed into the apollo Zustand store so any component can read it.
  */
 import { useApolloStore } from '@/lib/store/apollo-store';
+import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
+import { useAgentStore } from '@/lib/store/agent-store';
 
 let audio: HTMLAudioElement | null = null;
 let objectUrl: string | null = null;
@@ -25,6 +27,42 @@ function trackTime() {
   }
 }
 
+/**
+ * Resolve the active agent's voice config for the TTS request.
+ * Checks cosmos-logos agents first, then built-in agents.
+ */
+function getActiveVoiceIntent(): Record<string, unknown> | undefined {
+  const activeChatAgentId = useCosmosLogosStore.getState().activeChatAgentId;
+
+  // Check cosmos-logos agent voice
+  if (activeChatAgentId) {
+    const agent = useCosmosLogosStore.getState().agents.find(a => a.id === activeChatAgentId);
+    if (agent?.manifest.voice?.engines) {
+      const preferred = agent.manifest.voice.preferred_engine;
+      const engine = preferred && agent.manifest.voice.engines[preferred]
+        ? agent.manifest.voice.engines[preferred]
+        : Object.values(agent.manifest.voice.engines)[0];
+      if (engine) {
+        return { voiceId: engine.voice_id, model: engine.model, engine: preferred };
+      }
+    }
+  }
+
+  // Check built-in agent voice
+  const builtin = useAgentStore.getState().activeAgent;
+  if (builtin?.voice?.engines) {
+    const preferred = builtin.voice.preferred_engine;
+    const engine = preferred && builtin.voice.engines[preferred]
+      ? builtin.voice.engines[preferred]
+      : Object.values(builtin.voice.engines)[0];
+    if (engine) {
+      return { voiceId: engine.voice_id, model: engine.model, engine: preferred };
+    }
+  }
+
+  return undefined;
+}
+
 export async function speak(text: string) {
   cleanup();
 
@@ -34,11 +72,13 @@ export async function speak(text: string) {
   fetchController = new AbortController();
   useApolloStore.setState({ _isBuffering: true });
 
+  const intent = getActiveVoiceIntent();
+
   try {
     const res = await fetch(`${baseUrl}/play`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, intent }),
       signal: fetchController.signal,
     });
     if (!res.ok) { console.error('[Apollo] TTS error:', res.status); cleanup(); return; }

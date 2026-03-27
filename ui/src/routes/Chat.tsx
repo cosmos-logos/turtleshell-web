@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Send, Square, Trash2, Mic, Copy, Check, Volume2, Settings2, X, Wrench, ExternalLink, Brain, Bookmark } from 'lucide-react';
 import * as audioManager from '@/lib/audio/audio-manager';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useApolloStore } from '@/lib/store/apollo-store';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { streamChat } from '@/lib/athena/chat-client';
+import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
+import { useAgentStore } from '@/lib/store/agent-store';
 import { generateId, formatTimestamp } from '@/lib/utils/helpers';
 import { useApollo } from '@/lib/hooks/useApollo';
 import type { ChatMessage } from '@/types/chat';
@@ -42,6 +45,32 @@ function renderTextWithLinks(text: string): React.ReactNode[] {
 const HOLD_THRESHOLD_MS = 400;
 
 export function Chat() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const setActiveChatAgent = useCosmosLogosStore((s) => s.setActiveChatAgent);
+
+  const switchChatAgent = useChatStore((s) => s.switchAgent);
+
+  const { setActiveAgent: setBuiltinActive, agents: allBuiltinAgents } = useAgentStore();
+
+  // If navigated with ?agent=id (cosmos) or ?agent_builtin=id, activate that agent
+  useEffect(() => {
+    const cosmosParam = searchParams.get('agent');
+    const builtinParam = searchParams.get('agent_builtin');
+    if (cosmosParam) {
+      setActiveChatAgent(cosmosParam);
+      switchChatAgent(cosmosParam);
+      setSearchParams({}, { replace: true });
+    } else if (builtinParam) {
+      const found = allBuiltinAgents.find(a => a.id === builtinParam);
+      if (found) {
+        setActiveChatAgent(null);
+        setBuiltinActive(found);
+        switchChatAgent(builtinParam);
+      }
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setActiveChatAgent, switchChatAgent, setSearchParams, setBuiltinActive, allBuiltinAgents]);
+
   const [input, setInput] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [controlsOpen, setControlsOpen] = useState(false);
@@ -50,7 +79,7 @@ export function Chat() {
   const controlsRef = useRef<HTMLDivElement>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const didHoldRef = useRef(false);
-  const { messages, isStreaming, error, addMessage, updateLastAssistantMessage, setStreaming, setError, clearMessages, setConversationId, memoryEnabled, saveConversation, setMemoryEnabled, setSaveConversation } =
+  const { messages, isStreaming, error, addMessage, updateLastAssistantMessage, setStreaming, setError, clearMessages, newThread, setConversationId, memoryEnabled, saveConversation, setMemoryEnabled, setSaveConversation } =
     useChatStore();
   const developerMode = useEnvironmentStore((s) => s.developerMode);
   const [resumedAt] = useState(() =>
@@ -65,6 +94,17 @@ export function Chat() {
   const sendRef = useRef<(prompt: string) => void>(undefined);
 
   // Talk mode → auto-send; hold-to-record → append to input for review
+  const hasTTS = useCosmosLogosStore((s) => s.agents.some(a => a.capabilities.includes('x-tts')));
+  const activeCosmosChatName = useCosmosLogosStore((s) => {
+    if (!s.activeChatAgentId) return null;
+    return s.agents.find(a => a.id === s.activeChatAgentId)?.manifest.identity.name ?? null;
+  });
+  const activeBuiltinName = useAgentStore((s) => s.activeAgent.name);
+  const chatAgentName = activeCosmosChatName || activeBuiltinName;
+  const hiddenAgentIds = useAgentStore((s) => s.hiddenAgentIds);
+  const activeThreadAgentId = useChatStore((s) => s.activeAgentId);
+  const isActiveAgentHidden = hiddenAgentIds.has(activeThreadAgentId);
+
   const apollo = useApollo({
     onTranscript: (text) => {
       if (useApolloStore.getState().ttsTalkMode) {
@@ -106,7 +146,27 @@ export function Chat() {
       let accumulated = '';
       const isDev = useEnvironmentStore.getState().developerMode;
       const { currentConversationId: convId, memoryEnabled: mem, saveConversation: save } = useChatStore.getState();
-      for await (const token of streamChat(prompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save })) {
+      // Inject system_prompt: cosmos agent manifest > built-in agent > none
+      const activeChatAgentId = useCosmosLogosStore.getState().activeChatAgentId;
+      const cosmosAgent = activeChatAgentId
+        ? useCosmosLogosStore.getState().agents.find(a => a.id === activeChatAgentId)
+        : null;
+      const builtinAgent = useAgentStore.getState().activeAgent;
+      const cosmosPrompt = cosmosAgent?.manifest?.identity?.system_prompt;
+      const builtinPrompt = builtinAgent?.systemPrompt;
+      const systemPrompt = cosmosPrompt || builtinPrompt || undefined;
+      // Map agent selection to Athena's provider routing
+      // Built-in agents (logos, cosmos) → 'turtle' (Ollama local)
+      // Cosmos-logos agents with chat capability → 'athena' (OpenAI)
+      // Named built-in LLMs (claude, openai, grok, gemini) → their agent ID
+      const llmAgentId = activeChatAgentId
+        ? 'athena'  // cosmos-logos agents route through the cloud provider
+        : (['claude', 'openai', 'grok', 'gemini'].includes(builtinAgent.id) ? builtinAgent.id : 'turtle');
+
+      console.log('[CHAT] agent:', activeChatAgentId || builtinAgent.id,
+        '→ llmAgentId:', llmAgentId,
+        'systemPrompt:', systemPrompt ? systemPrompt.substring(0, 50) + '...' : '(none)');
+      for await (const token of streamChat(prompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save, systemPrompt, agentId: llmAgentId })) {
         // Handle metadata objects (conversationId)
         if (typeof token === 'object' && 'conversationId' in token) {
           if (mem) setConversationId(token.conversationId);
@@ -134,7 +194,8 @@ export function Chat() {
         .join('\n')
         .trim();
 
-      if (spokenText && useApolloStore.getState().ttsAutoPlay) {
+      const ttsConnected = useCosmosLogosStore.getState().agents.some(a => a.capabilities.includes('x-tts'));
+      if (spokenText && ttsConnected && useApolloStore.getState().ttsAutoPlay) {
         speakRef.current?.(spokenText);
       }
     } catch (err) {
@@ -404,7 +465,7 @@ export function Chat() {
                     >
                       {copiedId === msg.id ? <Check size={10} /> : <Copy size={10} />}
                     </button>
-                    {msg.role === 'assistant' && (
+                    {msg.role === 'assistant' && hasTTS && (
                       <button
                         onClick={() => apollo.speak(msg.content)}
                         className="p-0.5 rounded text-text-muted/30 hover:text-text-muted transition-colors"
@@ -468,39 +529,43 @@ export function Chat() {
 
             {controlsOpen && (
               <div className="absolute bottom-full left-0 mb-2 w-52 bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 p-2 space-y-1 animate-fade-in z-30">
-                {/* Auto-Play */}
-                <button
-                  onClick={() => useApolloStore.getState().setTTSAutoPlay(!apollo.ttsAutoPlay)}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors text-left ${
-                    apollo.ttsAutoPlay
-                      ? 'text-shell-400 bg-shell-500/10'
-                      : 'text-text-muted hover:text-text-secondary hover:bg-surface-2'
-                  }`}
-                >
-                  <Volume2 size={15} className="flex-shrink-0" />
-                  <div>
-                    <div className="text-xs font-medium">Auto-Play</div>
-                    <div className="text-[9px] text-text-muted/60">Speak responses aloud</div>
-                  </div>
-                  <div className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${apollo.ttsAutoPlay ? 'bg-shell-400' : 'bg-surface-3'}`} />
-                </button>
+                {/* Auto-Play — only when TTS agent connected */}
+                {hasTTS && (
+                  <button
+                    onClick={() => useApolloStore.getState().setTTSAutoPlay(!apollo.ttsAutoPlay)}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors text-left ${
+                      apollo.ttsAutoPlay
+                        ? 'text-shell-400 bg-shell-500/10'
+                        : 'text-text-muted hover:text-text-secondary hover:bg-surface-2'
+                    }`}
+                  >
+                    <Volume2 size={15} className="flex-shrink-0" />
+                    <div>
+                      <div className="text-xs font-medium">Auto-Play</div>
+                      <div className="text-[9px] text-text-muted/60">Speak responses aloud</div>
+                    </div>
+                    <div className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${apollo.ttsAutoPlay ? 'bg-shell-400' : 'bg-surface-3'}`} />
+                  </button>
+                )}
 
-                {/* Talk Mode */}
-                <button
-                  onClick={() => useApolloStore.getState().setTTSTalkMode(!apollo.isTalkMode)}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors text-left ${
-                    apollo.isTalkMode
-                      ? 'text-shell-400 bg-shell-500/10'
-                      : 'text-text-muted hover:text-text-secondary hover:bg-surface-2'
-                  }`}
-                >
-                  <Mic size={15} className="flex-shrink-0" />
-                  <div>
-                    <div className="text-xs font-medium">Talk Mode</div>
-                    <div className="text-[9px] text-text-muted/60">Hands-free voice loop</div>
-                  </div>
-                  <div className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${apollo.isTalkMode ? 'bg-shell-400' : 'bg-surface-3'}`} />
-                </button>
+                {/* Talk Mode — only when TTS agent connected */}
+                {hasTTS && (
+                  <button
+                    onClick={() => useApolloStore.getState().setTTSTalkMode(!apollo.isTalkMode)}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors text-left ${
+                      apollo.isTalkMode
+                        ? 'text-shell-400 bg-shell-500/10'
+                        : 'text-text-muted hover:text-text-secondary hover:bg-surface-2'
+                    }`}
+                  >
+                    <Mic size={15} className="flex-shrink-0" />
+                    <div>
+                      <div className="text-xs font-medium">Talk Mode</div>
+                      <div className="text-[9px] text-text-muted/60">Hands-free voice loop</div>
+                    </div>
+                    <div className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${apollo.isTalkMode ? 'bg-shell-400' : 'bg-surface-3'}`} />
+                  </button>
+                )}
 
                 {/* Memory */}
                 <button
@@ -539,10 +604,20 @@ export function Chat() {
                   <div className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${saveConversation ? 'bg-shell-400' : 'bg-surface-3'}`} />
                 </button>
 
-                {/* Clear Chat */}
+                {/* New Thread / Clear Chat */}
                 {messages.length > 0 && (
                   <>
                     <div className="border-t border-border-muted/30 my-1" />
+                    <button
+                      onClick={() => { newThread(); setControlsOpen(false); }}
+                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors text-left text-text-muted hover:text-text-primary hover:bg-surface-2"
+                    >
+                      <Send size={15} className="flex-shrink-0" />
+                      <div>
+                        <div className="text-xs font-medium">New Thread</div>
+                        <div className="text-[9px] text-text-muted/60">Start a fresh conversation</div>
+                      </div>
+                    </button>
                     <button
                       onClick={() => { clearMessages(); setControlsOpen(false); }}
                       className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors text-left text-red-400/70 hover:text-red-400 hover:bg-red-500/10"
@@ -550,7 +625,7 @@ export function Chat() {
                       <Trash2 size={15} className="flex-shrink-0" />
                       <div>
                         <div className="text-xs font-medium">Clear Chat</div>
-                        <div className="text-[9px] text-text-muted/60">Delete all messages</div>
+                        <div className="text-[9px] text-text-muted/60">Delete this agent's messages</div>
                       </div>
                     </button>
                   </>
@@ -559,18 +634,24 @@ export function Chat() {
             )}
           </div>
 
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Message Athena..."
-            rows={1}
-            className="flex-1 resize-none bg-surface-2 border border-border rounded-xl px-4 py-2.5 text-base sm:text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-500/50 focus:ring-1 focus:ring-shell-500/20 transition-colors h-[44px] max-h-[200px] scrollbar-none"
-          />
+          {isActiveAgentHidden ? (
+            <div className="flex-1 bg-surface-2 border border-border-muted rounded-xl px-4 py-2.5 text-sm text-text-muted/60 italic">
+              This conversation is read-only — {chatAgentName} is not currently active. Enable in Agent Setup to continue.
+            </div>
+          ) : (
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={`Message ${chatAgentName}...`}
+              rows={1}
+              className="flex-1 resize-none bg-surface-2 border border-border rounded-xl px-4 py-2.5 text-base sm:text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-500/50 focus:ring-1 focus:ring-shell-500/20 transition-colors h-[44px] max-h-[200px] scrollbar-none"
+            />
+          )}
 
           {/* Send button — tap to send, hold to record */}
-          <button
+          {!isActiveAgentHidden && <button
             onPointerDown={handleSendPointerDown}
             onPointerUp={handleSendPointerUp}
             onPointerCancel={endHold}
@@ -579,7 +660,7 @@ export function Chat() {
             className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center transition-all select-none touch-none ${sendButtonClass}`}
           >
             {sendButtonIcon}
-          </button>
+          </button>}
         </div>
       </div>
     </div>

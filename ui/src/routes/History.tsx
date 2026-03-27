@@ -117,7 +117,8 @@ export function History() {
   const [conversations, setConversations] = useState<SavedConversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const { saveConversation, setSaveConversation, memoryEnabled, resumeConversation, startFromSeed } = useChatStore();
+  const { saveConversation, setSaveConversation, memoryEnabled, resumeConversation, startFromSeed, clearAllHistory } = useChatStore();
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const fetchConversations = useCallback(async () => {
     setLoading(true);
@@ -209,21 +210,56 @@ export function History() {
               <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
                 <MessageSquare size={14} /> Conversations
               </h2>
-              <button
-                onClick={() => setSaveConversation(!saveConversation)}
-                disabled={!memoryEnabled}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                  !memoryEnabled
-                    ? 'opacity-40 cursor-not-allowed text-text-muted'
-                    : saveConversation
-                      ? 'text-shell-400 bg-shell-500/10'
-                      : 'text-text-muted hover:text-text-secondary hover:bg-surface-2'
-                }`}
-              >
-                <Bookmark size={12} />
-                Auto-Save
-                <div className={`w-1.5 h-1.5 rounded-full ${saveConversation && memoryEnabled ? 'bg-shell-400' : 'bg-surface-3'}`} />
-              </button>
+              <div className="flex items-center gap-2">
+                {showClearConfirm ? (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={async () => {
+                        clearAllHistory();
+                        // Also delete all server-side saved conversations
+                        const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
+                        for (const conv of conversations) {
+                          try { await fetch(`${mnUrl}/api/conversation/saved/${conv.id}`, { method: 'DELETE' }); } catch {}
+                        }
+                        setConversations([]);
+                        setShowClearConfirm(false);
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      onClick={() => setShowClearConfirm(false)}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium text-text-muted hover:bg-surface-2 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowClearConfirm(true)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  >
+                    <Trash2 size={12} />
+                    Clear All
+                  </button>
+                )}
+                <button
+                  onClick={() => setSaveConversation(!saveConversation)}
+                  disabled={!memoryEnabled}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                    !memoryEnabled
+                      ? 'opacity-40 cursor-not-allowed text-text-muted'
+                      : saveConversation
+                        ? 'text-shell-400 bg-shell-500/10'
+                        : 'text-text-muted hover:text-text-secondary hover:bg-surface-2'
+                  }`}
+                >
+                  <Bookmark size={12} />
+                  Auto-Save
+                  <div className={`w-1.5 h-1.5 rounded-full ${saveConversation && memoryEnabled ? 'bg-shell-400' : 'bg-surface-3'}`} />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2">
