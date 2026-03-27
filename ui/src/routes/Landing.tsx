@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { DOWNLOAD, isMac } from '../lib/download';
 
 type Surface = 'web' | 'iphone' | 'android' | 'desktop' | 'salesforce' | 'cli';
 
@@ -480,6 +481,8 @@ function SupportSection() {
 export function Landing() {
   const [surface, setSurface] = useState<Surface>('web');
   const Mockup = surfaceMockups[surface];
+  const [mac, setMac] = useState(false);
+  useEffect(() => setMac(isMac()), []);
 
   return (
     <>
@@ -700,12 +703,24 @@ export function Landing() {
             <p className="text-base text-text-secondary mb-8">
               TurtleShell.ai is free to get started. Connect your first service in under a minute.
             </p>
-            <Link
-              to="/app/chat"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-shell-500 text-white hover:bg-shell-600 transition-all hover:-translate-y-px hover:shadow-lg hover:shadow-shell-500/30"
-            >
-              Launch TurtleShell.ai →
-            </Link>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link
+                to="/app/chat"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-shell-500 text-white hover:bg-shell-600 transition-all hover:-translate-y-px hover:shadow-lg hover:shadow-shell-500/30"
+              >
+                Launch TurtleShell.ai →
+              </Link>
+              {mac && (
+                <a
+                  href={DOWNLOAD.url}
+                  download={DOWNLOAD.filename}
+                  className="inline-flex flex-col items-center gap-0.5 px-5 py-2.5 rounded-lg text-sm font-semibold border border-border text-text-secondary hover:bg-surface-2 hover:text-text-primary transition-all"
+                >
+                  <span>⬇ Download for Mac — Free</span>
+                  <span className="text-2xs font-normal text-text-muted">{DOWNLOAD.version} · {DOWNLOAD.requirements}</span>
+                </a>
+              )}
+            </div>
           </div>
         </div>
       </section>

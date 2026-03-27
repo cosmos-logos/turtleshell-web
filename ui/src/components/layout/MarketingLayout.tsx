@@ -49,6 +49,7 @@ export function MarketingLayout() {
             <a href="/#features" className={navLinkClass}>Features</a>
             <a href="/#services" className={navLinkClass}>Services</a>
             <a href="/#pricing" className={navLinkClass}>Pricing</a>
+            <Link to="/offgrid" onClick={scrollToTop} className={navLinkClass}>Off-Grid</Link>
             <a href="/#support" className={navLinkClass}>Support</a>
             <Link to="/terms" onClick={scrollToTop} className={navLinkClass}>Terms</Link>
             <Link to="/privacy" onClick={scrollToTop} className={navLinkClass}>Privacy</Link>
@@ -101,6 +102,7 @@ export function MarketingLayout() {
               <a href="/#features" onClick={closeMenu} className={mobileLinkClass}>Features</a>
               <a href="/#services" onClick={closeMenu} className={mobileLinkClass}>Services</a>
               <a href="/#pricing" onClick={closeMenu} className={mobileLinkClass}>Pricing</a>
+              <Link to="/offgrid" onClick={() => { scrollToTop(); closeMenu(); }} className={mobileLinkClass}>Off-Grid</Link>
               <a href="/#support" onClick={closeMenu} className={mobileLinkClass}>Support</a>
               <Link to="/terms" onClick={() => { scrollToTop(); closeMenu(); }} className={mobileLinkClass}>Terms</Link>
               <Link to="/privacy" onClick={() => { scrollToTop(); closeMenu(); }} className={mobileLinkClass}>Privacy</Link>
@@ -125,6 +127,7 @@ export function MarketingLayout() {
             <a href="/#features" className={footerLinkClass}>Features</a>
             <a href="/#services" className={footerLinkClass}>Services</a>
             <a href="/#pricing" className={footerLinkClass}>Pricing</a>
+            <Link to="/offgrid" onClick={scrollToTop} className={footerLinkClass}>Off-Grid</Link>
             <a href="/#support" className={footerLinkClass}>Support</a>
             <Link to="/terms" onClick={scrollToTop} className={footerLinkClass}>Terms</Link>
             <Link to="/privacy" onClick={scrollToTop} className={footerLinkClass}>Privacy</Link>

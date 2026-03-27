@@ -27,7 +27,16 @@ export function useAgentStatus() {
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   const checkStatus = useCallback(async () => {
-    const baseUrl = useEnvironmentStore.getState().getBaseUrl();
+    const { getBaseUrl, developerMode } = useEnvironmentStore.getState();
+    const baseUrl = getBaseUrl();
+
+    // Only poll when developer mode is on
+    if (!developerMode) {
+      setConnectionState('offline');
+      setAgentStatus(null);
+      return;
+    }
+
     if (!baseUrl) {
       setConnectionState('offline');
       setAgentStatus(null);
@@ -51,11 +60,22 @@ export function useAgentStatus() {
     setLastChecked(Date.now());
   }, []);
 
+  // Re-subscribe when developerMode changes
+  const developerMode = useEnvironmentStore((s) => s.developerMode);
+
   useEffect(() => {
+    if (!developerMode) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = undefined;
+      setConnectionState('offline');
+      setAgentStatus(null);
+      return;
+    }
+
     checkStatus();
     timerRef.current = setInterval(checkStatus, POLL_INTERVAL);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [checkStatus]);
+  }, [checkStatus, developerMode]);
 
   return { connectionState, agentStatus, lastChecked, refresh: checkStatus };
 }

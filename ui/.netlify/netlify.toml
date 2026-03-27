@@ -7,10 +7,10 @@ plugins = []
 [functions."*"]
 
 [build]
-publish = "D:\\dev\\repos\\olympus-616\\turtleshell-web\\ui\\dist"
+publish = "/Users/gregory/dev/repos/olympus-616/turtleshell-web/ui/dist"
 publishOrigin = "config"
 commandOrigin = "config"
-base = "D:\\dev\\repos\\olympus-616\\turtleshell-web\\ui"
+base = "/Users/gregory/dev/repos/olympus-616/turtleshell-web/ui"
 command = "npm run build"
 
 [build.environment]
@@ -49,17 +49,39 @@ for = "/assets/*"
 [headers.values]
 Cache-Control = "public, max-age=31536000, immutable"
 
-[[redirects]]
-from = "/download"
-to = "https://apps.apple.com/app/turtleshell-ai/id0000000000"
-status = 302.0
-force = true
+[[headers]]
+for = "/install/*"
 
-[redirects.query]
+[headers.values]
+Cache-Control = "no-cache, no-store, must-revalidate"
+Access-Control-Allow-Origin = "*"
 
-[redirects.conditions]
+[[headers]]
+for = "/install/health"
 
-[redirects.headers]
+[headers.values]
+Content-Type = "text/plain"
+
+[[headers]]
+for = "/install/docker-compose.yml"
+
+[headers.values]
+Content-Type = "text/yaml; charset=utf-8"
+
+[[headers]]
+for = "/install/.env.example"
+
+[headers.values]
+Content-Type = "text/plain; charset=utf-8"
+
+[[headers]]
+for = "/download/*.pkg"
+
+[headers.values]
+Content-Type = "application/octet-stream"
+Content-Disposition = "attachment"
+Cache-Control = "public, max-age=3600"
+X-Content-Type-Options = "nosniff"
 
 [[redirects]]
 from = "/*"

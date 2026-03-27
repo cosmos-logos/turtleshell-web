@@ -17,6 +17,7 @@ import { ServiceDesk } from './routes/ServiceDesk';
 import { History } from './routes/History';
 import { Memory } from './routes/Memory';
 import { Shells } from './routes/Shells';
+import { OffGrid } from './routes/OffGrid';
 
 export function App() {
   useStartupRefresh();
@@ -26,6 +27,7 @@ export function App() {
       {/* Public pages with marketing layout */}
       <Route element={<MarketingLayout />}>
         <Route path="/" element={<Landing />} />
+        <Route path="/offgrid" element={<OffGrid />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/security" element={<Security />} />

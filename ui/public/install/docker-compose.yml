@@ -1,5 +1,5 @@
 # TurtleShell.ai Off-Grid Fleet Manifest
-# Version: 1.7.0
+# Version: 1.7.1
 # CloudPremise LLC — brain/1.7.x.x
 # Pulled by postinstall.sh at install time
 # Hosted at: install.turtleshell.ai/docker-compose.yml
@@ -19,8 +19,6 @@ volumes:
 services:
 
   # ── ARES — API Gateway ─────────────────────────────────────
-  # Single external entry point. All traffic hits port 3451.
-  # ngrok and Tailscale connect here.
   ares:
     image: ghcr.io/olympus-616/ares:1.7.0
     container_name: ares
@@ -30,21 +28,36 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-local}
       - PORT=3451
-      - ATHENA_URL=http://athena:3401
-      - HERMES_URL=http://hermes:3411
-      - MNEMOSYNE_URL=http://mnemosyne:3711
-      - PROTEUS_URL=http://proteus:3461
-      - PLUTUS_URL=http://plutus:3701
-      - ZEUS_URL=http://zeus:3481
-      - JWT_SECRET=${JWT_SECRET}
-      - COOKIE_SECRET=${COOKIE_SECRET}
+      - HERMES_API=http://hermes:3411
+      - ATHENA_API=http://athena:3401
+      - POSEIDON_API=http://poseidon:3431
     networks:
       - olympus-internal
-    depends_on:
-      athena:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3451/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3451/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── HERMES — Message Transport ─────────────────────────────
+  hermes:
+    image: ghcr.io/olympus-616/hermes:1.7.0
+    container_name: hermes
+    restart: unless-stopped
+    ports:
+      - "3411:3411"
+    environment:
+      - NODE_ENV=${NODE_ENV:-local}
+      - PORT=3411
+      - ATHENA_LOCAL_URL=http://athena:3401
+      - OLYMPUS_GRID_MASTER_URL=http://athena:3401
+      - OLYMPUS_DIR=/olympus-config
+    volumes:
+      - ./olympus-config:/olympus-config:ro
+    networks:
+      - olympus-internal
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3411/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -65,6 +78,7 @@ services:
       - GROK_API_KEY=${GROK_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - MCP_SERVER_URL=http://poseidon:3431/v1/poseidon/mcp/poc/mcp
       - MNEMOSYNE_URL=http://mnemosyne:3711
       - POSEIDON_URL=http://poseidon:3431
@@ -73,25 +87,7 @@ services:
     networks:
       - olympus-internal
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3401/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # ── HERMES — CORS Proxy ────────────────────────────────────
-  hermes:
-    image: ghcr.io/olympus-616/hermes:1.7.0
-    container_name: hermes
-    restart: unless-stopped
-    ports:
-      - "3411:3411"
-    environment:
-      - NODE_ENV=${NODE_ENV:-local}
-      - PORT=3411
-    networks:
-      - olympus-internal
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3411/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3401/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -113,7 +109,7 @@ services:
     networks:
       - olympus-internal
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3711/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3711/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -137,7 +133,7 @@ services:
     networks:
       - olympus-internal
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3461/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3461/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -156,7 +152,7 @@ services:
     networks:
       - olympus-internal
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3431/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3431/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -177,7 +173,7 @@ services:
     networks:
       - olympus-internal
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3701/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3701/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -200,28 +196,61 @@ services:
     networks:
       - olympus-internal
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3481/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3481/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # ── TURTLESHELL-WEB — Dashboard ────────────────────────────
-  turtleshell-web:
-    image: ghcr.io/olympus-616/turtleshell-web:1.7.0
-    container_name: turtleshell-web
+  # ── PROMETHEUS — Agentic Job Platform ───────────────────────
+  # Dispatches coding jobs to Claude Code CLI agent
+  # Requires ANTHROPIC_API_KEY in .env for Claude Code to function
+  prometheus:
+    image: ghcr.io/olympus-616/prometheus:1.7.0
+    container_name: prometheus
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3741:3741"
     environment:
       - NODE_ENV=${NODE_ENV:-local}
-      - VITE_API_URL=http://localhost:3451
+      - PORT=3741
+      - PROMETHEUS_VERSION=1.7
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ARES_API=http://ares:3451
+      - ARGOS_API=http://argos:3521
+      - ATHENA_API=http://athena:3401
+      - MNEMOSYNE_API=http://mnemosyne:3711
+      - PROTEUS_API=http://proteus:3461
+    volumes:
+      - turtleshell-data:/workspace
     networks:
       - olympus-internal
-    depends_on:
-      ares:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3741/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── TURTLESHELL OFF-GRID — Node Dashboard ───────────────────
+  # Accessible at localhost:717/nodestatus
+  # Shows health of all fleet services
+  turtleshell-offgrid:
+    image: ghcr.io/olympus-616/turtleshell-offgrid:1.7.0
+    container_name: turtleshell-offgrid
+    restart: unless-stopped
+    ports:
+      - "717:717"
+      - "718:718"
+    environment:
+      - PORT=717
+      - HTTPS_ENABLED=${HTTPS_ENABLED:-false}
+      - NODE_PRIMARY_IP=${NODE_PRIMARY_IP:-localhost}
+    volumes:
+      - ${HOME:-.}/.turtleshell:/root/.turtleshell:ro
+      - ${HOME:-.}/turtleshell:/fleet:ro
+    networks:
+      - olympus-internal
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:717/health"]
       interval: 30s
       timeout: 10s
       retries: 3

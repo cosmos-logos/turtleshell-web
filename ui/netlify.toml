@@ -3,12 +3,6 @@
   publish = "dist"
 
 [[redirects]]
-  from = "/download"
-  to = "https://apps.apple.com/app/turtleshell-ai/id0000000000"
-  status = 302
-  force = true
-
-[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
@@ -61,3 +55,15 @@
   for = "/install/.env.example"
   [headers.values]
     Content-Type = "text/plain; charset=utf-8"
+
+# ─────────────────────────────────────────────────────────
+# Download — signed installer package
+# ─────────────────────────────────────────────────────────
+
+[[headers]]
+  for = "/download/*.pkg"
+  [headers.values]
+    Content-Type = "application/octet-stream"
+    Content-Disposition = "attachment"
+    Cache-Control = "public, max-age=3600"
+    X-Content-Type-Options = "nosniff"
