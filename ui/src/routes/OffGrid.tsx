@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { DOWNLOAD } from '@/lib/download';
 
 /* ── Scroll fade-in ─────────────────────────────────── */
 
@@ -105,16 +106,16 @@ export function OffGrid() {
           {isMac ? (
             <div className="mb-10">
               <a
-                href="/download/TurtleShell-1.7.0.pkg"
+                href={DOWNLOAD.url}
                 className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-base font-semibold bg-shell-500 text-white hover:bg-shell-600 transition-all hover:-translate-y-px hover:shadow-lg hover:shadow-shell-500/30"
               >
                 &#11015; Download for Mac
               </a>
               <p className="text-xs text-text-muted mt-3">
-                Version 1.7.0 &middot; macOS 13+ &middot; Apple Silicon &amp; Intel
+                Version {DOWNLOAD.version} &middot; {DOWNLOAD.requirements}
               </p>
               <p className="text-xs text-text-muted">
-                Free to install &middot; Bring your own API keys
+                {DOWNLOAD.tagline}
               </p>
             </div>
           ) : (
