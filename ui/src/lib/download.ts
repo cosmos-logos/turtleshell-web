@@ -1,11 +1,12 @@
 export const DOWNLOAD = {
-  version: '1.7.0',
-  url: '/download/TurtleShell-1.7.0.pkg',
-  filename: 'TurtleShell-1.7.0.pkg',
+  version: '1.7.1',
+  url: 'https://github.com/cosmos-logos/turtleshell-offgrid/releases/latest/download/TurtleShell-1.7.1.pkg',
+  filename: 'TurtleShell-1.7.1.pkg',
   platform: 'macOS',
   requirements: 'macOS 13+ · Apple Silicon & Intel',
   tagline: 'Free to install · Bring your own API keys',
-  checksumUrl: '/download/TurtleShell-1.7.0.pkg.sha256',
+  checksumUrl: 'https://github.com/cosmos-logos/turtleshell-offgrid/releases/latest/download/TurtleShell-1.7.1.pkg.sha256',
+  releasesUrl: 'https://github.com/cosmos-logos/turtleshell-offgrid/releases',
 } as const
 
 export function isMac(): boolean {
