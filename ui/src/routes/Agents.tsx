@@ -299,6 +299,15 @@ function ModeRow({ config, mode, cosmosAgents, connecting, onConnect, onDisconne
              securityResult === 'fail' ? <XCircle size={9} /> : <Shield size={9} />}
             {securityResult === 'pass' ? 'Secure' : securityResult === 'fail' ? 'Failed' : 'Test'}
           </button>
+          {mode === 'offgrid' && connectedAgent && (() => {
+            const base = connectedAgent.url.replace(/\/v1\/.*$/, '');
+            return (
+              <a href={`${base}/nodestatus`} target="_blank" rel="noopener"
+                className="flex items-center gap-1 px-2 py-0.5 text-2xs rounded-md bg-surface-2 hover:bg-surface-3 text-text-muted hover:text-text-secondary transition-colors">
+                <ExternalLink size={9} /> Node Status
+              </a>
+            );
+          })()}
           <button onClick={onDisconnect} className="text-2xs text-red-400/60 hover:text-red-400 ml-auto transition-colors">
             Disconnect
           </button>
