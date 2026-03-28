@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, Plus, Sparkles, Eye, EyeOff, Pencil, Download, Trash2, ChevronDown, Shield, Loader2, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
 import { useAgentStore, AGENT_CATALOG, getUserApiKeys, setUserApiKey, type UserApiKeys } from '@/lib/store/agent-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
@@ -852,6 +853,66 @@ function useAgentList() {
   return entries;
 }
 
+function AutoConnect() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const connectUrl = searchParams.get('connect');
+  const [status, setStatus] = useState<'idle' | 'connecting' | 'success' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const attempted = useRef(false);
+  const cosmosStore = useCosmosLogosStore();
+
+  useEffect(() => {
+    if (!connectUrl || attempted.current) return;
+    attempted.current = true;
+    setStatus('connecting');
+    setMessage(`Connecting to ${connectUrl}...`);
+
+    (async () => {
+      try {
+        const { manifest, agentUrl } = await performHandshake(connectUrl);
+        const name = manifest.identity.name || manifest.identity.codename;
+        cosmosStore.addAgent(agentUrl, manifest, name);
+        useAgentStore.getState().reloadHidden();
+        setStatus('success');
+        setMessage(`${name} connected and verified`);
+        // Clear the connect param from URL
+        searchParams.delete('connect');
+        setSearchParams(searchParams, { replace: true });
+      } catch (e: any) {
+        setStatus('error');
+        setMessage(e.message || 'Connection failed');
+      }
+    })();
+  }, [connectUrl]);
+
+  if (!connectUrl && status === 'idle') return null;
+
+  return (
+    <div className={`rounded-xl p-4 flex items-center gap-3 animate-fade-in ${
+      status === 'connecting' ? 'bg-shell-500/5 border border-shell-500/20' :
+      status === 'success' ? 'bg-green-500/5 border border-green-500/20' :
+      status === 'error' ? 'bg-red-500/5 border border-red-500/20' :
+      'bg-surface-1 border border-border-muted'
+    }`}>
+      {status === 'connecting' && <Loader2 size={18} className="animate-spin text-shell-400" />}
+      {status === 'success' && <CheckCircle size={18} className="text-green-400" />}
+      {status === 'error' && <XCircle size={18} className="text-red-400" />}
+      <div className="flex-1 min-w-0">
+        <div className={`text-sm font-medium ${
+          status === 'success' ? 'text-green-400' : status === 'error' ? 'text-red-400' : 'text-text-primary'
+        }`}>
+          {status === 'connecting' ? 'Connecting...' : status === 'success' ? 'Connected' : status === 'error' ? 'Connection Failed' : ''}
+        </div>
+        <div className="text-2xs text-text-muted truncate">{message}</div>
+      </div>
+      {status === 'error' && (
+        <button onClick={() => { attempted.current = false; setStatus('idle'); }}
+          className="text-2xs text-shell-400 hover:text-shell-300">Retry</button>
+      )}
+    </div>
+  );
+}
+
 export function Agents() {
   const agents = useAgentList();
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -883,6 +944,9 @@ export function Agents() {
             </button>
           </div>
         </div>
+
+        {/* Auto-connect from QR code / deep link */}
+        <AutoConnect />
 
         {showCreate && <CreateAgentModal open={showCreate} onClose={() => setShowCreate(false)} />}
 
