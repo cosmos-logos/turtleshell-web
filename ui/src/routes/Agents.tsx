@@ -203,12 +203,36 @@ async function runSecurityTest(agent: ConnectedAgent): Promise<boolean> {
   const logDetail = (label: string, value: any) => console.log(`  %c${label}:`, 'color: #6366f1', value);
   const name = agent.displayName || agent.manifest.identity.name;
 
-  log(`Step 1/5 — Testing ${name}`, `at ${agent.url}`);
-  logDetail('Codename', agent.manifest.identity.codename);
-  logDetail('Algorithm', agent.manifest.cryptography.algorithm);
-  logDetail('Public key', agent.manifest.cryptography.public_key.substring(0, 40) + '...');
+  // Step 1: Re-fetch manifest to get current public key (may have been rotated)
+  log(`Step 1/6 — Re-fetching manifest from ${agent.url}`);
+  let manifest = agent.manifest;
+  try {
+    const { fetchManifest } = await import('@/lib/cosmos-logos/client');
+    const result = await fetchManifest(agent.url);
+    manifest = result.manifest;
+    const oldKey = agent.manifest.cryptography.public_key.substring(0, 40);
+    const newKey = manifest.cryptography.public_key.substring(0, 40);
+    if (oldKey !== newKey) {
+      log('Key rotated — updating stored manifest');
+      logDetail('Old key', oldKey + '...');
+      logDetail('New key', newKey + '...');
+      // Update the stored agent's manifest in the cosmos store
+      const cosmosStore = (await import('@/lib/cosmos-logos/store')).useCosmosLogosStore.getState();
+      const agents = cosmosStore.agents.map(a =>
+        a.id === agent.id ? { ...a, manifest } : a
+      );
+      (await import('@/lib/cosmos-logos/store')).useCosmosLogosStore.setState({ agents });
+    } else {
+      logDetail('Public key', 'unchanged');
+    }
+  } catch (e) {
+    log('Warning: could not re-fetch manifest, using cached key');
+  }
+  logDetail('Codename', manifest.identity.codename);
+  logDetail('Algorithm', manifest.cryptography.algorithm);
+  logDetail('Public key', manifest.cryptography.public_key.substring(0, 40) + '...');
 
-  log('Step 2/5 — Generating test challenge');
+  log('Step 2/6 — Generating test challenge');
   const challenge = `cosmos-logos-test:${Date.now()}:${crypto.randomUUID()}`;
   const encoder = new TextEncoder();
   const hashBuf = await crypto.subtle.digest('SHA-256', encoder.encode(challenge));
@@ -216,25 +240,26 @@ async function runSecurityTest(agent: ConnectedAgent): Promise<boolean> {
   logDetail('Challenge', challenge.substring(0, 50) + '...');
   logDetail('Expected SHA-256', localHash);
 
-  log('Step 3/5 — Sealing challenge + loading keypair');
+  log('Step 3/6 — Sealing challenge + loading keypair');
   const keypair = await loadOrGenerateKeypair();
-  const sealed = await sealToken(challenge, agent.manifest.cryptography.public_key);
+  const sealed = await sealToken(challenge, manifest.cryptography.public_key);
   logDetail('Sealed envelope length', sealed.length);
 
-  log('Step 4/5 — Signing request body');
+  log('Step 4/6 — Signing request body');
   const body = JSON.stringify({ envelope: sealed });
   const { signature, timestamp } = await signRequest(body, keypair.privateKey);
   logDetail('Timestamp', timestamp);
   logDetail('Signature (prefix)', signature.substring(0, 40) + '...');
 
-  log('Step 5/5 — Sending verify-envelope');
+  log('Step 5/6 — Sending verify-envelope');
   logDetail('Endpoint', `${agent.url}/api/cosmos/verify-envelope`);
   const resp = await fetch(`${agent.url}/api/cosmos/verify-envelope`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', [agent.manifest.cryptography.signing_header]: signature, [agent.manifest.cryptography.timestamp_header]: timestamp },
+    headers: { 'Content-Type': 'application/json', [manifest.cryptography.signing_header]: signature, [manifest.cryptography.timestamp_header]: timestamp },
     body, signal: AbortSignal.timeout(10000),
   });
   const result = await resp.json();
+  log('Step 6/6 — Verifying proof');
   logDetail('Response status', resp.status);
   logDetail('Server proof_hash', result.proof_hash || '(missing)');
   logDetail('Local hash match', result.proof_hash === localHash ? 'YES' : 'NO');
