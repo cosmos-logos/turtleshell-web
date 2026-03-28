@@ -9,6 +9,10 @@ on:
     types: [installer-updated]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
