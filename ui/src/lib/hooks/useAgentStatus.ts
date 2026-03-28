@@ -1,81 +1,79 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
+import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 
-const POLL_INTERVAL = 15_000; // 15s
+const POLL_INTERVAL = 30_000; // 30s
 
-export interface AgentStatus {
-  service: string;
-  title: string;
-  domain: string;
-  version: string;
-  status: string;
-  uptime: string;
-  bootTime: string;
-  environment: string;
-  port: number;
-  pantheon: string;
-  layer: string;
-  [key: string]: unknown;
+export interface AgentHealth {
+  id: string;
+  name: string;
+  url: string;
+  status: 'online' | 'offline' | 'checking';
+  latency?: number;
+  details?: Record<string, unknown>;
 }
 
-export type ConnectionState = 'checking' | 'online' | 'offline';
+export type ConnectionState = 'checking' | 'online' | 'partial' | 'offline';
 
 export function useAgentStatus() {
   const [connectionState, setConnectionState] = useState<ConnectionState>('checking');
-  const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
+  const [agentHealths, setAgentHealths] = useState<AgentHealth[]>([]);
   const [lastChecked, setLastChecked] = useState<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
-  const checkStatus = useCallback(async () => {
-    const { getBaseUrl, developerMode } = useEnvironmentStore.getState();
-    const baseUrl = getBaseUrl();
-
-    // Only poll when developer mode is on
-    if (!developerMode) {
-      setConnectionState('offline');
-      setAgentStatus(null);
-      return;
-    }
-
-    if (!baseUrl) {
-      setConnectionState('offline');
-      setAgentStatus(null);
-      return;
-    }
-
-    try {
-      const res = await fetch(`${baseUrl}/status`, {
-        method: 'GET',
-        headers: { 'x-developer-key': 'ts-web-int-2026' },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data = await res.json();
-      setAgentStatus(data);
-      setConnectionState('online');
-    } catch {
-      setConnectionState('offline');
-      setAgentStatus(null);
-    }
-    setLastChecked(Date.now());
-  }, []);
-
-  // Re-subscribe when developerMode changes
   const developerMode = useEnvironmentStore((s) => s.developerMode);
+  const cosmosAgents = useCosmosLogosStore((s) => s.agents);
+
+  const checkStatus = useCallback(async () => {
+    if (!developerMode || cosmosAgents.length === 0) {
+      setConnectionState('offline');
+      setAgentHealths([]);
+      return;
+    }
+
+    const results = await Promise.all(
+      cosmosAgents.map(async (agent): Promise<AgentHealth> => {
+        const name = agent.displayName || agent.manifest.identity.name;
+        const healthPath = agent.manifest.network?.health || '/health';
+        const healthUrl = `${agent.url}${healthPath}`;
+        const start = performance.now();
+        try {
+          const resp = await fetch(healthUrl, {
+            method: 'GET',
+            signal: AbortSignal.timeout(8000),
+          });
+          const latency = Math.round(performance.now() - start);
+          if (!resp.ok) return { id: agent.id, name, url: agent.url, status: 'offline' };
+          let details: Record<string, unknown> | undefined;
+          try { details = await resp.json(); } catch {}
+          return { id: agent.id, name, url: agent.url, status: 'online', latency, details };
+        } catch {
+          return { id: agent.id, name, url: agent.url, status: 'offline' };
+        }
+      })
+    );
+
+    setAgentHealths(results);
+    const onlineCount = results.filter(r => r.status === 'online').length;
+    if (onlineCount === results.length) setConnectionState('online');
+    else if (onlineCount > 0) setConnectionState('partial');
+    else setConnectionState('offline');
+    setLastChecked(Date.now());
+  }, [developerMode, cosmosAgents]);
 
   useEffect(() => {
-    if (!developerMode) {
+    if (!developerMode || cosmosAgents.length === 0) {
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = undefined;
       setConnectionState('offline');
-      setAgentStatus(null);
+      setAgentHealths([]);
       return;
     }
 
     checkStatus();
     timerRef.current = setInterval(checkStatus, POLL_INTERVAL);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [checkStatus, developerMode]);
+  }, [checkStatus, developerMode, cosmosAgents.length]);
 
-  return { connectionState, agentStatus, lastChecked, refresh: checkStatus };
+  return { connectionState, agentHealths, lastChecked, refresh: checkStatus };
 }

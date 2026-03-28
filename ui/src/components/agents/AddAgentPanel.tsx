@@ -3,6 +3,7 @@ import { Loader2, Plus, AlertCircle, CheckCircle, Search, Settings2, Shield } fr
 import { fetchManifest, pingAgent, applySetup, resolveManifestUrl } from '@/lib/cosmos-logos/client';
 import { sealToken, signRequest, loadOrGenerateKeypair } from '@/lib/cosmos-logos/crypto';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
+import { useAgentStore } from '@/lib/store/agent-store';
 import type { CosmosLogosManifest, CosmosLogosSetupField } from '@/lib/cosmos-logos/types';
 
 export function AddAgentPanel() {
@@ -15,7 +16,8 @@ export function AddAgentPanel() {
   const [connected, setConnected] = useState(false);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [securityStatus, setSecurityStatus] = useState<'idle' | 'validating' | 'passed' | 'failed'>('idle');
-  const { addAgent, agents } = useCosmosLogosStore();
+  const [displayName, setDisplayName] = useState('');
+  const { addAgent } = useCosmosLogosStore();
 
   const setupFields = preview?.setup?.fields ?? [];
   const hasSetup    = setupFields.length > 0;
@@ -43,12 +45,6 @@ export function AddAgentPanel() {
 
     try {
       const { manifest, agentUrl: resolvedUrl } = await fetchManifest(input.trim());
-
-      if (agents.find((a) => a.id === manifest.identity.codename)) {
-        setError(`${manifest.identity.name} is already connected.`);
-        setLoading(false);
-        return;
-      }
 
       // For GitHub-sourced manifests we ping the live endpoint from the manifest.
       // For direct URLs we ping the URL the user entered.
@@ -133,7 +129,8 @@ export function AddAgentPanel() {
       }
 
       // ── Step 3: Register the agent ──
-      addAgent(agentUrl, preview);
+      addAgent(agentUrl, preview, displayName.trim() || undefined);
+      useAgentStore.getState().reloadHidden();
       setConnected(true);
       setTimeout(() => {
         setInput('');
@@ -141,6 +138,7 @@ export function AddAgentPanel() {
         setAgentUrl('');
         setConnected(false);
         setFieldValues({});
+        setDisplayName('');
         setSecurityStatus('idle');
       }, 2000);
     } catch (e) {
@@ -214,6 +212,21 @@ export function AddAgentPanel() {
               <h3 className="text-sm font-semibold">{preview.identity.name}</h3>
               <p className="text-2xs text-text-muted">{preview.identity.purpose}</p>
             </div>
+          </div>
+
+          {/* Display Name (override) */}
+          <div className="space-y-1">
+            <label className="text-2xs text-text-muted uppercase tracking-wider font-semibold">Display Name</label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder={preview.identity.name}
+              className="w-full bg-surface-2 border border-border-muted rounded-lg px-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-500/50"
+            />
+            <p className="text-2xs text-text-muted">
+              Optional — rename to distinguish multiple instances (e.g. "Athena AWS", "Athena Off-Grid")
+            </p>
           </div>
 
           {/* Capabilities */}

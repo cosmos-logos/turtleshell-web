@@ -42,44 +42,115 @@ export const AGENT_CATALOG: Agent[] = [
   {
     id: 'claude',
     name: 'Claude',
-    description: 'Anthropic Claude — direct API',
+    description: 'Anthropic Claude — bring your own key',
     icon: '🤖',
     capabilities: ['chat', 'reasoning'],
-    requiredServices: ['olympus_grid'],
+    requiredServices: [],
+    visible: false,  // hidden until user adds their API key
   },
   {
     id: 'openai',
     name: 'OpenAI',
-    description: 'OpenAI — direct API',
+    description: 'OpenAI — bring your own key',
     icon: '💬',
     capabilities: ['chat', 'reasoning'],
-    requiredServices: ['olympus_grid'],
+    requiredServices: [],
+    visible: false,
   },
   {
     id: 'grok',
     name: 'Grok',
-    description: 'xAI Grok — direct API',
+    description: 'xAI Grok — bring your own key',
     icon: '🔥',
     capabilities: ['chat', 'reasoning'],
-    requiredServices: ['olympus_grid'],
+    requiredServices: [],
+    visible: false,
   },
   {
     id: 'gemini',
     name: 'Gemini',
-    description: 'Google Gemini — direct API',
+    description: 'Google Gemini — bring your own key',
     icon: '✦',
     capabilities: ['chat', 'reasoning'],
-    requiredServices: ['olympus_grid'],
+    requiredServices: [],
+    visible: false,
+  },
+  {
+    id: 'thoth',
+    name: 'Thoth',
+    description: 'Sovereign writing agent — journal, code review, branch management',
+    icon: '📜',
+    capabilities: ['chat', 'journal', 'code_review'],
+    requiredServices: [],
+    visible: false,  // hidden until connected via cosmos-logos
+  },
+  {
+    id: 'homework-buddy',
+    name: 'Homework Buddy',
+    description: 'AI homework tutor for kids 10–17 with assignment tracking',
+    icon: '📚',
+    capabilities: ['chat', 'assignments'],
+    requiredServices: [],
+    visible: false,
+  },
+  {
+    id: 'agora',
+    name: 'Agora',
+    description: 'Group collaboration — projects, chat, and AI powered by Google Sheets',
+    icon: '🏛️',
+    capabilities: ['chat', 'projects'],
+    requiredServices: [],
+    visible: false,
   },
 ];
 
 /**
  * Sync check for whether the user has logged into Olympus Grid.
- * Uses olympus_grid_email as a proxy — the actual auth token is
- * in an httpOnly cookie and cannot be read from JS.
  */
 export function hasOlympusGridToken(): boolean {
   return !!localStorage.getItem('olympus_grid_email');
+}
+
+// ── User API Keys (BYOK — Bring Your Own Key) ──────────────
+const API_KEY_STORAGE = 'turtleshell-user-api-keys';
+
+export interface UserApiKeys {
+  openai?: string;
+  claude?: string;
+  grok?: string;
+  gemini?: string;
+}
+
+export function getUserApiKeys(): UserApiKeys {
+  try {
+    const raw = localStorage.getItem(API_KEY_STORAGE);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+export function setUserApiKey(provider: keyof UserApiKeys, key: string) {
+  const keys = getUserApiKeys();
+  if (key.trim()) {
+    keys[provider] = key.trim();
+  } else {
+    delete keys[provider];
+  }
+  localStorage.setItem(API_KEY_STORAGE, JSON.stringify(keys));
+}
+
+export function hasUserApiKey(provider: string): boolean {
+  const keys = getUserApiKeys();
+  return !!(keys as Record<string, string>)[provider];
+}
+
+/** Check if an agent is available — either via Olympus Grid OR user's own API key */
+export function isAgentAvailable(agent: Agent): boolean {
+  if (agent.requiredServices.length === 0) return true;
+  // Check if user has their own key for this provider
+  if (['openai', 'claude', 'grok', 'gemini'].includes(agent.id) && hasUserApiKey(agent.id)) return true;
+  // Fall back to Olympus Grid auth
+  if (agent.requiredServices.includes('olympus_grid') && hasOlympusGridToken()) return true;
+  return false;
 }
 
 /** Return the correct default agent based on auth state. */
@@ -112,6 +183,8 @@ interface AgentStore {
   removeAgent: (id: string) => void;
   toggleVisibility: (id: string) => void;
   isVisible: (id: string) => boolean;
+  /** Reload hiddenAgentIds from localStorage (call after external mutations). */
+  reloadHidden: () => void;
   refreshAuth: () => void;
 }
 
@@ -136,7 +209,14 @@ function saveCustomAgents(agents: Agent[]) {
 function loadHiddenAgents(): Set<string> {
   try {
     const raw = localStorage.getItem('turtleshell-hidden-agents');
-    return raw ? new Set(JSON.parse(raw)) : new Set();
+    const stored: Set<string> = raw ? new Set(JSON.parse(raw)) : new Set();
+    // Ensure agents with visible: false in catalog are hidden by default
+    for (const agent of AGENT_CATALOG) {
+      if (agent.visible === false && !stored.has(agent.id)) {
+        stored.add(agent.id);
+      }
+    }
+    return stored;
   } catch { return new Set(); }
 }
 
@@ -182,6 +262,10 @@ export const useAgentStore = create<AgentStore>()(
     },
 
     isVisible: (id) => !get().hiddenAgentIds.has(id),
+
+    reloadHidden: () => {
+      set({ hiddenAgentIds: loadHiddenAgents() });
+    },
 
     refreshAuth: () => {},
   }),

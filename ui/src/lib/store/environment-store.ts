@@ -71,11 +71,15 @@ interface EnvironmentStore {
   getGatewayUrl: () => string;
 }
 
+// Auto-detect environment: cloud if hosted on turtleshell.ai, offgrid otherwise
+const isCloud = typeof window !== 'undefined' && window.location.hostname.endsWith('turtleshell.ai');
+const defaultEnv: AppEnvironment = isCloud ? 'cloud' : 'offgrid';
+
 export const useEnvironmentStore = create<EnvironmentStore>()(
   persist(
     (set, get) => ({
-      current:       'offgrid',
-      endpoints:     SERVICE_DEFAULTS['offgrid'],
+      current:       defaultEnv,
+      endpoints:     SERVICE_DEFAULTS[defaultEnv],
       developerMode: false,
 
       setEnvironment: (current) =>
@@ -102,6 +106,16 @@ export const useEnvironmentStore = create<EnvironmentStore>()(
         try { return new URL(get().endpoints.athena).origin; } catch { return ''; }
       },
     }),
-    { name: 'turtleshell-environment' },
+    {
+      name: 'turtleshell-environment',
+      version: 1,
+      migrate: (persisted: any, version: number) => {
+        // v0 → v1: fix users stuck on 'offgrid' while running on turtleshell.ai
+        if (version === 0 && isCloud && persisted?.current === 'offgrid') {
+          return { ...persisted, current: 'cloud', endpoints: SERVICE_DEFAULTS['cloud'] };
+        }
+        return persisted;
+      },
+    },
   ),
 );

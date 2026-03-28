@@ -9,7 +9,7 @@ interface CosmosLogosStore {
   activeChatAgentId: string | null
   setActiveChatAgent: (agentId: string | null) => void
 
-  addAgent: (url: string, manifest: CosmosLogosManifest) => void
+  addAgent: (url: string, manifest: CosmosLogosManifest, displayName?: string) => void
   removeAgent: (agentId: string) => void
   getAgent: (agentId: string) => ConnectedAgent | undefined
 
@@ -32,37 +32,76 @@ export const useCosmosLogosStore = create<CosmosLogosStore>()(
 
       setActiveChatAgent: (agentId) => set({ activeChatAgentId: agentId }),
 
-      addAgent: (url, manifest) => {
+      addAgent: (url, manifest, displayName) => {
+        // Generate unique ID — allow multiple instances of the same agent
+        const baseId = manifest.identity.codename
+        const existingIds = new Set(get().agents.map(a => a.id))
+        let id = baseId
+        if (displayName) {
+          // User-provided name → slug it as the ID
+          id = displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || baseId
+        }
+        // If ID already taken, append a number
+        if (existingIds.has(id)) {
+          let i = 2
+          while (existingIds.has(`${id}-${i}`)) i++
+          id = `${id}-${i}`
+        }
+
         const agent: ConnectedAgent = {
-          id: manifest.identity.codename,
+          id,
           url: url,
           manifest,
+          displayName: displayName || undefined,
           rateTableVersion: '1.0.0',
           connectedAt: new Date().toISOString(),
           capabilities: manifest.capabilities.map(c => c.verb),
         }
         set(state => ({
-          agents: [...state.agents.filter(a => a.id !== agent.id), agent]
+          agents: [...state.agents, agent]
         }))
-        // If manifest declares visible: false, auto-hide on first connect
-        if (manifest.display?.visible === false) {
-          try {
-            const raw = localStorage.getItem('turtleshell-hidden-agents')
-            const hidden: string[] = raw ? JSON.parse(raw) : []
+        // Visibility: auto-hide background services (display.visible: false)
+        // Auto-SHOW agents that were hidden in the catalog (thoth, homework-buddy, agora, etc.)
+        try {
+          const raw = localStorage.getItem('turtleshell-hidden-agents')
+          const hidden: string[] = raw ? JSON.parse(raw) : []
+          if (manifest.display?.visible === false) {
+            // Background service — hide
             if (!hidden.includes(agent.id)) {
               hidden.push(agent.id)
               localStorage.setItem('turtleshell-hidden-agents', JSON.stringify(hidden))
             }
-          } catch {}
-        }
+          } else {
+            // Regular agent — make visible (remove agent ID and codename from hidden if present)
+            const toUnhide = new Set([agent.id, manifest.identity.codename])
+            const filtered = hidden.filter(h => !toUnhide.has(h))
+            if (filtered.length !== hidden.length) {
+              localStorage.setItem('turtleshell-hidden-agents', JSON.stringify(filtered))
+            }
+          }
+        } catch {}
       },
 
       removeAgent: (agentId) => {
         sessionStorage.removeItem(`cosmos-agent-${agentId}-token`)
+        // Find the agent's codename before removing
+        const agent = get().agents.find(a => a.id === agentId)
+        const codename = agent?.manifest.identity.codename
         set(state => ({
           agents: state.agents.filter(a => a.id !== agentId),
           activeChatAgentId: state.activeChatAgentId === agentId ? null : state.activeChatAgentId,
         }))
+        // Re-hide catalog agents (thoth, homework-buddy, agora) when disconnected
+        if (codename && ['thoth', 'homework-buddy', 'agora'].includes(codename)) {
+          try {
+            const raw = localStorage.getItem('turtleshell-hidden-agents')
+            const hidden: string[] = raw ? JSON.parse(raw) : []
+            if (!hidden.includes(codename)) {
+              hidden.push(codename)
+              localStorage.setItem('turtleshell-hidden-agents', JSON.stringify(hidden))
+            }
+          } catch {}
+        }
       },
 
       getAgent: (agentId) => {

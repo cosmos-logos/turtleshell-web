@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import {
-
   Plug,
   LifeBuoy,
-
   Settings,
   BookOpen,
   History,
@@ -12,14 +10,10 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
-  Cloud,
-  House,
   Shell,
-
 } from 'lucide-react';
-import { useEnvironmentStore } from '@/lib/store/environment-store';
-import type { AppEnvironment } from '@/lib/store/environment-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
+import { agentDisplayName } from '@/lib/cosmos-logos/types';
 import { useAgentStore } from '@/lib/store/agent-store';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
 import { getShellId } from '@/lib/api/olympus-grid-client';
@@ -64,13 +58,16 @@ function useNavItems(): NavItem[] {
   // Cosmos-logos agents (Athena, Homework Buddy, Thoth, etc.)
   const cosmosItems: NavItem[] = cosmosAgents
     .filter(a => !hiddenIds.has(a.id))
-    .map((a) => ({
-      to: a.manifest.display?.app_url ? `/app/agent/${a.id}` : `/app/chat?agent=${a.id}`,
-      label: a.manifest.identity.name,
-      initial: a.manifest.identity.name.charAt(0).toUpperCase(),
-      color: a.manifest.display?.color ?? '#6366f1',
-      chatAgentId: a.manifest.display?.app_url ? undefined : a.id,
-    }));
+    .map((a) => {
+      const name = agentDisplayName(a);
+      return {
+        to: a.manifest.display?.app_url ? `/app/agent/${a.id}` : `/app/chat?agent=${a.id}`,
+        label: name,
+        initial: name.charAt(0).toUpperCase(),
+        color: a.manifest.display?.color ?? '#6366f1',
+        chatAgentId: a.manifest.display?.app_url ? undefined : a.id,
+      };
+    });
 
   return [
     { label: 'Agents', type: 'section' },
@@ -86,11 +83,6 @@ function useNavItems(): NavItem[] {
   ];
 }
 
-const envConfig: Record<AppEnvironment, { Icon: typeof Cloud; label: string }> = {
-  cloud: { Icon: Cloud, label: 'CLOUD' },
-  offgrid: { Icon: House, label: 'OFF-GRID' },
-  custom: { Icon: Settings, label: 'CUSTOM' },
-};
 
 function SeaShellBadge({ expanded }: { expanded: boolean }) {
   const [quota, setQuota] = useState<QuotaResponse | null>(null);
@@ -144,25 +136,6 @@ function SeaShellBadge({ expanded }: { expanded: boolean }) {
   );
 }
 
-function EnvironmentBadge() {
-  const current = useEnvironmentStore((s) => s.current);
-  const developerMode = useEnvironmentStore((s) => s.developerMode);
-
-  if (!developerMode) return null;
-
-  const { Icon, label } = envConfig[current];
-
-  return (
-    <div className="px-3 py-3 border-t border-border-muted">
-      <div className="flex items-center gap-2 px-3 py-2 bg-surface-2 rounded-lg">
-        <Icon size={14} className="text-shell-400 flex-shrink-0" />
-        <span className="text-2xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">
-          {label}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 function useIsNavActive(item: NavItem): boolean {
   const location = useLocation();
@@ -285,8 +258,6 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
 
         {/* Sea Shell balance badge */}
         <SeaShellBadge expanded />
-        {/* Environment badge (developer mode only) */}
-        <EnvironmentBadge />
       </aside>
     );
   }
@@ -330,11 +301,9 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
         })}
       </nav>
 
-      {/* Bottom: shell badge + env badge (expanded) or expand button (collapsed) */}
+      {/* Bottom: shell badge + expand button (collapsed) */}
       <SeaShellBadge expanded={open} />
-      {open ? (
-        <EnvironmentBadge />
-      ) : (
+      {!open && (
         <div className="px-2 py-3 border-t border-border-muted flex justify-center">
           <button
             onClick={onToggle}

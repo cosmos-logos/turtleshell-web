@@ -6,6 +6,8 @@ import { useChatStore } from '@/lib/store/chat-store';
 import { useApolloStore } from '@/lib/store/apollo-store';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { streamChat } from '@/lib/athena/chat-client';
+import { streamDirect, hasDirectProvider } from '@/lib/providers/direct-chat';
+import { hasUserApiKey } from '@/lib/store/agent-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { useAgentStore } from '@/lib/store/agent-store';
 import { generateId, formatTimestamp } from '@/lib/utils/helpers';
@@ -97,7 +99,8 @@ export function Chat() {
   const hasTTS = useCosmosLogosStore((s) => s.agents.some(a => a.capabilities.includes('x-tts')));
   const activeCosmosChatName = useCosmosLogosStore((s) => {
     if (!s.activeChatAgentId) return null;
-    return s.agents.find(a => a.id === s.activeChatAgentId)?.manifest.identity.name ?? null;
+    const agent = s.agents.find(a => a.id === s.activeChatAgentId);
+    return agent ? (agent.displayName || agent.manifest.identity.name) : null;
   });
   const activeBuiltinName = useAgentStore((s) => s.activeAgent.name);
   const chatAgentName = activeCosmosChatName || activeBuiltinName;
@@ -155,18 +158,26 @@ export function Chat() {
       const cosmosPrompt = cosmosAgent?.manifest?.identity?.system_prompt;
       const builtinPrompt = builtinAgent?.systemPrompt;
       const systemPrompt = cosmosPrompt || builtinPrompt || undefined;
-      // Map agent selection to Athena's provider routing
-      // Built-in agents (logos, cosmos) → 'turtle' (Ollama local)
-      // Cosmos-logos agents with chat capability → 'athena' (OpenAI)
-      // Named built-in LLMs (claude, openai, grok, gemini) → their agent ID
+      // Route decision: direct provider call OR Athena proxy
+      // If user has their own API key for a provider, call it directly (no Athena)
+      const useDirectProvider = !activeChatAgentId
+        && hasDirectProvider(builtinAgent.id)
+        && hasUserApiKey(builtinAgent.id);
+
       const llmAgentId = activeChatAgentId
-        ? 'athena'  // cosmos-logos agents route through the cloud provider
+        ? 'athena'
         : (['claude', 'openai', 'grok', 'gemini'].includes(builtinAgent.id) ? builtinAgent.id : 'turtle');
 
       console.log('[CHAT] agent:', activeChatAgentId || builtinAgent.id,
-        '→ llmAgentId:', llmAgentId,
+        useDirectProvider ? '→ DIRECT' : `→ Athena (${llmAgentId})`,
         'systemPrompt:', systemPrompt ? systemPrompt.substring(0, 50) + '...' : '(none)');
-      for await (const token of streamChat(prompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save, systemPrompt, agentId: llmAgentId })) {
+
+      // Choose streaming source
+      const tokenStream = useDirectProvider
+        ? streamDirect(builtinAgent.id, prompt, controller.signal, { systemPrompt })
+        : streamChat(prompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save, systemPrompt, agentId: llmAgentId });
+
+      for await (const token of tokenStream) {
         // Handle metadata objects (conversationId)
         if (typeof token === 'object' && 'conversationId' in token) {
           if (mem) setConversationId(token.conversationId);
@@ -488,8 +499,8 @@ export function Chat() {
         )}
       </div>
 
-      {/* Mic status */}
-      {apollo.isTalkMode && (
+      {/* Mic status — only when TTS agent is connected */}
+      {apollo.isTalkMode && hasTTS && (
         <div className="flex-shrink-0 px-3 sm:px-4">
           <div className="max-w-3xl mx-auto flex items-center justify-center gap-2 py-1.5 text-2xs">
             {apollo.micError ? (

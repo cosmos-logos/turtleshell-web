@@ -1,19 +1,9 @@
-import { Cloud, House, Info, Volume2, Sun, Moon, Brain, Wrench, Server } from 'lucide-react';
+import { Info, Volume2, Sun, Moon, Brain, Wrench } from 'lucide-react';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
-import {
-  useEnvironmentStore,
-  SERVICE_LABELS,
-  type AppEnvironment,
-  type ServiceEndpoints,
-} from '@/lib/store/environment-store';
+import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { useApolloStore } from '@/lib/store/apollo-store';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useThemeStore } from '@/lib/store/theme-store';
-
-const PRESETS: { key: AppEnvironment; label: string; desc: string; Icon: React.ElementType }[] = [
-  { key: 'cloud',   label: 'Cloud',    desc: 'AWS Olympus-Grid',   Icon: Cloud },
-  { key: 'offgrid', label: 'Off-Grid', desc: 'ngrok / local stack', Icon: House },
-];
 
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
@@ -31,14 +21,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 }
 
 export function Settings() {
-  const {
-    current,
-    endpoints,
-    developerMode,
-    setEnvironment,
-    setEndpoint,
-    setDeveloperMode,
-  } = useEnvironmentStore();
+  const { developerMode, setDeveloperMode } = useEnvironmentStore();
 
   const { theme, setTheme } = useThemeStore();
   const { memoryEnabled, setMemoryEnabled } = useChatStore();
@@ -82,75 +65,13 @@ export function Settings() {
               <div>
                 <div className="text-sm font-semibold">Developer Mode</div>
                 <div className="text-2xs text-text-muted mt-0.5">
-                  Unlock grid service configuration and debug features
+                  Show debug info and developer tools in the console
                 </div>
               </div>
               <Toggle on={developerMode} onToggle={() => setDeveloperMode(!developerMode)} />
             </div>
           </div>
         </section>
-
-        {/* Grid Services (developer only) */}
-        {developerMode && (
-          <section className="space-y-3 animate-fade-in">
-            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-              <Server size={14} /> Grid Services
-            </h2>
-
-            {/* Preset buttons */}
-            <div className="flex gap-2">
-              {PRESETS.map(({ key, label, desc, Icon }) => (
-                <button
-                  key={key}
-                  onClick={() => setEnvironment(key)}
-                  className={`flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm transition-all ${
-                    current === key
-                      ? 'bg-shell-500/5 border-shell-500/30 text-text-primary'
-                      : 'bg-surface-1 border-border-muted text-text-muted hover:border-border'
-                  }`}
-                >
-                  <Icon size={14} className="flex-shrink-0" />
-                  <div className="text-left">
-                    <div className="text-xs font-semibold">{label}</div>
-                    <div className="text-2xs opacity-70">{desc}</div>
-                  </div>
-                  {current === key && (
-                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-shell-400" />
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* Per-service URL fields */}
-            <div className="bg-surface-1 border border-border-muted rounded-xl divide-y divide-border-muted">
-              {(Object.keys(SERVICE_LABELS) as (keyof ServiceEndpoints)[]).map((service) => {
-                const { label, description } = SERVICE_LABELS[service];
-                return (
-                  <div key={service} className="px-4 py-3 space-y-1.5">
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-xs font-semibold text-text-primary">{label}</span>
-                      <span className="text-2xs text-text-muted">{description}</span>
-                    </div>
-                    <input
-                      type="url"
-                      value={endpoints[service]}
-                      onChange={(e) => setEndpoint(service, e.target.value)}
-                      placeholder={`https://...`}
-                      className="w-full bg-surface-2 border border-border-muted rounded-lg px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-500/50 transition-colors"
-                    />
-                  </div>
-                );
-              })}
-            </div>
-
-            {current === 'custom' && (
-              <p className="text-2xs text-text-muted pl-1">
-                Custom — individual service URLs override the preset.
-              </p>
-            )}
-          </section>
-        )}
-
 
         {/* Voice */}
         <section className="space-y-3">

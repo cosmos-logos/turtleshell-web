@@ -22,4 +22,8 @@ export type AgentCapability =
   | 'reasoning'
   | 'voice'
   | 'code'
-  | 'search';
+  | 'search'
+  | 'journal'
+  | 'code_review'
+  | 'assignments'
+  | 'projects';

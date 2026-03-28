@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Lock } from 'lucide-react';
 import { useNavigate, useMatch } from 'react-router-dom';
-import { useAgentStore, hasOlympusGridToken } from '@/lib/store/agent-store';
+import { useAgentStore, isAgentAvailable } from '@/lib/store/agent-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
+import { agentDisplayName } from '@/lib/cosmos-logos/types';
 import { useChatStore } from '@/lib/store/chat-store';
 import type { Agent } from '@/types/agent';
 
@@ -31,7 +32,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const isAuthed = hasOlympusGridToken();
+  
 
   useEffect(() => {
     if (!open) return;
@@ -56,8 +57,8 @@ export function AgentPicker({ compact }: AgentPickerProps) {
   const switchAgent = useChatStore((s) => s.switchAgent);
 
   const handleSelectBuiltin = (agent: Agent) => {
-    const needsAuth = agent.requiredServices.includes('olympus_grid');
-    if (needsAuth && !isAuthed) return;
+    
+    if (!isAgentAvailable(agent)) return;
     setActiveChatAgent(null);
     setActiveAgent(agent);
     switchAgent(agent.id);
@@ -90,13 +91,13 @@ export function AgentPicker({ compact }: AgentPickerProps) {
               className="w-5 h-5 rounded flex items-center justify-center text-[11px] font-bold flex-shrink-0"
               style={{ backgroundColor: `${compactColor}25`, color: compactColor }}
             >
-              {activeCosmosAgent.manifest.identity.name.charAt(0)}
+              {agentDisplayName(activeCosmosAgent).charAt(0)}
             </span>
           ) : (
             <span className="text-base leading-none">{activeAgent.icon}</span>
           )}
           <span className="text-sm font-semibold text-text-primary flex-1 text-left">
-            {activeCosmosAgent ? activeCosmosAgent.manifest.identity.name : activeAgent.name}
+            {activeCosmosAgent ? agentDisplayName(activeCosmosAgent) : activeAgent.name}
           </span>
           <ChevronDown
             size={14}
@@ -107,7 +108,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
         {open && (
           <div className="absolute top-full left-0 right-0 mt-1 bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 py-1 z-50 animate-fade-in">
             {allBuiltinAgents.map((agent) => {
-              const locked = agent.requiredServices.includes('olympus_grid') && !isAuthed;
+              const locked = !isAgentAvailable(agent);
               const isActive = activeAgent.id === agent.id;
               return (
                 <button
@@ -121,7 +122,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
                         ? 'bg-shell-500/10 text-shell-400'
                         : 'hover:bg-surface-2 text-text-primary'
                   }`}
-                  title={locked ? 'Unlock with TurtleShell account' : agent.description}
+                  title={locked ? 'Add your API key in Agent Setup' : agent.description}
                 >
                   <span className="text-base leading-none flex-shrink-0">{agent.icon}</span>
                   <span className="text-sm font-medium flex-1">{agent.name}</span>
@@ -148,9 +149,9 @@ export function AgentPicker({ compact }: AgentPickerProps) {
                         className="w-5 h-5 rounded flex items-center justify-center text-[11px] font-bold flex-shrink-0"
                         style={{ backgroundColor: `${color}25`, color }}
                       >
-                        {a.manifest.identity.name.charAt(0)}
+                        {agentDisplayName(a).charAt(0)}
                       </span>
-                      <span className="text-sm font-medium flex-1">{a.manifest.identity.name}</span>
+                      <span className="text-sm font-medium flex-1">{agentDisplayName(a)}</span>
                     </button>
                   );
                 })}
@@ -175,7 +176,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
             className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
             style={{ backgroundColor: `${desktopColor}25`, color: desktopColor }}
           >
-            {activeCosmosAgent.manifest.identity.name.charAt(0)}
+            {agentDisplayName(activeCosmosAgent).charAt(0)}
           </div>
         ) : (
           <div className="w-7 h-7 rounded-full bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-xs flex-shrink-0">
@@ -184,7 +185,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
         )}
         <div className="text-left">
           <div className="text-sm font-semibold leading-tight flex items-center gap-1">
-            {activeCosmosAgent ? activeCosmosAgent.manifest.identity.name : activeAgent.name}
+            {activeCosmosAgent ? agentDisplayName(activeCosmosAgent) : activeAgent.name}
             <ChevronDown
               size={12}
               className={`text-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
@@ -199,7 +200,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
       {open && (
         <div className="absolute top-full left-0 mt-2 w-56 bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 py-1 z-50 animate-fade-in">
           {allBuiltinAgents.map((agent) => {
-            const locked = agent.requiredServices.includes('olympus_grid') && !isAuthed;
+            const locked = !isAgentAvailable(agent);
             const isActive = activeAgent.id === agent.id;
             return (
               <button
@@ -213,7 +214,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
                       ? 'bg-shell-500/10 text-shell-400'
                       : 'hover:bg-surface-2 text-text-primary'
                 }`}
-                title={locked ? 'Unlock with TurtleShell account' : agent.description}
+                title={locked ? 'Add your API key in Agent Setup' : agent.description}
               >
                 <span className="text-base leading-none flex-shrink-0">{agent.icon}</span>
                 <div className="flex-1 min-w-0">
@@ -246,10 +247,10 @@ export function AgentPicker({ compact }: AgentPickerProps) {
                       className="w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold flex-shrink-0"
                       style={{ backgroundColor: `${color}25`, color }}
                     >
-                      {a.manifest.identity.name.charAt(0)}
+                      {agentDisplayName(a).charAt(0)}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium">{a.manifest.identity.name}</div>
+                      <div className="text-sm font-medium">{agentDisplayName(a)}</div>
                       <div className="text-2xs text-text-muted truncate">{a.manifest.identity.purpose}</div>
                     </div>
                   </button>

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Menu, ChevronRight } from 'lucide-react';
 import { useAgentStatus } from '@/lib/hooks/useAgentStatus';
-import type { AgentStatus } from '@/lib/hooks/useAgentStatus';
+import type { AgentHealth } from '@/lib/hooks/useAgentStatus';
 import { AgentPicker } from './AgentPicker';
 
 interface HeaderProps {
@@ -10,15 +10,7 @@ interface HeaderProps {
   onMobileMenuToggle: () => void;
 }
 
-function formatBootTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-}
-
-function StatusPanel({ status, onClose }: { status: AgentStatus; onClose: () => void }) {
+function HealthPanel({ agents, onClose }: { agents: AgentHealth[]; onClose: () => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,53 +21,57 @@ function StatusPanel({ status, onClose }: { status: AgentStatus; onClose: () => 
     return () => document.removeEventListener('mousedown', handler);
   }, [onClose]);
 
-  const rows: [string, string][] = [
-    ['Status', status.status],
-    ['Uptime', status.uptime],
-    ['Version', `v${status.version}`],
-    ['Environment', status.environment],
-    ['Layer', status.layer],
-    ['Domain', status.domain],
-    ['Port', String(status.port)],
-    ['Pantheon', status.pantheon],
-    ['Boot Time', formatBootTime(status.bootTime)],
-  ];
-
   return (
     <div
       ref={panelRef}
-      className="absolute top-full right-0 mt-2 w-64 bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 p-3 animate-fade-in z-40"
+      className="absolute top-full right-0 mt-2 w-72 bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 p-3 animate-fade-in z-40"
     >
-      <div className="flex items-center gap-2 mb-3">
-        <div className="w-2 h-2 rounded-full bg-green-400" />
-        <span className="text-xs font-semibold text-text-primary">{status.title}</span>
-        <span className="ml-auto text-[9px] text-text-muted/50 font-mono">{status.service}</span>
+      <div className="text-2xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+        Connected Agents
       </div>
       <div className="space-y-1.5">
-        {rows.map(([label, value]) => (
-          <div key={label} className="flex items-baseline justify-between gap-2">
-            <span className="text-[10px] text-text-muted/60">{label}</span>
-            <span className="text-[10px] font-medium text-text-secondary text-right">{value}</span>
+        {agents.map((agent) => (
+          <div key={agent.id} className="flex items-center gap-2 px-2 py-1.5 bg-surface-2 rounded-lg">
+            <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+              agent.status === 'online' ? 'bg-green-400' :
+              agent.status === 'checking' ? 'bg-yellow-400 animate-pulse' :
+              'bg-red-400'
+            }`} />
+            <span className="text-xs font-medium text-text-primary flex-1 truncate">{agent.name}</span>
+            {agent.latency !== undefined && (
+              <span className="text-[9px] font-mono text-text-muted">{agent.latency}ms</span>
+            )}
+            <span className={`text-[9px] font-medium ${
+              agent.status === 'online' ? 'text-green-400' : 'text-red-400'
+            }`}>
+              {agent.status}
+            </span>
           </div>
         ))}
       </div>
+      {agents.length === 0 && (
+        <p className="text-2xs text-text-muted py-2">No agents connected.</p>
+      )}
     </div>
   );
 }
 
 export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMenuToggle }: HeaderProps) {
-  const { connectionState, agentStatus } = useAgentStatus();
+  const { connectionState, agentHealths } = useAgentStatus();
   const [statusOpen, setStatusOpen] = useState(false);
+
+  // Don't render the status indicator when not in developer mode (connectionState will be 'offline' with no agents)
+  const showStatus = agentHealths.length > 0;
 
   const dotColor =
     connectionState === 'online' ? 'bg-green-400' :
+    connectionState === 'partial' ? 'bg-yellow-400' :
     connectionState === 'offline' ? 'bg-red-400' :
     'bg-yellow-400 animate-pulse';
 
-  const label =
-    connectionState === 'online' ? 'Online' :
-    connectionState === 'offline' ? 'Offline' :
-    'Checking...';
+  const onlineCount = agentHealths.filter(a => a.status === 'online').length;
+  const label = connectionState === 'checking' ? 'Checking...'
+    : `${onlineCount}/${agentHealths.length} online`;
 
   return (
     <header className="h-14 flex-shrink-0 flex items-center justify-between px-4 border-b border-border-muted bg-surface-0/80 backdrop-blur-md">
@@ -106,26 +102,24 @@ export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMen
         </div>
       </div>
 
-      {/* Right side — connection status */}
+      {/* Right side — connection status (developer mode only) */}
       <div className="flex items-center gap-3">
-        <div className="relative">
-          <button
-            onClick={() => {
-              if (connectionState === 'online' && agentStatus) setStatusOpen(!statusOpen);
-            }}
-            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-surface-2 rounded-full transition-colors ${
-              connectionState === 'online' && agentStatus ? 'hover:bg-surface-3 cursor-pointer' : ''
-            }`}
-            title={connectionState === 'online' ? 'View agent status' : label}
-          >
-            <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
-            <span className="text-2xs font-medium text-text-muted">{label}</span>
-          </button>
+        {showStatus && (
+          <div className="relative">
+            <button
+              onClick={() => setStatusOpen(!statusOpen)}
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-surface-2 rounded-full transition-colors hover:bg-surface-3 cursor-pointer"
+              title="Agent health status"
+            >
+              <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+              <span className="text-2xs font-medium text-text-muted">{label}</span>
+            </button>
 
-          {statusOpen && agentStatus && (
-            <StatusPanel status={agentStatus} onClose={() => setStatusOpen(false)} />
-          )}
-        </div>
+            {statusOpen && (
+              <HealthPanel agents={agentHealths} onClose={() => setStatusOpen(false)} />
+            )}
+          </div>
+        )}
 
         {/* Mobile hamburger */}
         <button

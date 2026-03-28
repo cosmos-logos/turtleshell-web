@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useApolloStore } from '@/lib/store/apollo-store';
+import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import * as audioManager from '@/lib/audio/audio-manager';
 
 interface UseApolloOptions {
@@ -41,6 +42,9 @@ export function useApollo(options?: UseApolloOptions) {
   const ttsAutoPlay = useApolloStore((s) => s.ttsAutoPlay);
   const ttsTalkMode = useApolloStore((s) => s.ttsTalkMode);
   const resumeMicAfterPlay = useApolloStore((s) => s._resumeMicAfterPlay);
+  const hasTTS = useCosmosLogosStore((s) => s.agents.some(a => a.capabilities.includes('x-tts')));
+  // Effective talk mode — only active when a TTS agent is connected
+  const effectiveTalkMode = ttsTalkMode && hasTTS;
 
   useEffect(() => {
     onTranscriptRef.current = options?.onTranscript;
@@ -78,10 +82,14 @@ export function useApollo(options?: UseApolloOptions) {
 
     recognition.onend = () => {
       setIsListening(false);
-      // In talk mode, restart recognition loop (unless TTS is playing)
-      if (useApolloStore.getState().ttsTalkMode && !useApolloStore.getState()._isPlaying) {
+      // In talk mode, restart recognition loop (unless TTS is playing or no TTS agent connected)
+      const store = useApolloStore.getState();
+      const ttsConnected = useCosmosLogosStore.getState().agents.some(a => a.capabilities.includes('x-tts'));
+      if (store.ttsTalkMode && ttsConnected && !store._isPlaying) {
         setTimeout(() => {
-          if (useApolloStore.getState().ttsTalkMode) startRecognition();
+          const s = useApolloStore.getState();
+          const still = useCosmosLogosStore.getState().agents.some(a => a.capabilities.includes('x-tts'));
+          if (s.ttsTalkMode && still) startRecognition();
         }, 300);
       }
     };
@@ -140,27 +148,26 @@ export function useApollo(options?: UseApolloOptions) {
   useEffect(() => {
     if (resumeMicAfterPlay) {
       useApolloStore.setState({ _resumeMicAfterPlay: false });
-      if (ttsTalkMode) {
+      if (effectiveTalkMode) {
         console.log('[Apollo] TTS ended, resuming mic...');
         startListeningInternal();
       }
     }
-  }, [resumeMicAfterPlay, ttsTalkMode, startListeningInternal]);
+  }, [resumeMicAfterPlay, effectiveTalkMode, startListeningInternal]);
 
-  // Start/stop mic when Talk Mode is toggled
+  // Start/stop mic when Talk Mode is toggled (only when TTS agent connected)
   useEffect(() => {
-    if (ttsTalkMode) {
+    if (effectiveTalkMode) {
       console.log('[Apollo] Talk mode ON — starting mic');
       startListeningInternal();
     } else {
-      console.log('[Apollo] Talk mode OFF — stopping mic');
       if (recognitionRef.current) {
         recognitionRef.current.abort();
         recognitionRef.current = null;
       }
       setIsListening(false);
     }
-  }, [ttsTalkMode, startListeningInternal]);
+  }, [effectiveTalkMode, startListeningInternal]);
 
   useEffect(() => {
     return () => {
@@ -179,7 +186,7 @@ export function useApollo(options?: UseApolloOptions) {
 
     // Microphone state
     isListening,
-    isTalkMode: ttsTalkMode,
+    isTalkMode: effectiveTalkMode,
     micError,
 
     // Playback controls (delegate to global manager)

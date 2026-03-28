@@ -94,12 +94,18 @@ export interface TrustEntry {
 }
 
 export interface ConnectedAgent {
-  id: string                       // identity.codename
-  url: string                      // network.endpoint
+  id: string                       // unique instance ID (may differ from codename for multi-instance)
+  url: string                      // live endpoint URL (what the user connected to)
   manifest: CosmosLogosManifest
+  displayName?: string             // user-provided override (e.g. "Athena AWS", "Athena Off-Grid")
   rateTableVersion: string
   connectedAt: string
   capabilities: string[]           // extracted verb list
+}
+
+/** Get the display name for a connected agent (user override > manifest name) */
+export function agentDisplayName(agent: ConnectedAgent): string {
+  return agent.displayName || agent.manifest.identity.name
 }
 
 export interface JournalEntry {

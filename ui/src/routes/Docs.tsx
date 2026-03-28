@@ -484,6 +484,425 @@ function GlossaryDocs() {
 }
 
 /* ================================================================ */
+/* Athena                                                             */
+/* ================================================================ */
+function AthenaDocs() {
+  return (
+    <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
+      <BackLink label="Back to Learn" />
+      <div className="flex items-center gap-3">
+        <span className="text-3xl">🦉</span>
+        <div>
+          <h1 className="text-2xl font-bold">Athena</h1>
+          <p className="text-sm text-text-muted">Multi-provider LLM gateway — the intelligence layer of Olympus-616</p>
+        </div>
+      </div>
+
+      <Section title="What is Athena?" defaultOpen>
+        <p>
+          <strong>Athena</strong> is the AI brain that sits behind TurtleShell. When you send a message
+          to any agent — Logos, Cosmos, a custom agent, or Athena herself — it's Athena that talks
+          to the actual LLM (GPT-4, Claude, Grok, Gemini, or a local model).
+        </p>
+        <p>
+          Think of Athena as a <strong>smart switchboard</strong>. She receives your message, decides which
+          AI provider to use, attaches the right tools (MCP), injects the agent's personality (system prompt),
+          and streams the response back — all in real time.
+        </p>
+        <p>
+          Without Athena, the other agents have no voice. With Athena, they can speak through any AI
+          provider in the world.
+        </p>
+      </Section>
+
+      <Section title="How does Athena choose which model to use?">
+        <p>Athena routes your message based on the <strong>agent you selected</strong>:</p>
+        <ul className="list-disc list-inside space-y-1 text-text-muted">
+          <li><strong className="text-text-secondary">Logos / Cosmos</strong> → Local model (Ollama) — free, fast, runs on your machine</li>
+          <li><strong className="text-text-secondary">Athena (any variant)</strong> → OpenAI GPT-4o — cloud-powered intelligence</li>
+          <li><strong className="text-text-secondary">Custom agents</strong> → Whichever model Athena is configured to use</li>
+        </ul>
+        <p>
+          The system prompt from the agent's <code className="text-shell-400 bg-surface-2 px-1 py-0.5 rounded text-xs">cosmos-logos.json</code> manifest
+          defines the personality. Athena is the messenger — the manifest is the soul.
+        </p>
+      </Section>
+
+      <Section title="Three ways to run Athena">
+        <div className="space-y-3">
+          <div className="bg-surface-2 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span>☁️</span>
+              <span className="text-xs font-semibold" style={{ color: '#C9A84C' }}>#athena — Olympus-Grid</span>
+            </div>
+            <p className="text-text-muted text-xs">
+              Hosted on AWS by CloudPremise. Zero setup — just subscribe to Sea Shells and connect.
+              This is the fastest way to get started. Your messages route through our secure infrastructure
+              to the best available AI provider.
+            </p>
+            <p className="text-text-muted text-xs mt-1">
+              <strong className="text-text-secondary">Best for:</strong> Users who want instant AI access without running anything locally.
+            </p>
+          </div>
+
+          <div className="bg-surface-2 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span>🔧</span>
+              <span className="text-xs font-semibold" style={{ color: '#8B5CF6' }}>#athena-616 — Developer</span>
+            </div>
+            <p className="text-text-muted text-xs">
+              Run the full Olympus-616 stack on your development machine. Expose it via ngrok for remote access.
+              You control the API keys, the model selection, and the MCP tool connections.
+            </p>
+            <p className="text-text-muted text-xs mt-1">
+              <strong className="text-text-secondary">Best for:</strong> Developers building agents, testing integrations, or contributing to Olympus-616.
+            </p>
+          </div>
+
+          <div className="bg-surface-2 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span>🐢</span>
+              <span className="text-xs font-semibold" style={{ color: '#10B981' }}>#athena-offgrid — Off-Grid</span>
+            </div>
+            <p className="text-text-muted text-xs">
+              Install TurtleShell Off-Grid on a Mac Mini, Raspberry Pi, or any machine. Athena runs
+              inside the Docker fleet on port 3401, accessible through the port 717 reverse proxy.
+              Connect via Tailscale from your phone — your AI runs on your hardware, your network, your rules.
+            </p>
+            <p className="text-text-muted text-xs mt-1">
+              <strong className="text-text-secondary">Best for:</strong> Privacy-first users who want sovereign AI infrastructure they fully control.
+            </p>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="What can Athena do?">
+        <ul className="list-disc list-inside space-y-1 text-text-muted">
+          <li><strong className="text-text-secondary">Chat</strong> — Streaming conversation with any LLM provider</li>
+          <li><strong className="text-text-secondary">MCP Tools</strong> — When Poseidon is connected, Athena gains 34+ tools for Salesforce, Google, GitHub, HubSpot, Workday, and more</li>
+          <li><strong className="text-text-secondary">Memory</strong> — Mnemosyne integration for conversation history and context</li>
+          <li><strong className="text-text-secondary">Voice</strong> — When Apollo is connected, Athena's responses can be spoken aloud with per-agent voice identity</li>
+          <li><strong className="text-text-secondary">System Prompts</strong> — Each agent's personality is injected from its cosmos-logos manifest</li>
+        </ul>
+      </Section>
+
+      <Section title="Host your own Athena" defaultOpen>
+        <p>
+          Running your own Athena gives you full control over which AI providers, API keys, and MCP tools
+          your agents use. Here's how to get started:
+        </p>
+
+        <div className="space-y-4 mt-3">
+          <div>
+            <h4 className="text-xs font-semibold text-text-secondary mb-1">1. Prerequisites</h4>
+            <ul className="list-disc list-inside space-y-1 text-text-muted text-xs">
+              <li><strong className="text-text-secondary">Node.js 18+</strong> and <strong className="text-text-secondary">npm</strong></li>
+              <li>An API key from at least one LLM provider (OpenAI, Anthropic, xAI, or Google)</li>
+              <li><strong className="text-text-secondary">ngrok</strong> (free tier works) — to expose your local Athena to the internet</li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-semibold text-text-secondary mb-1">2. Clone &amp; install</h4>
+            <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted space-y-1">
+              <div>git clone https://github.com/olympus-616/athena.git</div>
+              <div>cd athena/api</div>
+              <div>npm install</div>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-semibold text-text-secondary mb-1">3. Configure your environment</h4>
+            <p className="text-text-muted text-xs mb-2">
+              Copy <code className="text-shell-400 bg-surface-2 px-1 py-0.5 rounded text-xs">.env.example</code> to <code className="text-shell-400 bg-surface-2 px-1 py-0.5 rounded text-xs">.env</code> and
+              add your provider keys:
+            </p>
+            <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted space-y-1">
+              <div><span className="text-shell-400">OPENAI_API_KEY</span>=sk-...</div>
+              <div><span className="text-shell-400">ANTHROPIC_API_KEY</span>=sk-ant-...</div>
+              <div><span className="text-shell-400">XAI_API_KEY</span>=xai-...</div>
+              <div><span className="text-shell-400">GEMINI_API_KEY</span>=AI...</div>
+            </div>
+            <p className="text-text-muted text-xs mt-1">You only need one provider — Athena will use whatever keys are present.</p>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-semibold text-text-secondary mb-1">4. Generate your Ed25519 keypair</h4>
+            <p className="text-text-muted text-xs mb-2">
+              Athena uses Ed25519 keys for the cosmos-logos sealed envelope handshake. Generate a keypair:
+            </p>
+            <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted space-y-1">
+              <div>openssl genpkey -algorithm Ed25519 -out athena.key</div>
+              <div>openssl pkey -in athena.key -pubout -out athena.pub</div>
+            </div>
+            <p className="text-text-muted text-xs mt-1">
+              Place the key in your preferred location and set <code className="text-shell-400 bg-surface-2 px-1 py-0.5 rounded text-xs">ED25519_PRIVATE_KEY_PATH</code> in your <code className="text-shell-400 bg-surface-2 px-1 py-0.5 rounded text-xs">.env</code>.
+              The public key is embedded in your <code className="text-shell-400 bg-surface-2 px-1 py-0.5 rounded text-xs">cosmos-logos.json</code> manifest automatically.
+            </p>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-semibold text-text-secondary mb-1">5. Start Athena</h4>
+            <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted">
+              npm run dev
+            </div>
+            <p className="text-text-muted text-xs mt-1">
+              Athena starts on port <strong className="text-text-secondary">3401</strong> by default. You should see the cosmos-logos manifest
+              at <code className="text-shell-400 bg-surface-2 px-1 py-0.5 rounded text-xs">http://localhost:3401/.well-known/cosmos-logos.json</code>.
+            </p>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-semibold text-text-secondary mb-1">6. Expose with ngrok</h4>
+            <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted space-y-1">
+              <div>ngrok http 3401</div>
+            </div>
+            <p className="text-text-muted text-xs mt-1">
+              Copy the <code className="text-shell-400 bg-surface-2 px-1 py-0.5 rounded text-xs">https://your-subdomain.ngrok.io</code> URL.
+              If you have a paid ngrok plan, use a custom subdomain for a stable address:
+            </p>
+            <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted mt-1">
+              ngrok http 3401 --url=my-athena.ngrok.io
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-semibold text-text-secondary mb-1">7. Connect from TurtleShell</h4>
+            <p className="text-text-muted text-xs">
+              Go to <strong className="text-text-secondary">Agent Setup</strong> → <strong className="text-text-secondary">Build your own #athena</strong>.
+              Give your Athena a name (e.g. <code className="text-shell-400 bg-surface-2 px-1 py-0.5 rounded text-xs">my-athena</code>),
+              paste your ngrok URL with <code className="text-shell-400 bg-surface-2 px-1 py-0.5 rounded text-xs">/v1/athena</code> appended, and click <strong className="text-text-secondary">Connect</strong>.
+              TurtleShell will discover the cosmos-logos manifest, perform the encrypted handshake, and your Athena appears in the sidebar.
+            </p>
+          </div>
+
+          <div className="bg-shell-500/5 border border-shell-500/20 rounded-lg p-3">
+            <h4 className="text-xs font-semibold text-shell-400 mb-1">Optional: Add companion services</h4>
+            <p className="text-text-muted text-xs">
+              Athena becomes more powerful with the rest of the Olympus-616 stack:
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-text-muted text-xs mt-1">
+              <li><strong className="text-text-secondary">Poseidon</strong> — MCP tool server (Salesforce, Google, GitHub, 34+ integrations)</li>
+              <li><strong className="text-text-secondary">Apollo</strong> — Text-to-speech with per-agent voice identity</li>
+              <li><strong className="text-text-secondary">Mnemosyne</strong> — Conversation memory and context persistence</li>
+              <li><strong className="text-text-secondary">Hermes</strong> — API gateway and authentication layer</li>
+            </ul>
+            <p className="text-text-muted text-xs mt-1">
+              Each service is its own cosmos-logos agent. Connect them individually as you need them.
+            </p>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Technical details">
+        <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted space-y-1">
+          <div><span className="text-shell-400">Framework:</span> Express.js (TypeScript)</div>
+          <div><span className="text-shell-400">Port:</span> 3401</div>
+          <div><span className="text-shell-400">Providers:</span> OpenAI, Anthropic Claude, xAI Grok, Google Gemini, Ollama (local)</div>
+          <div><span className="text-shell-400">Protocol:</span> OpenAI-compatible chat completions (SSE streaming)</div>
+          <div><span className="text-shell-400">MCP:</span> StreamableHTTPClientTransport → Poseidon</div>
+          <div><span className="text-shell-400">Discovery:</span> cosmos-logos v1.0.3 manifest at /.well-known/cosmos-logos.json</div>
+          <div><span className="text-shell-400">Security:</span> Ed25519 sealed envelope verification</div>
+          <div><span className="text-shell-400">License:</span> MIT</div>
+        </div>
+        <p className="mt-2">
+          <a href="https://github.com/olympus-616/athena" target="_blank" rel="noopener"
+            className="text-xs text-shell-400 hover:underline">
+            View source on GitHub →
+          </a>
+        </p>
+      </Section>
+    </div>
+  );
+}
+
+/* ================================================================ */
+/* Thoth                                                              */
+/* ================================================================ */
+function ThothDocs() {
+  return (
+    <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
+      <BackLink label="Back to Learn" />
+      <div className="flex items-center gap-3">
+        <span className="text-3xl">📜</span>
+        <div>
+          <h1 className="text-2xl font-bold">Thoth</h1>
+          <p className="text-sm text-text-muted">Sovereign writing and coding agent — your personal scribe</p>
+        </div>
+      </div>
+
+      <Section title="What is Thoth?" defaultOpen>
+        <p>
+          <strong>Thoth</strong> is a writing and coding agent that runs on your own machine. He keeps
+          a journal, reviews your code, manages git branches, and provides editorial feedback — all
+          powered by Claude and stored in your local git repository.
+        </p>
+        <p>
+          Unlike cloud-based writing tools, Thoth stores everything in git. Your journal entries are
+          commits. Your code reviews are local. Nothing leaves your machine unless you push to GitHub.
+        </p>
+      </Section>
+
+      <Section title="What can Thoth do?">
+        <ul className="list-disc list-inside space-y-1 text-text-muted">
+          <li><strong className="text-text-secondary">Journal</strong> — Write entries in Markdown, organized by project. Stored as git commits.</li>
+          <li><strong className="text-text-secondary">Code Review</strong> — AI-powered PR reviews with structured feedback on your code.</li>
+          <li><strong className="text-text-secondary">AI Writing Assistant</strong> — Generate content, get editorial feedback, apply changes with one click.</li>
+          <li><strong className="text-text-secondary">GitHub Sync</strong> — Push journal entries to a GitHub repo for backup and sharing.</li>
+        </ul>
+      </Section>
+
+      <Section title="How to set up Thoth">
+        <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted space-y-1">
+          <div>$ git clone https://github.com/cosmos-logos/thoth.git</div>
+          <div>$ cd thoth && pip install -r requirements.txt</div>
+          <div>$ uvicorn thoth.main:app --host 0.0.0.0 --port 3801</div>
+        </div>
+        <p className="mt-2">Then connect in TurtleShell Agent Setup → enter <code className="text-shell-400">http://localhost:3801</code> or your Tailscale IP.</p>
+        <p>For remote access via Tailscale, Thoth's <code className="text-shell-400">cosmos-logos.json</code> on GitHub declares your Tailscale endpoint — only your devices can reach it.</p>
+      </Section>
+
+      <Section title="Technical details">
+        <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted space-y-1">
+          <div><span className="text-shell-400">Framework:</span> Python FastAPI</div>
+          <div><span className="text-shell-400">Port:</span> 3801</div>
+          <div><span className="text-shell-400">AI:</span> Claude (Anthropic API)</div>
+          <div><span className="text-shell-400">Storage:</span> Local git repository</div>
+          <div><span className="text-shell-400">Auth:</span> Ed25519 sealed envelopes (cosmos-logos)</div>
+          <div><span className="text-shell-400">License:</span> MIT</div>
+        </div>
+        <p className="mt-2"><a href="https://github.com/cosmos-logos/thoth" target="_blank" rel="noopener" className="text-xs text-shell-400 hover:underline">View source on GitHub →</a></p>
+      </Section>
+    </div>
+  );
+}
+
+/* ================================================================ */
+/* Homework Buddy                                                     */
+/* ================================================================ */
+function HomeworkBuddyDocs() {
+  return (
+    <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
+      <BackLink label="Back to Learn" />
+      <div className="flex items-center gap-3">
+        <span className="text-3xl">📚</span>
+        <div>
+          <h1 className="text-2xl font-bold">Homework Buddy</h1>
+          <p className="text-sm text-text-muted">AI homework tutor for kids 10–17</p>
+        </div>
+      </div>
+
+      <Section title="What is Homework Buddy?" defaultOpen>
+        <p>
+          <strong>Homework Buddy</strong> is an AI tutor that helps students with their homework
+          without just giving them the answers. It guides them step by step, uses encouraging language,
+          and tracks assignments with due dates and priorities.
+        </p>
+        <p>
+          It's also the first cosmos-logos agent designed to teach kids how AI works. The entire app
+          runs on a local LAMP stack (PHP + MySQL + Docker) — making it a learning tool for both
+          homework AND technology.
+        </p>
+      </Section>
+
+      <Section title="What can Homework Buddy do?">
+        <ul className="list-disc list-inside space-y-1 text-text-muted">
+          <li><strong className="text-text-secondary">AI Tutoring</strong> — Ask questions about any subject. Grok guides you to the answer.</li>
+          <li><strong className="text-text-secondary">Assignment Tracking</strong> — Create, edit, and manage homework with due dates and priorities.</li>
+          <li><strong className="text-text-secondary">AI Tool Use</strong> — Grok can create/update/complete assignments from chat using native function calling.</li>
+          <li><strong className="text-text-secondary">AI Review</strong> — Click "Ask AI to Review" on any assignment for study tips.</li>
+          <li><strong className="text-text-secondary">Family Setup</strong> — Multiple family members, daily message limits for kids.</li>
+        </ul>
+      </Section>
+
+      <Section title="How to set up Homework Buddy">
+        <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted space-y-1">
+          <div>$ git clone https://github.com/cosmos-logos/homework-buddy.git</div>
+          <div>$ cd homework-buddy && docker compose up -d</div>
+          <div>$ open http://localhost:8080</div>
+        </div>
+        <p className="mt-2">Complete the family setup wizard, then connect in TurtleShell Agent Setup → <code className="text-shell-400">http://localhost:8080</code></p>
+        <p>Add your Grok API key in Homework Buddy's Settings tab (get one at <a href="https://console.x.ai" target="_blank" rel="noopener" className="text-shell-400 hover:underline">console.x.ai</a>).</p>
+      </Section>
+
+      <Section title="Technical details">
+        <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted space-y-1">
+          <div><span className="text-shell-400">Framework:</span> PHP 8.2 / Laravel 11</div>
+          <div><span className="text-shell-400">Port:</span> 8080 (nginx) / 9000 (PHP-FPM)</div>
+          <div><span className="text-shell-400">AI:</span> Grok (xAI) with native function calling</div>
+          <div><span className="text-shell-400">Database:</span> MySQL 8</div>
+          <div><span className="text-shell-400">Auth:</span> Ed25519 sealed envelopes (cosmos-logos)</div>
+          <div><span className="text-shell-400">License:</span> MIT</div>
+        </div>
+        <p className="mt-2"><a href="https://github.com/cosmos-logos/homework-buddy" target="_blank" rel="noopener" className="text-xs text-shell-400 hover:underline">View source on GitHub →</a></p>
+      </Section>
+    </div>
+  );
+}
+
+/* ================================================================ */
+/* Agora                                                              */
+/* ================================================================ */
+function AgoraDocs() {
+  return (
+    <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
+      <BackLink label="Back to Learn" />
+      <div className="flex items-center gap-3">
+        <span className="text-3xl">🏛️</span>
+        <div>
+          <h1 className="text-2xl font-bold">Agora</h1>
+          <p className="text-sm text-text-muted">Sovereign group collaboration for families, teams, and neighborhoods</p>
+        </div>
+      </div>
+
+      <Section title="What is Agora?" defaultOpen>
+        <p>
+          <strong>Agora</strong> is a group collaboration tool where your data lives in your own
+          Google Drive and Sheets — not on someone else's server. Create a group, invite members,
+          manage projects, and chat with AI assistance powered by Gemini.
+        </p>
+        <p>
+          Every group is a Google Sheet with 5 tabs (messages, members, projects, tasks, assets).
+          Every file is in your Google Drive. You own it all.
+        </p>
+      </Section>
+
+      <Section title="What can Agora do?">
+        <ul className="list-disc list-inside space-y-1 text-text-muted">
+          <li><strong className="text-text-secondary">Group Chat</strong> — Send messages stored in Google Sheets. AI auto-replies with role-aware personas.</li>
+          <li><strong className="text-text-secondary">Projects</strong> — Create and manage projects. Gemini can create/update/complete them from chat.</li>
+          <li><strong className="text-text-secondary">AI Personas</strong> — Choose: Owner, PM, Decorator, Foreman, or General Assistant.</li>
+          <li><strong className="text-text-secondary">Google Integration</strong> — OAuth sign-in, Drive folders, Sheets storage. Your data, your account.</li>
+          <li><strong className="text-text-secondary">Gemini Function Calling</strong> — "Add a project: Replace Fireplace" → AI creates it in the Sheet.</li>
+        </ul>
+      </Section>
+
+      <Section title="How to set up Agora">
+        <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted space-y-1">
+          <div>$ git clone https://github.com/cosmos-logos/agora.git</div>
+          <div>$ cd agora && npm install && npm start</div>
+          <div>$ open http://localhost:4200</div>
+        </div>
+        <p className="mt-2">Sign in with Google, create a group, then connect in TurtleShell Agent Setup → <code className="text-shell-400">http://localhost:4200</code></p>
+        <p>Add your Gemini API key in Agora's Settings page (get one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" className="text-shell-400 hover:underline">aistudio.google.com</a>).</p>
+      </Section>
+
+      <Section title="Technical details">
+        <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted space-y-1">
+          <div><span className="text-shell-400">Framework:</span> Angular 17 + Tailwind CSS</div>
+          <div><span className="text-shell-400">Port:</span> 4200 (dev server) / 4201 (setup server)</div>
+          <div><span className="text-shell-400">AI:</span> Gemini 2.5 Flash with native function calling</div>
+          <div><span className="text-shell-400">Storage:</span> Google Sheets + Google Drive (user's own account)</div>
+          <div><span className="text-shell-400">Auth:</span> Google OAuth 2.0 + Ed25519 sealed envelopes</div>
+          <div><span className="text-shell-400">License:</span> MIT</div>
+        </div>
+        <p className="mt-2"><a href="https://github.com/cosmos-logos/agora" target="_blank" rel="noopener" className="text-xs text-shell-400 hover:underline">View source on GitHub →</a></p>
+      </Section>
+    </div>
+  );
+}
+
+/* ================================================================ */
 /* Router                                                             */
 /* ================================================================ */
 export function Docs() {
@@ -497,6 +916,10 @@ export function Docs() {
         <Route path="security" element={<SecurityDocs />} />
         <Route path="building" element={<BuildingDocs />} />
         <Route path="glossary" element={<GlossaryDocs />} />
+        <Route path="athena" element={<AthenaDocs />} />
+        <Route path="thoth" element={<ThothDocs />} />
+        <Route path="homework-buddy" element={<HomeworkBuddyDocs />} />
+        <Route path="agora" element={<AgoraDocs />} />
       </Routes>
     </div>
   );

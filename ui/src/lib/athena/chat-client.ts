@@ -1,4 +1,5 @@
 import { useEnvironmentStore } from '@/lib/store/environment-store';
+import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { buildMCPHeaders } from './mcp-headers';
 import { getShellId } from '@/lib/api/olympus-grid-client';
 
@@ -19,13 +20,19 @@ export async function* streamChat(
   conversationId?: string | null,
   options?: { memoryEnabled?: boolean; saveConversation?: boolean; systemPrompt?: string; agentId?: string },
 ): AsyncGenerator<string | { conversationId: string }, void, unknown> {
-  const baseUrl = useEnvironmentStore.getState().getBaseUrl();
+  // Resolve base URL: connected cosmos agent's URL takes priority over environment preset
+  const activeChatAgentId = useCosmosLogosStore.getState().activeChatAgentId;
+  const cosmosAgent = activeChatAgentId
+    ? useCosmosLogosStore.getState().agents.find(a => a.id === activeChatAgentId)
+    : null;
+  const baseUrl = cosmosAgent?.url || useEnvironmentStore.getState().getBaseUrl();
+
   const mcpHeaders = buildMCPHeaders();
 
   const url = `${baseUrl}/chat`;
 
-  console.log('[ATHENA] Chat request — MCP active:',
-    Object.keys(mcpHeaders).filter((k) => k !== 'x-developer-key'),
+  console.log('[ATHENA] Chat request →', baseUrl,
+    'MCP:', Object.keys(mcpHeaders).filter((k) => k !== 'x-developer-key').length > 1 ? 'active' : 'none',
     'system_prompt:', options?.systemPrompt ? options.systemPrompt.substring(0, 60) + '...' : '(none)');
 
   const headers: Record<string, string> = {
