@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Lock } from 'lucide-react';
 import { useNavigate, useMatch } from 'react-router-dom';
 import { useAgentStore, isAgentAvailable } from '@/lib/store/agent-store';
@@ -31,13 +32,31 @@ export function AgentPicker({ compact }: AgentPickerProps) {
 
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  const getDropdownStyle = (): React.CSSProperties => {
+    if (!buttonRef.current) return { position: 'fixed', zIndex: 9999 };
+    const rect = buttonRef.current.getBoundingClientRect();
+    return {
+      position: 'fixed',
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+      zIndex: 9999,
+    };
+  };
 
   
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const inContainer = containerRef.current?.contains(target);
+      const inDropdown = dropdownRef.current?.contains(target);
+      if (!inContainer && !inDropdown) {
         setOpen(false);
       }
     };
@@ -83,6 +102,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
     return (
       <div ref={containerRef} className="relative">
         <button
+          ref={buttonRef}
           onClick={() => setOpen(!open)}
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-2 hover:bg-surface-3 transition-colors w-full"
         >
@@ -105,8 +125,8 @@ export function AgentPicker({ compact }: AgentPickerProps) {
           />
         </button>
 
-        {open && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 py-1 z-50 animate-fade-in">
+        {open && createPortal(
+          <div ref={dropdownRef} style={getDropdownStyle()} className="bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 py-1 animate-fade-in max-h-[70vh] overflow-y-auto">
             {allBuiltinAgents.map((agent) => {
               const locked = !isAgentAvailable(agent);
               const isActive = activeAgent.id === agent.id;
@@ -157,7 +177,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
                 })}
               </>
             )}
-          </div>
+          </div>, document.body
         )}
       </div>
     );
@@ -168,6 +188,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={buttonRef}
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 hover:bg-surface-2 rounded-lg px-2 py-1.5 transition-colors group"
       >
@@ -197,8 +218,8 @@ export function AgentPicker({ compact }: AgentPickerProps) {
         </div>
       </button>
 
-      {open && (
-        <div className="absolute top-full left-0 mt-2 w-56 bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 py-1 z-50 animate-fade-in">
+      {open && createPortal(
+        <div style={{...getDropdownStyle(), width: 224}} className="bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 py-1 animate-fade-in max-h-[70vh] overflow-y-auto">
           {allBuiltinAgents.map((agent) => {
             const locked = !isAgentAvailable(agent);
             const isActive = activeAgent.id === agent.id;
@@ -258,7 +279,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
               })}
             </>
           )}
-        </div>
+        </div>, document.body
       )}
     </div>
   );
