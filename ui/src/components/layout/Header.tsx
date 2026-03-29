@@ -74,7 +74,7 @@ export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMen
     : `${onlineCount}/${agentHealths.length} online`;
 
   return (
-    <header className="h-14 flex-shrink-0 flex items-center justify-between px-4 border-b border-border-muted bg-surface-0/80 backdrop-blur-md">
+    <header className="h-14 flex-shrink-0 flex items-center justify-between px-4 border-b border-border-muted bg-surface-0/80 backdrop-blur-md relative z-50">
       {/* Left side */}
       <div className="flex items-center gap-3">
         {!desktopSidebarOpen && (
