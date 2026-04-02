@@ -117,12 +117,14 @@ function modeKey(codename: string, mode: 'cloud' | 'dev' | 'offgrid'): ModeKey {
   return `${codename}-${mode}`;
 }
 
-function findConnectedAgent(agents: ConnectedAgent[], config: AgentConfig, mode: 'cloud' | 'dev' | 'offgrid'): ConnectedAgent | undefined {
+function findConnectedAgent(agents: ConnectedAgent[], config: AgentConfig, mode: 'cloud' | 'dev' | 'offgrid', offgridUrl = ''): ConnectedAgent | undefined {
   return agents.find(a => {
     if (a.manifest.identity.codename !== config.codename) return false;
     if (mode === 'cloud') return a.url === config.cloud.url;
-    if (mode === 'offgrid') return a.url.includes(':717/');
-    return a.url !== config.cloud.url && !a.url.includes(':717/');
+    if (mode === 'offgrid') return a.url.includes(':717/') || (offgridUrl && a.url.startsWith(offgridUrl.replace(/\/+$/, '')));
+    // dev = not cloud and not offgrid
+    const isOffgrid = a.url.includes(':717/') || (offgridUrl && a.url.startsWith(offgridUrl.replace(/\/+$/, '')));
+    return a.url !== config.cloud.url && !isOffgrid;
   });
 }
 
@@ -289,7 +291,7 @@ function ModeRow({ config, mode, cosmosAgents, connecting, onConnect, onDisconne
   const hiddenIds = useAgentStore((s) => s.hiddenAgentIds);
   const key = modeKey(config.codename, mode);
   const isLoading = connecting === key;
-  const connectedAgent = findConnectedAgent(cosmosAgents, config, mode);
+  const connectedAgent = findConnectedAgent(cosmosAgents, config, mode, offgridUrl);
   const connected = !!connectedAgent;
 
   const label = mode === 'cloud' ? '☁️ Olympus-Grid' : mode === 'dev' ? '🔧 Developer' : '🐢 Off-Grid';
@@ -384,7 +386,7 @@ function AgentRow({ agent, expanded, onExpand }: {
 
   // Count connected modes for this agent
   const connectedCount = agent.config
-    ? (['cloud', 'dev', 'offgrid'] as const).filter(m => findConnectedAgent(cosmosAgents, agent.config!, m)).length
+    ? (['cloud', 'dev', 'offgrid'] as const).filter(m => findConnectedAgent(cosmosAgents, agent.config!, m, offgridUrls[agent.config!.codename] ?? '')).length
     : 0;
 
   const handleConnect = async (mode: 'cloud' | 'dev' | 'offgrid') => {
@@ -411,14 +413,14 @@ function AgentRow({ agent, expanded, onExpand }: {
 
   const handleDisconnect = (mode: 'cloud' | 'dev' | 'offgrid') => {
     if (!agent.config) return;
-    const ca = findConnectedAgent(cosmosAgents, agent.config, mode);
+    const ca = findConnectedAgent(cosmosAgents, agent.config, mode, offgridUrls[agent.config.codename] ?? '');
     if (ca) { cosmosStore.removeAgent(ca.id); useAgentStore.getState().reloadHidden(); }
   };
 
   const handleSecurityTest = async (mode: 'cloud' | 'dev' | 'offgrid') => {
     if (!agent.config) return;
     const key = modeKey(agent.config.codename, mode);
-    const ca = findConnectedAgent(cosmosAgents, agent.config, mode);
+    const ca = findConnectedAgent(cosmosAgents, agent.config, mode, offgridUrls[agent.config.codename] ?? '');
     if (!ca) return;
     setSecurityTesting(key);
     setSecurityResult(prev => { const next = { ...prev }; delete next[key]; return next; });

@@ -102,8 +102,9 @@ export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMen
         </div>
       </div>
 
-      {/* Right side — connection status (developer mode only) */}
+      {/* Right side — build label + connection status (developer mode only) */}
       <div className="flex items-center gap-3">
+        <span className="text-xs font-mono text-emerald-500/60">build 012</span>
         {showStatus && (
           <div className="relative">
             <button
