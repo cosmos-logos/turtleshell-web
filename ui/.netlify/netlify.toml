@@ -7,10 +7,10 @@ plugins = []
 [functions."*"]
 
 [build]
-publish = "/Users/gregory/dev/repos/olympus-616/turtleshell-web/ui/dist"
+publish = "/Users/gregory/dev/repos/cosmos-logos/turtleshell-web/ui/dist"
 publishOrigin = "config"
 commandOrigin = "config"
-base = "/Users/gregory/dev/repos/olympus-616/turtleshell-web/ui"
+base = "/Users/gregory/dev/repos/cosmos-logos/turtleshell-web/ui"
 command = "npm run build"
 
 [build.environment]
