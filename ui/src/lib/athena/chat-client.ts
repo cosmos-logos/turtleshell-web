@@ -31,8 +31,24 @@ export async function* streamChat(
 
   const url = `${baseUrl}/chat`;
 
+  // Build mcpServers array from connected cosmos-logos agents with x-mcp capability
+  const allAgents = useCosmosLogosStore.getState().agents;
+  const mcpServers = allAgents
+    .filter(a => a.capabilities.includes('x-mcp'))
+    .map(a => {
+      const mcpCap = a.manifest.capabilities.find(c => c.verb === 'x-mcp');
+      if (!mcpCap) return null;
+      return {
+        namespace: a.manifest.identity.codename,
+        url: `${a.url}${mcpCap.path}`,
+        manifestUrl: `${a.url}/.well-known/cosmos-logos.json`,
+        verified: true,
+      };
+    })
+    .filter(Boolean);
+
   console.log('[ATHENA] Chat request →', baseUrl,
-    'MCP:', Object.keys(mcpHeaders).filter((k) => k !== 'x-developer-key').length > 1 ? 'active' : 'none',
+    'MCP:', mcpServers.length > 0 ? `${mcpServers.length} server(s)` : 'none',
     'system_prompt:', options?.systemPrompt ? options.systemPrompt.substring(0, 60) + '...' : '(none)');
 
   const headers: Record<string, string> = {
@@ -55,6 +71,7 @@ export async function* streamChat(
       ...(options?.memoryEnabled !== false && conversationId ? { conversationId } : {}),
       ...(options?.memoryEnabled === false ? { memoryEnabled: false } : {}),
       ...(options?.saveConversation ? { saveConversation: true } : {}),
+      ...(mcpServers.length > 0 ? { mcpServers } : {}),
     }),
     signal,
   });

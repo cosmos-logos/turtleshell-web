@@ -63,6 +63,18 @@ const COSMOS_AGENTS: AgentConfig[] = [
     offgrid: { port: 3401, description: 'Athena inside the TurtleShell Off-Grid Docker fleet.' },
   },
   {
+    codename: 'poseidon-616',
+    name: 'Poseidon',
+    icon: '🔱',
+    color: '#0EA5E9',
+    repo: 'https://github.com/olympus-616/poseidon',
+    docsPath: '/app/docs/poseidon',
+    description: 'MCP tool server — dynamic runtime capabilities',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/poseidon', description: 'Cloud-hosted on AWS via Olympus-Grid. Requires Sea Shells.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/poseidon', port: 3411, description: 'Run Poseidon on your machine, expose via ngrok.' },
+    offgrid: { port: 3411, description: 'Poseidon inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
     codename: 'thoth',
     name: 'Thoth',
     icon: '📜',

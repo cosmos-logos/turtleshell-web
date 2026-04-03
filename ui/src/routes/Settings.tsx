@@ -139,7 +139,7 @@ export function Settings() {
           <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-text-muted">Version</span>
-              <span className="font-mono text-text-secondary">1.7.1</span>
+              <span className="font-mono text-text-secondary">1.7.2</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-text-muted">Platform</span>

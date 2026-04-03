@@ -1,5 +1,5 @@
 export const DOWNLOAD = {
-  version: '1.7.1',
+  version: '1.7.2',
   url: 'https://github.com/cosmos-logos/turtleshell-offgrid/releases/latest/download/TurtleShell.pkg',
   filename: 'TurtleShell.pkg',
   platform: 'macOS',
