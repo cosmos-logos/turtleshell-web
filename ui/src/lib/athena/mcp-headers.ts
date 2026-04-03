@@ -6,8 +6,6 @@
  * is connected, its endpoint is passed to Athena via x-mcp-server-url header.
  * If no MCP agent is connected, no MCP tools are available.
  */
-import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
-
 export function buildMCPHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
 
@@ -18,19 +16,7 @@ export function buildMCPHeaders(): Record<string, string> {
   const selectedAgent = localStorage.getItem('selected_agent') || 'turtle';
   headers['x-agent-id'] = selectedAgent;
 
-  // Discover MCP server from connected cosmos-logos agents
-  const cosmosAgents = useCosmosLogosStore.getState().agents;
-  const mcpAgent = cosmosAgents.find(a =>
-    a.capabilities.includes('x-mcp')
-  );
-  if (mcpAgent) {
-    const mcpCap = mcpAgent.manifest.capabilities.find(c => c.verb === 'x-mcp');
-    if (mcpCap) {
-      const mcpUrl = `${mcpAgent.url}${mcpCap.path}`;
-      headers['x-mcp-server-url'] = mcpUrl;
-      console.log('[MCP] Discovered MCP server from cosmos-logos:', mcpAgent.manifest.identity.name, mcpUrl);
-    }
-  }
+  // MCP servers are now passed in the request body (mcpServers array), not via header.
 
   // Salesforce instance URL — non-sensitive display value kept in localStorage
   const sfInstanceUrl = localStorage.getItem('sf_instance_url');
