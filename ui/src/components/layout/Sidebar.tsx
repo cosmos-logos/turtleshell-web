@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { agentDisplayName } from '@/lib/cosmos-logos/types';
+import { OLYMPUS_AGENTS } from '@/lib/agents/olympus-data';
 import { clearStoredTokens, serverLogout } from '@/lib/api/olympus-grid-client';
 import { useServiceStore } from '@/lib/store/service-store';
 import { useAgentStore } from '@/lib/store/agent-store';
@@ -64,10 +65,12 @@ function useNavItems(): NavItem[] {
     .filter(a => !hiddenIds.has(a.id))
     .map((a) => {
       const name = agentDisplayName(a);
+      const codename = a.manifest.identity.codename;
+      const olympus = OLYMPUS_AGENTS.find(o => codename.startsWith(o.codename) || o.codename.startsWith(codename));
       return {
         to: a.manifest.display?.app_url ? `/app/agent/${a.id}` : `/app/chat?agent=${a.id}`,
         label: name,
-        initial: name.charAt(0).toUpperCase(),
+        initial: olympus?.godEmoji || name.charAt(0).toUpperCase(),
         color: a.manifest.display?.color ?? '#6366f1',
         chatAgentId: a.manifest.display?.app_url ? undefined : a.id,
       };
