@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { NavLink, Link, useLocation } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Plug,
   LifeBuoy,
@@ -11,9 +11,13 @@ import {
   ChevronRight,
   X,
   Shell,
+  LogOut,
+  User,
 } from 'lucide-react';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { agentDisplayName } from '@/lib/cosmos-logos/types';
+import { clearStoredTokens, serverLogout } from '@/lib/api/olympus-grid-client';
+import { useServiceStore } from '@/lib/store/service-store';
 import { useAgentStore } from '@/lib/store/agent-store';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
 import { getShellId } from '@/lib/api/olympus-grid-client';
@@ -83,6 +87,64 @@ function useNavItems(): NavItem[] {
   ];
 }
 
+
+function UserFooter({ expanded }: { expanded: boolean }) {
+  const navigate = useNavigate();
+  const ogUser = useServiceStore((s) => s.olympusGridUser);
+  const email = ogUser?.email || localStorage.getItem('olympus_grid_email') || '';
+  const username = localStorage.getItem('turtleshell_username') || email.split('@')[0] || '';
+
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
+
+  const handleLogoutClick = useCallback(() => {
+    if (confirmingLogout) {
+      // Second click — actually log out
+      serverLogout().then(() => {
+        clearStoredTokens();
+        useServiceStore.getState().disconnectOlympusGrid();
+        navigate('/login', { replace: true });
+      });
+    } else {
+      setConfirmingLogout(true);
+      setTimeout(() => setConfirmingLogout(false), 3000);
+    }
+  }, [confirmingLogout, navigate]);
+
+  if (!expanded) {
+    return (
+      <div className="px-2 py-2 flex flex-col items-center gap-1.5">
+        <Link to="/app/profile" className="w-7 h-7 rounded-full bg-shell-500/10 flex items-center justify-center hover:bg-shell-500/20 transition-colors" title="View profile">
+          <User size={13} className="text-shell-400" />
+        </Link>
+        <button onClick={handleLogoutClick} className={`p-1.5 rounded-md transition-colors ${confirmingLogout ? 'bg-red-500/20 text-red-400' : 'hover:bg-red-500/10 text-text-muted hover:text-red-400'}`} title={confirmingLogout ? 'Click again to confirm' : 'Log out'}>
+          <LogOut size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-3 py-2">
+      <div className="flex items-center gap-2">
+        <Link to="/app/profile" className="w-7 h-7 rounded-full bg-shell-500/10 flex items-center justify-center flex-shrink-0 hover:bg-shell-500/20 transition-colors" title="View profile">
+          <User size={13} className="text-shell-400" />
+        </Link>
+        <div className="flex-1 min-w-0">
+          <Link to="/app/profile" className="block no-underline">
+            <p className="text-xs font-medium text-text-primary truncate hover:text-shell-400 transition-colors">{username}</p>
+          </Link>
+          {email && <p className="text-2xs text-text-muted truncate">{email}</p>}
+        </div>
+        <button onClick={handleLogoutClick} className={`p-1.5 rounded-md transition-colors ${confirmingLogout ? 'bg-red-500/20 text-red-400' : 'hover:bg-red-500/10 text-text-muted hover:text-red-400'}`} title={confirmingLogout ? 'Click again to confirm' : 'Log out'}>
+          <LogOut size={14} />
+        </button>
+      </div>
+      {confirmingLogout && (
+        <p className="text-2xs text-red-400 mt-1 ml-9">Click again to log out</p>
+      )}
+    </div>
+  );
+}
 
 function SeaShellBadge({ expanded }: { expanded: boolean }) {
   const [quota, setQuota] = useState<QuotaResponse | null>(null);
@@ -258,6 +320,9 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
 
         {/* Sea Shell balance badge */}
         <SeaShellBadge expanded />
+
+        {/* User + Logout */}
+        <UserFooter expanded />
       </aside>
     );
   }
@@ -301,8 +366,11 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
         })}
       </nav>
 
-      {/* Bottom: shell badge + expand button (collapsed) */}
+      {/* Shell badge */}
       <SeaShellBadge expanded={open} />
+
+      {/* User + Logout (below shells) */}
+      <UserFooter expanded={open} />
       {!open && (
         <div className="px-2 py-3 border-t border-border-muted flex justify-center">
           <button

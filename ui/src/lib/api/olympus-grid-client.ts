@@ -70,12 +70,19 @@ export async function ogRequest(
 
   console.log('[OG] REQUEST:', method, fullUrl, body);
 
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // Include JWT from localStorage if available (x-token-delivery: header path)
+  // If not in localStorage, cookies are sent via credentials: 'include' and
+  // Ares cookieToHeader middleware converts them to x-user-identity
+  const storedToken = localStorage.getItem('og_access_token');
+  if (storedToken) {
+    headers['x-user-identity'] = storedToken;
+  }
+
   const response = await fetch(fullUrl, {
     method,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
 
@@ -101,15 +108,21 @@ export async function ogRequest(
 export async function requestMagicLink(
   email: string,
 ): Promise<{ requestId: string; expiresIn: number }> {
-  const result = await siteFetch('/auth/email/link/request', {
+  // Public endpoint — do NOT send cookies (stale JWT causes 401)
+  const url = `${getGridBase()}/auth/email/link/request`;
+  const response = await fetch(url, {
     method: 'POST',
+    credentials: 'omit',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email,
       clientId: 'turtleshell-web',
       callbackUrl: window.location.origin + '/auth/callback',
     }),
   });
-  return result as { requestId: string; expiresIn: number };
+  const json = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(json?.error || `Request failed (${response.status})`);
+  return (json?.result ?? json) as { requestId: string; expiresIn: number };
 }
 
 export interface VerifyResult {
@@ -124,25 +137,38 @@ export async function verifyCode(
   code: string,
   requestId: string,
 ): Promise<VerifyResult> {
-  const result = await siteFetch('/auth/email/link/verify', {
+  // Use x-token-delivery: header so Ares returns tokens in response headers
+  // instead of httpOnly cookies (cookies don't work through Vite proxy in dev)
+  const url = `${getGridBase()}/auth/email/link/verify`;
+  const response = await fetch(url, {
     method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-token-delivery': 'header',
+    },
     body: JSON.stringify({
       code: code.toUpperCase().trim(),
       requestId,
     }),
   });
 
-  const verified = result as VerifyResult;
+  // Capture tokens from response headers (set by Ares with x-token-delivery: header)
+  const accessToken = response.headers.get('x-og-access-token');
+  const refreshToken = response.headers.get('x-og-refresh-token');
 
-  // Persist non-sensitive display values only.
-  // Tokens (accessToken, refreshToken) are now set as httpOnly cookies by Ares
-  // and are never stored in localStorage.
+  const json = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(json?.error || `Verification failed (${response.status})`);
+
+  const verified = (json?.result ?? json) as VerifyResult;
+
+  // Store tokens in localStorage — used for authenticated API requests
+  if (accessToken) localStorage.setItem('og_access_token', accessToken);
+  if (refreshToken) localStorage.setItem('og_refresh_token', refreshToken);
+
   localStorage.setItem('olympus_grid_email', verified.user.email);
-
-  // Store the grid base URL so MCP headers can route Poseidon → Ares → Hermes → OG
   localStorage.setItem('olympus_grid_service_url', getGridBase());
 
-  // Store the JWT sub as shell ID — used for memory reflect/recall queries
   if (verified.user.sub) {
     localStorage.setItem('olympus_grid_shell_id', verified.user.sub);
   }
@@ -151,10 +177,11 @@ export async function verifyCode(
 }
 
 export function clearStoredTokens() {
-  // Only remove non-sensitive display values — tokens are in httpOnly cookies
   localStorage.removeItem('olympus_grid_email');
   localStorage.removeItem('olympus_grid_service_url');
   localStorage.removeItem('olympus_grid_shell_id');
+  localStorage.removeItem('og_access_token');
+  localStorage.removeItem('og_refresh_token');
 }
 
 /** @deprecated Token is no longer stored in localStorage — use checkAuthStatus() instead */

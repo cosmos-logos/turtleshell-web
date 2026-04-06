@@ -17,7 +17,7 @@ export function AuthCallback() {
     const requestId = searchParams.get('requestId');
 
     if (!code || !requestId) {
-      navigate('/app/services', { replace: true });
+      navigate('/login', { replace: true });
       return;
     }
 
@@ -25,7 +25,9 @@ export function AuthCallback() {
       .then((result) => {
         useServiceStore.getState().setOlympusGridConnected(result.user);
         setState('success');
-        const timer = setTimeout(() => navigate('/app/services', { replace: true }), 2000);
+        const hasOnboarded = !!localStorage.getItem('turtleshell-onboarding');
+        const dest = hasOnboarded ? '/app/chat' : '/onboarding';
+        const timer = setTimeout(() => navigate(dest, { replace: true }), 2000);
         return () => clearTimeout(timer);
       })
       .catch((e) => {
@@ -60,7 +62,7 @@ export function AuthCallback() {
             <XCircle size={32} className="mx-auto text-red-400" />
             <p className="text-sm text-red-400">{error}</p>
             <Link
-              to="/app/services"
+              to="/login"
               className="text-sm text-shell-400 hover:underline"
             >
               Return to Services
