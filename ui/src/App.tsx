@@ -20,6 +20,11 @@ import { Shells } from './routes/Shells';
 import { Journal } from './routes/Journal';
 import { AgentView } from './routes/AgentView';
 import { OffGrid } from './routes/OffGrid';
+import { Onboarding } from './routes/onboarding/Onboarding';
+import { PublicProfile } from './routes/PublicProfile';
+import { Profile } from './routes/Profile';
+import { Login } from './routes/Login';
+import { RequireAuth } from './components/auth/RequireAuth';
 
 export function App() {
   useStartupRefresh();
@@ -35,12 +40,21 @@ export function App() {
         <Route path="/security" element={<Security />} />
       </Route>
 
-      {/* Auth callbacks (outside shell) */}
+      {/* Login (public) */}
+      <Route path="/login" element={<Login />} />
+
+      {/* Public profile (public) */}
+      <Route path="/u/:username" element={<PublicProfile />} />
+
+      {/* Auth callbacks (public) */}
       <Route path="/oauth/callback/:provider" element={<OAuthCallback />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
 
-      {/* App shell with sidebar */}
-      <Route path="/app" element={<AppShell />}>
+      {/* Onboarding (requires auth) */}
+      <Route path="/onboarding" element={<RequireAuth><Onboarding /></RequireAuth>} />
+
+      {/* App shell with sidebar (requires auth) */}
+      <Route path="/app" element={<RequireAuth><AppShell /></RequireAuth>}>
         <Route index element={<Navigate to="/app/chat" replace />} />
         <Route path="chat" element={<Chat />} />
         <Route path="history" element={<History />} />
@@ -52,6 +66,7 @@ export function App() {
         <Route path="agent/:agentId" element={<AgentView />} />
         <Route path="shells" element={<Shells />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="profile" element={<Profile />} />
         <Route path="docs/*" element={<Docs />} />
       </Route>
 

@@ -19,10 +19,7 @@ const LOGOS_AGENT: Agent = {
   },
 };
 
-/** Agents available in the picker. */
-export const AGENT_CATALOG: Agent[] = [
-  LOGOS_AGENT,
-  {
+const COSMOS_AGENT: Agent = {
     id: 'cosmos',
     name: 'Cosmos',
     description: 'The Fish — navigator of agents and the digital universe',
@@ -38,7 +35,12 @@ export const AGENT_CATALOG: Agent[] = [
       },
       preferred_engine: 'openai',
     },
-  },
+};
+
+/** Agents available in the picker. Cosmos first, then Logos. */
+export const AGENT_CATALOG: Agent[] = [
+  COSMOS_AGENT,
+  LOGOS_AGENT,
   {
     id: 'claude',
     name: 'Claude',

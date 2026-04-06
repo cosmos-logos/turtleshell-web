@@ -76,11 +76,11 @@ export function AgentPicker({ compact }: AgentPickerProps) {
   const switchAgent = useChatStore((s) => s.switchAgent);
 
   const handleSelectBuiltin = (agent: Agent) => {
-    
     if (!isAgentAvailable(agent)) return;
     setActiveChatAgent(null);
     setActiveAgent(agent);
     switchAgent(agent.id);
+    navigate('/app/chat');
     setOpen(false);
   };
 
@@ -219,7 +219,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
       </button>
 
       {open && createPortal(
-        <div style={{...getDropdownStyle(), width: 224}} className="bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 py-1 animate-fade-in max-h-[70vh] overflow-y-auto">
+        <div ref={dropdownRef} style={{...getDropdownStyle(), width: 224}} className="bg-surface-1 border border-border-muted rounded-xl shadow-lg shadow-black/30 py-1 animate-fade-in max-h-[70vh] overflow-y-auto">
           {allBuiltinAgents.map((agent) => {
             const locked = !isAgentAvailable(agent);
             const isActive = activeAgent.id === agent.id;
