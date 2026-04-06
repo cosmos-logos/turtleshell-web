@@ -6,7 +6,13 @@ import { useAgentStore, isAgentAvailable } from '@/lib/store/agent-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { agentDisplayName } from '@/lib/cosmos-logos/types';
 import { useChatStore } from '@/lib/store/chat-store';
+import { OLYMPUS_AGENTS } from '@/lib/agents/olympus-data';
 import type { Agent } from '@/types/agent';
+
+function cosmosEmoji(codename: string): string | null {
+  const o = OLYMPUS_AGENTS.find(a => codename.startsWith(a.codename) || a.codename.startsWith(codename));
+  return o?.godEmoji ?? null;
+}
 
 interface AgentPickerProps {
   /** Compact mode for mobile — renders inline without the icon orb. */
@@ -108,10 +114,10 @@ export function AgentPicker({ compact }: AgentPickerProps) {
         >
           {activeCosmosAgent ? (
             <span
-              className="w-5 h-5 rounded flex items-center justify-center text-[11px] font-bold flex-shrink-0"
+              className="w-5 h-5 rounded flex items-center justify-center text-sm flex-shrink-0"
               style={{ backgroundColor: `${compactColor}25`, color: compactColor }}
             >
-              {agentDisplayName(activeCosmosAgent).charAt(0)}
+              {cosmosEmoji(activeCosmosAgent.manifest.identity.codename) || agentDisplayName(activeCosmosAgent).charAt(0)}
             </span>
           ) : (
             <span className="text-base leading-none">{activeAgent.icon}</span>
@@ -166,10 +172,10 @@ export function AgentPicker({ compact }: AgentPickerProps) {
                       className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-2 text-text-primary transition-colors"
                     >
                       <span
-                        className="w-5 h-5 rounded flex items-center justify-center text-[11px] font-bold flex-shrink-0"
+                        className="w-5 h-5 rounded flex items-center justify-center text-sm flex-shrink-0"
                         style={{ backgroundColor: `${color}25`, color }}
                       >
-                        {agentDisplayName(a).charAt(0)}
+                        {cosmosEmoji(a.manifest.identity.codename) || agentDisplayName(a).charAt(0)}
                       </span>
                       <span className="text-sm font-medium flex-1">{agentDisplayName(a)}</span>
                     </button>
@@ -197,7 +203,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
             className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
             style={{ backgroundColor: `${desktopColor}25`, color: desktopColor }}
           >
-            {agentDisplayName(activeCosmosAgent).charAt(0)}
+            {cosmosEmoji(activeCosmosAgent.manifest.identity.codename) || agentDisplayName(activeCosmosAgent).charAt(0)}
           </div>
         ) : (
           <div className="w-7 h-7 rounded-full bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-xs flex-shrink-0">
@@ -265,10 +271,10 @@ export function AgentPicker({ compact }: AgentPickerProps) {
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-2 text-text-primary transition-colors"
                   >
                     <span
-                      className="w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold flex-shrink-0"
+                      className="w-6 h-6 rounded-md flex items-center justify-center text-sm flex-shrink-0"
                       style={{ backgroundColor: `${color}25`, color }}
                     >
-                      {agentDisplayName(a).charAt(0)}
+                      {cosmosEmoji(a.manifest.identity.codename) || agentDisplayName(a).charAt(0)}
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium">{agentDisplayName(a)}</div>
