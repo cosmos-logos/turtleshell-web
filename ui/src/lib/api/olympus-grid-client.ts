@@ -24,35 +24,6 @@ function stripHtml(text: string): string {
   return text.replace(/<[^>]*>/g, '').trim();
 }
 
-/**
- * Fetch against Olympus-Grid via Ares gateway.
- * All OG API calls go through `/v1/grid/master/*`.
- * Auth is handled via httpOnly cookies.
- */
-async function siteFetch(
-  path: string,
-  options: RequestInit = {},
-): Promise<unknown> {
-  const url = `${getGridBase()}${path}`;
-
-  const response = await fetch(url, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
-
-  const json = await response.json().catch(() => null);
-
-  if (!response.ok || json?.error) {
-    const raw = json?.error || json?.message || `Request failed (${response.status})`;
-    throw new Error(stripHtml(typeof raw === 'string' ? raw : JSON.stringify(raw)));
-  }
-
-  return json?.result ?? json;
-}
 
 /**
  * Shared authenticated request against Olympus-Grid via Ares gateway.

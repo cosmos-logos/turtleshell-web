@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CAUSES, TIERS, PERKS, GUIDES, type GuideKey, type CauseIndex } from './OnboardingData';
+import { CAUSES, TIERS, PERKS, type GuideKey, type CauseIndex } from './OnboardingData';
 import { ogRequest } from '@/lib/api/olympus-grid-client';
 
 function Btn({ children, onClick, disabled, variant = 'primary', className = '' }: {
@@ -183,7 +183,7 @@ function TierScreen({ onNext, selectedTier, setSelectedTier }: {
       </p>
       <div className="w-full max-w-[320px] space-y-3">
         <Btn onClick={onNext} disabled={!selectedTier}>
-          {selectedTier === 'enterprise' ? 'Contact Us' : selectedTier ? `Subscribe · ${TIERS.find(t => t.id === selectedTier)?.price}/mo` : 'Start My Subscription'}
+          {selectedTier === 'enterprise' ? 'Contact Us' : selectedTier ? `Subscribe · ${TIERS.find(t => t.id === selectedTier)?.price ?? ''}/mo` : 'Start My Subscription'}
         </Btn>
         <Btn variant="ghost" onClick={onNext}>Start with my free shells first</Btn>
       </div>
@@ -226,7 +226,7 @@ export function Onboarding() {
   const [step, setStep] = useState(0);
   const [selectedCause, setSelectedCause] = useState<CauseIndex | null>(null);
   const [selectedTier, setSelectedTier] = useState<string | null>(null);
-  const [selectedGuide, setSelectedGuide] = useState<GuideKey | null>(null);
+  const [selectedGuide] = useState<GuideKey | null>(null);
   const [transitioning, setTransitioning] = useState(false);
 
   const goNext = useCallback(() => {
@@ -244,7 +244,7 @@ export function Onboarding() {
 
     try {
       const email = localStorage.getItem('olympus_grid_email') || '';
-      const username = email.split('@')[0].replace(/[^a-z0-9_-]/gi, '').toLowerCase() || 'user-' + Date.now();
+      const username = (email.split('@')[0] ?? '').replace(/[^a-z0-9_-]/gi, '').toLowerCase() || 'user-' + Date.now();
 
       const data = await ogRequest('POST', '/turtleshell/profile', {
         username,

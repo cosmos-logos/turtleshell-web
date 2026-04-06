@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Plus, Trash2, GripVertical, Check, X } from 'lucide-react';
+import { Plus, Trash2, Check, X } from 'lucide-react';
 import { ogRequest } from '@/lib/api/olympus-grid-client';
 
 const CAUSE_MAP: Record<string, { emoji: string }> = {
