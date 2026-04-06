@@ -91,7 +91,7 @@ export function OlympusAgentCard({ agent, connected, onClick }: Props) {
 
       {/* Capability tags */}
       <div className="flex gap-1.5 justify-center flex-wrap mb-4">
-        {agent.capabilities.map(cap => (
+        {agent.capabilities.map((cap: string) => (
           <span
             key={cap}
             className="text-[9px] tracking-[0.2em] uppercase px-2.5 py-0.5 rounded-full font-medium"
