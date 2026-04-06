@@ -7,9 +7,17 @@ import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { agentDisplayName } from '@/lib/cosmos-logos/types';
 import { useChatStore } from '@/lib/store/chat-store';
 import { OLYMPUS_AGENTS } from '@/lib/agents/olympus-data';
+import { useAgentThemeStore } from '@/lib/store/agent-theme-store';
 import type { Agent } from '@/types/agent';
 
-function cosmosEmoji(codename: string): string | null {
+const OCEAN_EMOJIS: Record<string, string> = {
+  'athena-616': '🐙', 'poseidon-616': '🔱', 'apollo-616': '🐬',
+  cosmos: '🐟', logos: '🐢',
+};
+
+function resolveEmoji(codename: string, theme: string): string | null {
+  if (theme === 'standard') return null;
+  if (theme === 'ocean') return OCEAN_EMOJIS[codename] ?? null;
   const o = OLYMPUS_AGENTS.find(a => codename.startsWith(a.codename) || a.codename.startsWith(codename));
   return o?.godEmoji ?? null;
 }
@@ -24,6 +32,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
   const allBuiltinAgents = allBuiltinAgentsRaw.filter(a => !hiddenAgentIds.has(a.id));
   const cosmosAgentsRaw = useCosmosLogosStore((s) => s.agents);
   const cosmosAgents = cosmosAgentsRaw.filter(a => !hiddenAgentIds.has(a.id));
+  const agentTheme = useAgentThemeStore((s) => s.agentTheme);
   const activeChatAgentId = useCosmosLogosStore((s) => s.activeChatAgentId);
   const setActiveChatAgent = useCosmosLogosStore((s) => s.setActiveChatAgent);
   const navigate = useNavigate();
@@ -117,7 +126,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
               className="w-5 h-5 rounded flex items-center justify-center text-sm flex-shrink-0"
               style={{ backgroundColor: `${compactColor}25`, color: compactColor }}
             >
-              {cosmosEmoji(activeCosmosAgent.manifest.identity.codename) || agentDisplayName(activeCosmosAgent).charAt(0)}
+              {resolveEmoji(activeCosmosAgent.manifest.identity.codename, agentTheme) || agentDisplayName(activeCosmosAgent).charAt(0)}
             </span>
           ) : (
             <span className="text-base leading-none">{activeAgent.icon}</span>
@@ -175,7 +184,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
                         className="w-5 h-5 rounded flex items-center justify-center text-sm flex-shrink-0"
                         style={{ backgroundColor: `${color}25`, color }}
                       >
-                        {cosmosEmoji(a.manifest.identity.codename) || agentDisplayName(a).charAt(0)}
+                        {resolveEmoji(a.manifest.identity.codename, agentTheme) || agentDisplayName(a).charAt(0)}
                       </span>
                       <span className="text-sm font-medium flex-1">{agentDisplayName(a)}</span>
                     </button>
@@ -203,7 +212,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
             className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
             style={{ backgroundColor: `${desktopColor}25`, color: desktopColor }}
           >
-            {cosmosEmoji(activeCosmosAgent.manifest.identity.codename) || agentDisplayName(activeCosmosAgent).charAt(0)}
+            {resolveEmoji(activeCosmosAgent.manifest.identity.codename, agentTheme) || agentDisplayName(activeCosmosAgent).charAt(0)}
           </div>
         ) : (
           <div className="w-7 h-7 rounded-full bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-xs flex-shrink-0">
@@ -274,7 +283,7 @@ export function AgentPicker({ compact }: AgentPickerProps) {
                       className="w-6 h-6 rounded-md flex items-center justify-center text-sm flex-shrink-0"
                       style={{ backgroundColor: `${color}25`, color }}
                     >
-                      {cosmosEmoji(a.manifest.identity.codename) || agentDisplayName(a).charAt(0)}
+                      {resolveEmoji(a.manifest.identity.codename, agentTheme) || agentDisplayName(a).charAt(0)}
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium">{agentDisplayName(a)}</div>

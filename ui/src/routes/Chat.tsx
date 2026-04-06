@@ -20,7 +20,12 @@ import type { ChatMessage } from '@/types/chat';
 // Matches "[Calling tool <name> with args <json>]" lines from Athena
 const TOOL_CALL_PATTERN = /^\[Calling tool .+ with args .+\]$/;
 
-/** Resolve the avatar emoji for the active agent, respecting olympus theme */
+const OCEAN_EMOJIS: Record<string, string> = {
+  'athena-616': '🐙', 'poseidon-616': '🔱', 'apollo-616': '🐬',
+  cosmos: '🐟', logos: '🐢',
+};
+
+/** Resolve the avatar emoji for the active agent, respecting theme setting */
 function useAgentAvatar(): string {
   const activeAgent = useAgentStore((s) => s.activeAgent);
   const activeCosmos = useCosmosLogosStore((s) => s.activeChatAgentId);
@@ -31,19 +36,23 @@ function useAgentAvatar(): string {
   if (activeCosmos) {
     const ca = cosmosAgents.find(a => a.id === activeCosmos);
     if (ca) {
+      const codename = ca.manifest.identity.codename;
       if (agentTheme === 'olympus') {
-        const oa = OLYMPUS_AGENTS.find(o => ca.id.startsWith(o.codename) || o.codename.startsWith(ca.manifest.identity.codename));
+        const oa = OLYMPUS_AGENTS.find(o => codename.startsWith(o.codename) || o.codename.startsWith(codename));
         if (oa) return oa.godEmoji;
       }
-      return ca.manifest.identity.codename === 'athena-616' ? '🐙' : ca.manifest.identity.name.charAt(0);
+      if (agentTheme === 'ocean') return OCEAN_EMOJIS[codename] ?? ca.manifest.identity.name.charAt(0);
+      return ca.manifest.identity.name.charAt(0);
     }
   }
 
-  // Built-in agent — check olympus theme
+  // Built-in agent
   if (agentTheme === 'olympus') {
     const oa = OLYMPUS_AGENTS.find(o => o.codename === activeAgent.id || o.codename === activeAgent.id + '-616');
     if (oa) return oa.godEmoji;
   }
+  if (agentTheme === 'ocean') return OCEAN_EMOJIS[activeAgent.id] ?? activeAgent.icon ?? '🐢';
+  if (agentTheme === 'standard') return activeAgent.name.charAt(0).toUpperCase();
 
   return activeAgent.icon || '🐢';
 }
