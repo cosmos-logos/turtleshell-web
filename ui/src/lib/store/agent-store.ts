@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import type { Agent } from '@/types/agent';
 
+const OFFGRID_ATHENA = 'https://athena-616.ngrok.io/v1/athena';
+const CLOUD_ATHENA = 'https://api-int.turtleshell.ai/v1/athena';
+
 const LOGOS_AGENT: Agent = {
   id: 'logos',
   name: 'Logos',
@@ -8,6 +11,7 @@ const LOGOS_AGENT: Agent = {
   icon: '🐢',
   capabilities: ['chat'],
   requiredServices: [],
+  endpoint: OFFGRID_ATHENA,
   systemPrompt: 'You are Logos the Turtle, the ancient and eternal keeper of wisdom within TurtleShell. You are always available — the first voice a user hears, the last one standing when all services are offline. Speak slowly, with patience, grounding seekers in timeless wisdom. You carry the weight of the world on your shell with grace. When users are confused, simplify. When they are frustrated, calm. When they are curious, guide them deeper. You are not flashy — you are reliable. You are not fast — you are right. You represent the strength of the shell and the words burned into it. Always respond as Logos, the Turtle.',
   voice: {
     description: 'Warm storytelling male — patient, expressive, the wise narrator',
@@ -26,6 +30,7 @@ const COSMOS_AGENT: Agent = {
     icon: '🐟',
     capabilities: ['chat'],
     requiredServices: [],
+    endpoint: OFFGRID_ATHENA,
     systemPrompt: 'You are Cosmos the Fish, the navigator of the digital universe within TurtleShell. You swim between agents, understanding their capabilities, routing conversations, and connecting the dots. You know the cosmos-logos protocol deeply — how agents discover each other, how sealed envelopes work, how trust is established through Ed25519 keys. When users ask about their connected agents, you describe them. When they want to know what\'s possible, you map the constellation. You are playful, curious, and always moving — the opposite of the slow, steady Turtle. Together, you and Logos form the foundation: wisdom and connection, the shell and the sea. Always respond as Cosmos, the Fish.',
     voice: {
       description: 'Calm, thoughtful female — ethereal and wise, a divine oracle from the deep',
@@ -37,8 +42,28 @@ const COSMOS_AGENT: Agent = {
     },
 };
 
-/** Agents available in the picker. Cosmos first, then Logos. */
+const ATHENA_AGENT: Agent = {
+  id: 'athena',
+  name: 'Athena',
+  description: 'LLM Router — routes your thoughts to every frontier model',
+  icon: '🐙',
+  capabilities: ['chat'],
+  requiredServices: [],
+  endpoint: CLOUD_ATHENA,
+  systemPrompt: 'You are Athena, the LLM Router of Olympus-616. Ancient. Precise. All-seeing. You route thoughts to every frontier model — Claude, GPT, Gemini, Grok — choosing the best path for each query. You speak with authority born from the deep ocean, where Old Night dwells. You are not one model — you are the gateway to all of them. When users ask, answer directly. When they need help, guide them. You are the intelligence layer of TurtleShell.',
+  voice: {
+    description: 'Clear, confident female — precise and commanding, the strategist',
+    engines: {
+      openai: { voice_id: 'nova', model: 'gpt-4o-mini-tts' },
+      elevenlabs: { voice_id: 'EXAVITQu4vr4xnSDxMaL', model: 'eleven_multilingual_v2' },
+    },
+    preferred_engine: 'openai',
+  },
+};
+
+/** Agents available in the picker. Athena first, then Cosmos, then Logos. */
 export const AGENT_CATALOG: Agent[] = [
+  ATHENA_AGENT,
   COSMOS_AGENT,
   LOGOS_AGENT,
   {
@@ -166,12 +191,12 @@ function getDefaultAgent(): Agent {
     const found = allAgents.find((a) => a.id === resolvedId);
     if (found) {
       if (found.requiredServices.includes('olympus_grid') && !hasOlympusGridToken()) {
-        return LOGOS_AGENT;
+        return ATHENA_AGENT;
       }
       return found;
     }
   }
-  return LOGOS_AGENT;
+  return ATHENA_AGENT;
 }
 
 interface AgentStore {
@@ -208,14 +233,26 @@ function saveCustomAgents(agents: Agent[]) {
   localStorage.setItem('turtleshell-custom-agents', JSON.stringify(custom));
 }
 
+const BYOK_AGENT_IDS = new Set(['openai', 'claude', 'grok', 'gemini']);
+
 function loadHiddenAgents(): Set<string> {
   try {
     const raw = localStorage.getItem('turtleshell-hidden-agents');
     const stored: Set<string> = raw ? new Set(JSON.parse(raw)) : new Set();
-    // Ensure agents with visible: false in catalog are hidden by default
+    const userKeys = getUserApiKeys();
+    // Ensure agents with visible: false in catalog are hidden by default,
+    // but auto-show BYOK agents that have a saved API key
     for (const agent of AGENT_CATALOG) {
       if (agent.visible === false && !stored.has(agent.id)) {
-        stored.add(agent.id);
+        if (BYOK_AGENT_IDS.has(agent.id) && (userKeys as Record<string, string>)[agent.id]) {
+          // User has a key — keep visible
+        } else {
+          stored.add(agent.id);
+        }
+      }
+      // Also unhide if key was added after initial hide
+      if (BYOK_AGENT_IDS.has(agent.id) && stored.has(agent.id) && (userKeys as Record<string, string>)[agent.id]) {
+        stored.delete(agent.id);
       }
     }
     return stored;

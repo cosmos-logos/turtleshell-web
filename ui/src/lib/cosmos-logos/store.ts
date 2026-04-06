@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { ConnectedAgent, CosmosLogosManifest } from './types'
+import type { ConnectedAgent, ConnectionMode, CosmosLogosManifest } from './types'
 
 interface CosmosLogosStore {
   agents: ConnectedAgent[]
@@ -9,7 +9,7 @@ interface CosmosLogosStore {
   activeChatAgentId: string | null
   setActiveChatAgent: (agentId: string | null) => void
 
-  addAgent: (url: string, manifest: CosmosLogosManifest, displayName?: string) => void
+  addAgent: (url: string, manifest: CosmosLogosManifest, displayName?: string, connectionMode?: ConnectionMode) => void
   removeAgent: (agentId: string) => void
   getAgent: (agentId: string) => ConnectedAgent | undefined
 
@@ -32,7 +32,7 @@ export const useCosmosLogosStore = create<CosmosLogosStore>()(
 
       setActiveChatAgent: (agentId) => set({ activeChatAgentId: agentId }),
 
-      addAgent: (url, manifest, displayName) => {
+      addAgent: (url, manifest, displayName, connectionMode) => {
         // Generate unique ID — allow multiple instances of the same agent
         const baseId = manifest.identity.codename
         const existingIds = new Set(get().agents.map(a => a.id))
@@ -53,6 +53,7 @@ export const useCosmosLogosStore = create<CosmosLogosStore>()(
           url: url,
           manifest,
           displayName: displayName || undefined,
+          connectionMode: connectionMode || undefined,
           rateTableVersion: '1.0.0',
           connectedAt: new Date().toISOString(),
           capabilities: manifest.capabilities.map(c => c.verb),

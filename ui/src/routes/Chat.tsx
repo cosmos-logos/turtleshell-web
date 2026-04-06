@@ -166,16 +166,18 @@ export function Chat() {
 
       const llmAgentId = activeChatAgentId
         ? 'athena'
-        : (['claude', 'openai', 'grok', 'gemini'].includes(builtinAgent.id) ? builtinAgent.id : 'turtle');
+        : (['claude', 'openai', 'grok', 'gemini'].includes(builtinAgent.id) ? builtinAgent.id : 'athena');
 
+      const agentEndpoint = builtinAgent.endpoint;
       console.log('[CHAT] agent:', activeChatAgentId || builtinAgent.id,
         useDirectProvider ? '→ DIRECT' : `→ Athena (${llmAgentId})`,
+        agentEndpoint ? `endpoint: ${agentEndpoint}` : '',
         'systemPrompt:', systemPrompt ? systemPrompt.substring(0, 50) + '...' : '(none)');
 
       // Choose streaming source
       const tokenStream = useDirectProvider
         ? streamDirect(builtinAgent.id, prompt, controller.signal, { systemPrompt })
-        : streamChat(prompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save, systemPrompt, agentId: llmAgentId });
+        : streamChat(prompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save, systemPrompt, agentId: llmAgentId, endpointOverride: agentEndpoint });
 
       for await (const token of tokenStream) {
         // Handle metadata objects (conversationId)

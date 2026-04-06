@@ -9,18 +9,19 @@ interface SalesforceConnectProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const SF_CLIENT_ID =
+const SF_CLIENT_ID_DEFAULT =
   import.meta.env.VITE_SF_CLIENT_ID ||
-  '3MVG9C7wVcFOM8jlLOXM9O1eju7DU8U13EeETr_2x_CGfYwBYFhqdRkXRtASsm9xVTWnINMc7wraL6B6pGFFs';
+  '3MVG9nSH73I5aFNiVgku4fbvk1TBGkXFlEAB7fE7tLMNYPvE5CGkOv5HQGsRCWSwbhpgZYvy5z1xV_GjoeuGd';
 const SF_CALLBACK_URL =
   import.meta.env.VITE_SF_CALLBACK_URL ||
   `${window.location.origin}/oauth/callback/salesforce`;
 
 export function SalesforceConnect({ open, onOpenChange }: SalesforceConnectProps) {
-  const [instanceUrl, setInstanceUrl] = useState('https://power-ability-5403.scratch.my.salesforce.com');
+  const [instanceUrl, setInstanceUrl] = useState('https://olympus-grid-alpha-1.my.salesforce.com');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [devExpanded, setDevExpanded] = useState(false);
+  const [clientId, setClientId] = useState(() => localStorage.getItem('sf_client_id_override') || SF_CLIENT_ID_DEFAULT);
 
   const developerMode = useEnvironmentStore((s) => s.developerMode);
 
@@ -117,9 +118,16 @@ export function SalesforceConnect({ open, onOpenChange }: SalesforceConnectProps
                       <label className="text-2xs text-text-muted block mb-1">Consumer Key</label>
                       <input
                         type="text"
-                        readOnly
-                        value={SF_CLIENT_ID}
-                        className="w-full px-2.5 py-1.5 bg-surface-2 border border-border-muted rounded text-2xs text-text-muted font-mono select-all"
+                        value={clientId}
+                        onChange={(e) => {
+                          setClientId(e.target.value);
+                          if (e.target.value && e.target.value !== SF_CLIENT_ID_DEFAULT) {
+                            localStorage.setItem('sf_client_id_override', e.target.value);
+                          } else {
+                            localStorage.removeItem('sf_client_id_override');
+                          }
+                        }}
+                        className="w-full px-2.5 py-1.5 bg-surface-2 border border-border-muted rounded text-2xs text-text-primary font-mono focus:outline-none focus:border-shell-400 transition-colors"
                       />
                     </div>
                     <div>

@@ -18,8 +18,12 @@ export function buildMCPHeaders(): Record<string, string> {
 
   // MCP servers are now passed in the request body (mcpServers array), not via header.
 
-  // Salesforce instance URL — non-sensitive display value kept in localStorage
+  // Salesforce credentials — sent as headers, encrypted to Poseidon's key via envelope
+  const sfAccessToken = localStorage.getItem('sf_access_token');
   const sfInstanceUrl = localStorage.getItem('sf_instance_url');
+  if (sfAccessToken) {
+    headers['x-salesforce-token'] = sfAccessToken;
+  }
   if (sfInstanceUrl) {
     headers['salesforce-url'] = sfInstanceUrl;
   }

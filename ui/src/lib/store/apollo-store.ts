@@ -50,13 +50,19 @@ export const useApolloStore = create<ApolloStore>()(
       setTTSTalkMode: (ttsTalkMode) => set({ ttsTalkMode }),
 
       getTTSBaseUrl: () => {
-        // Read cosmos-logos agents from persisted localStorage to avoid circular import
+        // Discover TTS endpoint from cosmos-logos agents with x-tts capability.
+        // Returns the full TTS URL (agent base + capability path from manifest).
         try {
           const raw = localStorage.getItem('turtleshell-cosmos-agents');
           if (raw) {
-            const { state } = JSON.parse(raw);
-            const ttsAgent = state?.agents?.find((a: any) => a.capabilities?.includes('x-tts'));
-            if (ttsAgent) return ttsAgent.url;
+            const parsed = JSON.parse(raw);
+            const agents = parsed.state?.agents ?? parsed.agents ?? [];
+            const ttsAgent = agents.find((a: any) => a.capabilities?.includes('x-tts'));
+            if (ttsAgent) {
+              const cap = ttsAgent.manifest?.capabilities?.find((c: any) => c.verb === 'x-tts');
+              if (cap?.path) return `${ttsAgent.url}${cap.path}`;
+              return `${ttsAgent.url}/play`; // fallback if no path in manifest
+            }
           }
         } catch {}
         return '';

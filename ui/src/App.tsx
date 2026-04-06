@@ -52,6 +52,7 @@ export function App() {
 
       {/* Onboarding (requires auth) */}
       <Route path="/onboarding" element={<RequireAuth><Onboarding /></RequireAuth>} />
+      <Route path="/guide-selection" element={<Navigate to="/onboarding" replace />} />
 
       {/* App shell with sidebar (requires auth) */}
       <Route path="/app" element={<RequireAuth><AppShell /></RequireAuth>}>
