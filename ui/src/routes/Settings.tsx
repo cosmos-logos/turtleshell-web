@@ -33,7 +33,7 @@ function AgentThemeSelector() {
   return (
     <div className="pt-3 border-t border-border-muted">
       <div className="text-sm font-semibold mb-1">Agent Theme</div>
-      <div className="text-2xs text-text-muted mb-3">Visual style for the Agent Setup page</div>
+      <div className="text-2xs text-text-muted mb-3">Controls agent avatars in chat, sidebar, and picker</div>
       <div className="flex gap-1 bg-surface-2 p-1 rounded-lg">
         {AGENT_THEMES.map(t => (
           <button
