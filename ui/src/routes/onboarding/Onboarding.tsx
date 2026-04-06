@@ -524,7 +524,7 @@ export function Onboarding() {
     }, 300);
   }, []);
 
-  const getGuideInfo = () => {
+  const getGuideInfo = (): { emoji: string; name: string; role: string; greeting: string; ready: string } => {
     if (selectedGuide === 'custom' && customAgent) {
       return {
         emoji: customAgent.creature,
@@ -535,9 +535,12 @@ export function Onboarding() {
       };
     }
     if (selectedGuide && selectedGuide in BYOK_GUIDES) {
-      return BYOK_GUIDES[selectedGuide];
+      return BYOK_GUIDES[selectedGuide]!;
     }
-    return selectedGuide && selectedGuide in GUIDES ? GUIDES[selectedGuide as keyof typeof GUIDES] : GUIDES.cosmos;
+    if (selectedGuide && selectedGuide in GUIDES) {
+      return GUIDES[selectedGuide as keyof typeof GUIDES];
+    }
+    return GUIDES.cosmos;
   };
 
   const handleComplete = async () => {

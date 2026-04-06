@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { OLYMPUS_AGENTS } from '@/lib/agents/olympus-data';
-import { COSMOS_AGENTS } from '@/routes/Agents';
+import { OLYMPUS_AGENTS, type OlympusAgent } from '@/lib/agents/olympus-data';
+import { COSMOS_AGENTS, type AgentConfig } from '@/routes/Agents';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { OlympusAgentCard } from './OlympusAgentCard';
 import { OlympusConnectPanel } from './OlympusConnectPanel';
@@ -9,8 +9,8 @@ export function OlympusAgentsView() {
   const [selectedCodename, setSelectedCodename] = useState<string | null>(null);
   const cosmosAgents = useCosmosLogosStore(s => s.agents);
 
-  const selectedOlympus = OLYMPUS_AGENTS.find(a => a.codename === selectedCodename) ?? null;
-  const selectedConfig = COSMOS_AGENTS.find(a => a.codename === selectedCodename) ?? null;
+  const selectedOlympus: OlympusAgent | null = OLYMPUS_AGENTS.find(a => a.codename === selectedCodename) ?? null;
+  const selectedConfig: AgentConfig | null = COSMOS_AGENTS.find((a: AgentConfig) => a.codename === selectedCodename) ?? null;
 
   const isConnected = (codename: string) =>
     cosmosAgents.some(a => a.manifest.identity.codename === codename);
@@ -30,7 +30,7 @@ export function OlympusAgentsView() {
 
         {/* Agent grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {OLYMPUS_AGENTS.map((agent, i) => (
+          {OLYMPUS_AGENTS.map((agent: OlympusAgent, i: number) => (
             <div key={agent.codename} style={{ animationDelay: `${i * 0.08}s` }}>
               <OlympusAgentCard
                 agent={agent}

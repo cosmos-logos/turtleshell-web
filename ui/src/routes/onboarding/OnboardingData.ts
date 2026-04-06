@@ -51,7 +51,8 @@ export const GUIDES = {
   },
 } as const
 
-export const BYOK_GUIDES: Record<string, typeof GUIDES['athena']> = {
+interface GuideInfo { emoji: string; name: string; role: string; color: string; desc: string; greeting: string; ready: string; }
+export const BYOK_GUIDES: Record<string, GuideInfo> = {
   openai: {
     emoji: '💬', name: 'OpenAI', role: 'GPT · Your Key', color: '#10b981',
     desc: 'Bring your own OpenAI API key',
