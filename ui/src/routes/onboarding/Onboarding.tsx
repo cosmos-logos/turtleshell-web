@@ -261,7 +261,7 @@ export function Onboarding() {
       console.error('[🐢 Turtleshell] Profile creation failed:', e);
     }
 
-    navigate('/app/chat');
+    navigate('/guide-selection');
   };
 
   const screens = [

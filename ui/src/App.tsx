@@ -21,6 +21,7 @@ import { Journal } from './routes/Journal';
 import { AgentView } from './routes/AgentView';
 import { OffGrid } from './routes/OffGrid';
 import { Onboarding } from './routes/onboarding/Onboarding';
+import { GuideSelection } from './routes/onboarding/GuideSelection';
 import { PublicProfile } from './routes/PublicProfile';
 import { Profile } from './routes/Profile';
 import { Login } from './routes/Login';
@@ -52,6 +53,7 @@ export function App() {
 
       {/* Onboarding (requires auth) */}
       <Route path="/onboarding" element={<RequireAuth><Onboarding /></RequireAuth>} />
+      <Route path="/guide-selection" element={<RequireAuth><GuideSelection /></RequireAuth>} />
 
       {/* App shell with sidebar (requires auth) */}
       <Route path="/app" element={<RequireAuth><AppShell /></RequireAuth>}>

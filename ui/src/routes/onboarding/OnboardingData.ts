@@ -47,5 +47,7 @@ export const GUIDES = {
   },
 } as const
 
+export const CREATURES = ['🦋', '🦊', '🐺', '🦁', '🐉', '🦅', '🌙', '⚡', '🔥', '🌊'] as const
+
 export type GuideKey = keyof typeof GUIDES
 export type CauseIndex = 0 | 1 | 2

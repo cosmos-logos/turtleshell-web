@@ -53,7 +53,7 @@ function useNavItems(): NavItem[] {
     .map((a) => ({
       to: `/app/chat?agent_builtin=${a.id}`,
       label: a.name,
-      initial: a.name.charAt(0).toUpperCase(),
+      initial: a.icon || a.name.charAt(0).toUpperCase(),
       color: '#6366f1',
       chatAgentId: undefined, // handled via agent_builtin param
       isBuiltinChat: a.id,

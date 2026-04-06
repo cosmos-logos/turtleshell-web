@@ -192,6 +192,9 @@ export function Profile() {
 
         {/* Actions */}
         <div className="flex flex-col gap-2 pt-2">
+          <Link to="/guide-selection" className="block w-full text-center py-2.5 rounded-lg text-sm font-medium no-underline bg-surface-1 border border-border-muted text-text-muted hover:text-text-secondary hover:border-border-default transition-colors">
+            Change Guide
+          </Link>
           <Link to="/onboarding" className="block w-full text-center py-2.5 rounded-lg text-sm font-medium no-underline bg-surface-1 border border-border-muted text-text-muted hover:text-text-secondary hover:border-border-default transition-colors">
             {needsOnboarding ? 'Start Onboarding' : 'Redo Onboarding'}
           </Link>

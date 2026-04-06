@@ -4,6 +4,8 @@ import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { useApolloStore } from '@/lib/store/apollo-store';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useThemeStore } from '@/lib/store/theme-store';
+import { useAgentThemeStore, type AgentTheme } from '@/lib/store/agent-theme-store';
+import { useChatPreferencesStore } from '@/lib/store/chat-preferences-store';
 
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
@@ -20,12 +22,44 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   );
 }
 
+const AGENT_THEMES: { value: AgentTheme; label: string }[] = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'ocean', label: 'Ocean' },
+  { value: 'olympus', label: 'Olympus' },
+];
+
+function AgentThemeSelector() {
+  const { agentTheme, setAgentTheme } = useAgentThemeStore();
+  return (
+    <div className="pt-3 border-t border-border-muted">
+      <div className="text-sm font-semibold mb-1">Agent Theme</div>
+      <div className="text-2xs text-text-muted mb-3">Visual style for the Agent Setup page</div>
+      <div className="flex gap-1 bg-surface-2 p-1 rounded-lg">
+        {AGENT_THEMES.map(t => (
+          <button
+            key={t.value}
+            onClick={() => setAgentTheme(t.value)}
+            className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-all ${
+              agentTheme === t.value
+                ? 'bg-shell-500 text-white shadow-sm'
+                : 'text-text-muted hover:text-text-secondary'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function Settings() {
   const { developerMode, setDeveloperMode } = useEnvironmentStore();
 
   const { theme, setTheme } = useThemeStore();
   const { memoryEnabled, setMemoryEnabled } = useChatStore();
   const { ttsAutoPlay, ttsTalkMode, setTTSAutoPlay, setTTSTalkMode } = useApolloStore();
+  const { showAgentAvatars, setShowAgentAvatars } = useChatPreferencesStore();
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -55,12 +89,30 @@ export function Settings() {
           </div>
         </section>
 
+        {/* Chat Display */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+            💬 Chat
+          </h2>
+          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold">Agent Avatars</div>
+                <div className="text-2xs text-text-muted mt-0.5">
+                  Show agent emoji next to messages in chat
+                </div>
+              </div>
+              <Toggle on={showAgentAvatars} onToggle={() => setShowAgentAvatars(!showAgentAvatars)} />
+            </div>
+          </div>
+        </section>
+
         {/* Developer Mode Toggle */}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
             <Wrench size={14} /> Developer
           </h2>
-          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl">
+          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold">Developer Mode</div>
@@ -70,6 +122,7 @@ export function Settings() {
               </div>
               <Toggle on={developerMode} onToggle={() => setDeveloperMode(!developerMode)} />
             </div>
+            {developerMode && <AgentThemeSelector />}
           </div>
         </section>
 
