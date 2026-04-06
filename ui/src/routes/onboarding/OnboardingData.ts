@@ -5,11 +5,11 @@ export const CAUSES = [
 ] as const
 
 export const TIERS = [
-  { name: '🌊 Ocean', shells: '1,000 shells / mo', price: '$1', id: 'ocean' },
-  { name: '🪸 Reef', shells: '15,000 shells / mo', price: '$10', id: 'reef' },
-  { name: '🌀 Current', shells: '100,000 shells / mo', price: '$49', id: 'current', popular: true },
-  { name: '⚓ Fleet', shells: '500,000 shells / mo', price: '$199', id: 'fleet' },
-  { name: '🏛️ Enterprise', shells: 'Custom volume · custom pricing', price: 'Talk to us', id: 'enterprise', isEnterprise: true },
+  { name: '🌊 Ocean', shells: '1,000 shells / mo', price: '$1', id: 'ocean', popular: false, isEnterprise: false },
+  { name: '🪸 Reef', shells: '15,000 shells / mo', price: '$10', id: 'reef', popular: false, isEnterprise: false },
+  { name: '🌀 Current', shells: '100,000 shells / mo', price: '$49', id: 'current', popular: true, isEnterprise: false },
+  { name: '⚓ Fleet', shells: '500,000 shells / mo', price: '$199', id: 'fleet', popular: false, isEnterprise: false },
+  { name: '🏛️ Enterprise', shells: 'Custom volume · custom pricing', price: 'Talk to us', id: 'enterprise', popular: false, isEnterprise: true },
 ] as const
 
 export const PERKS = [

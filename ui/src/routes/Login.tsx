@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Loader2, Mail, ArrowLeft } from 'lucide-react';
 import { requestMagicLink, verifyCode } from '@/lib/api/olympus-grid-client';
 import { useServiceStore } from '@/lib/store/service-store';
@@ -8,7 +8,6 @@ type Step = 'methods' | 'email' | 'waitlist' | 'signin-email' | 'code' | 'succes
 
 export function Login() {
   const navigate = useNavigate();
-  const location = useLocation();
   const [step, setStep] = useState<Step>('methods');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
