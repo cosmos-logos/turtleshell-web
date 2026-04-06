@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { CheckCircle, Loader2, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { requestMagicLink, verifyCode, getServiceUrl } from '@/lib/api/olympus-grid-client';
@@ -13,6 +14,7 @@ interface OlympusGridConnectProps {
 }
 
 export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectProps) {
+  const navigate = useNavigate();
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -87,7 +89,11 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
       console.log('[OG] verifyCode ← user:', result.user, 'tokenType:', result.tokenType, 'expiresIn:', result.expiresIn);
       useServiceStore.getState().setOlympusGridConnected(result.user);
       setStep('success');
-      setTimeout(() => handleOpenChange(false), 1500);
+      const hasOnboarded = !!localStorage.getItem('turtleshell-onboarding');
+      setTimeout(() => {
+        handleOpenChange(false);
+        if (!hasOnboarded) navigate('/onboarding');
+      }, 1500);
     } catch (e) {
       console.error('[OG] verifyCode ERROR:', e);
       setError(e instanceof Error ? e.message : 'Verification failed');

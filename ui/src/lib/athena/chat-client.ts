@@ -18,14 +18,14 @@ export async function* streamChat(
   prompt: string,
   signal?: AbortSignal,
   conversationId?: string | null,
-  options?: { memoryEnabled?: boolean; saveConversation?: boolean; systemPrompt?: string; agentId?: string },
+  options?: { memoryEnabled?: boolean; saveConversation?: boolean; systemPrompt?: string; agentId?: string; endpointOverride?: string },
 ): AsyncGenerator<string | { conversationId: string }, void, unknown> {
-  // Resolve base URL: connected cosmos agent's URL takes priority over environment preset
+  // Resolve base URL: explicit endpoint > connected cosmos agent > environment preset
   const activeChatAgentId = useCosmosLogosStore.getState().activeChatAgentId;
   const cosmosAgent = activeChatAgentId
     ? useCosmosLogosStore.getState().agents.find(a => a.id === activeChatAgentId)
     : null;
-  const baseUrl = cosmosAgent?.url || useEnvironmentStore.getState().getBaseUrl();
+  const baseUrl = options?.endpointOverride || cosmosAgent?.url || useEnvironmentStore.getState().getBaseUrl();
 
   const mcpHeaders = buildMCPHeaders();
 

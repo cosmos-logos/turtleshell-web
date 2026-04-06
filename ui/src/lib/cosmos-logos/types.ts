@@ -93,11 +93,14 @@ export interface TrustEntry {
   relationship?: string
 }
 
+export type ConnectionMode = 'cloud' | 'dev' | 'offgrid'
+
 export interface ConnectedAgent {
   id: string                       // unique instance ID (may differ from codename for multi-instance)
   url: string                      // live endpoint URL (what the user connected to)
   manifest: CosmosLogosManifest
   displayName?: string             // user-provided override (e.g. "Athena AWS", "Athena Off-Grid")
+  connectionMode?: ConnectionMode  // which deployment mode was used to connect
   rateTableVersion: string
   connectedAt: string
   capabilities: string[]           // extracted verb list

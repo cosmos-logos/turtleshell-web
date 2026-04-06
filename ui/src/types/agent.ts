@@ -14,6 +14,8 @@ export interface Agent {
   };
   /** Whether this agent appears in the sidebar and picker. Default true. */
   visible?: boolean;
+  /** Pre-configured Athena endpoint URL for this agent (e.g. ngrok, cloud). */
+  endpoint?: string;
 }
 
 export type AgentCapability =

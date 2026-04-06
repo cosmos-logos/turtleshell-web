@@ -1,6 +1,10 @@
 export const CAUSES = [
   { emoji: '🌊', name: 'Save the Oceans', desc: 'Protect the seas that give us all life', label: '🌊 given', pledge: '"7% of every shell flows to the ocean."' },
-  { emoji: '💧', name: 'Clean Water for All', desc: 'Every human deserves clean water', label: '💧 given', pledge: '"7% of every shell flows to clean water."' },
+  { emoji: '💧', name: 'Clean Water for All', desc: 'Every human deserves clean water and sanitation', label: '💧 given', pledge: '"7% of every shell flows to clean water."' },
+  { emoji: '🍎', name: 'Food & Nutrition', desc: 'End hunger and ensure food security for all', label: '🍎 given', pledge: '"7% of every shell flows to feed the world."' },
+  { emoji: '🏥', name: 'Healthcare for All', desc: 'Essential medicine and care for every human', label: '🏥 given', pledge: '"7% of every shell flows to global health."' },
+  { emoji: '🏠', name: 'Shelter & Housing', desc: 'A safe place to live is a human right', label: '🏠 given', pledge: '"7% of every shell flows to shelter."' },
+  { emoji: '📚', name: 'Education & Literacy', desc: 'Quality learning to break the cycle of poverty', label: '📚 given', pledge: '"7% of every shell flows to education."' },
   { emoji: '🤝', name: 'AI for Those in Need', desc: 'Sovereign AI for the underserved', label: '🤝 given', pledge: '"7% of every shell flows to those in need."' },
 ] as const
 
@@ -47,5 +51,34 @@ export const GUIDES = {
   },
 } as const
 
+export const BYOK_GUIDES: Record<string, typeof GUIDES['athena']> = {
+  openai: {
+    emoji: '💬', name: 'OpenAI', role: 'GPT · Your Key', color: '#10b981',
+    desc: 'Bring your own OpenAI API key',
+    greeting: 'You brought your own key.\nDirect access. No middleman.\nLet\'s get to work.',
+    ready: 'Ready. What do you need?',
+  },
+  claude: {
+    emoji: '🤖', name: 'Claude', role: 'Anthropic · Your Key', color: '#f97316',
+    desc: 'Bring your own Anthropic API key',
+    greeting: 'Your key, your model.\nI think deeply and carefully.\nAsk me anything complex.',
+    ready: 'I\'m here. What shall we explore?',
+  },
+  grok: {
+    emoji: '🔥', name: 'Grok', role: 'xAI · Your Key', color: '#ef4444',
+    desc: 'Bring your own xAI API key',
+    greeting: 'No filter. No rules.\nJust raw intelligence.\nLet\'s go.',
+    ready: 'Fire away. What\'s on your mind?',
+  },
+  gemini: {
+    emoji: '✦', name: 'Gemini', role: 'Google · Your Key', color: '#3b82f6',
+    desc: 'Bring your own Google API key',
+    greeting: 'Multimodal. Multilingual.\nI see the full picture.\nShow me what you\'ve got.',
+    ready: 'Standing by. What do you need?',
+  },
+}
+
+export const CREATURES = ['🦋', '🦊', '🐺', '🦁', '🐉', '🦅', '🌙', '⚡', '🔥', '🌊'] as const
+
 export type GuideKey = keyof typeof GUIDES
-export type CauseIndex = 0 | 1 | 2
+export type CauseIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6

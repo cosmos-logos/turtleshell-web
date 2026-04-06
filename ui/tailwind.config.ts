@@ -43,6 +43,7 @@ export default {
         sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'monospace'],
         display: ['"Cabinet Grotesk"', '"DM Sans"', 'system-ui', 'sans-serif'],
+        cinzel: ['"Cinzel"', 'serif'],
       },
       fontSize: {
         '2xs': ['0.625rem', { lineHeight: '0.875rem' }],

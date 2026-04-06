@@ -5,12 +5,14 @@
 
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 
-const SF_CLIENT_ID =
+const SF_CLIENT_ID_DEFAULT =
   import.meta.env.VITE_SF_CLIENT_ID ||
-  (() => {
-    console.warn('[SF] VITE_SF_CLIENT_ID not set — using hardcoded fallback');
-    return '3MVG9C7wVcFOM8jlLOXM9O1eju7DU8U13EeETr_2x_CGfYwBYFhqdRkXRtASsm9xVTWnINMc7wraL6B6pGFFs';
-  })();
+  '3MVG9nSH73I5aFNiVgku4fbvk1TBGkXFlEAB7fE7tLMNYPvE5CGkOv5HQGsRCWSwbhpgZYvy5z1xV_GjoeuGd';
+
+/** Read SF client ID — developer override from localStorage takes priority */
+function getSfClientId(): string {
+  return localStorage.getItem('sf_client_id_override') || SF_CLIENT_ID_DEFAULT;
+}
 
 const SF_CALLBACK_URL =
   import.meta.env.VITE_SF_CALLBACK_URL ||
@@ -57,7 +59,7 @@ export async function getSalesforceLoginUrl(instanceUrl: string): Promise<string
 
   const params = new URLSearchParams({
     response_type: 'code',
-    client_id: SF_CLIENT_ID,
+    client_id: getSfClientId(),
     redirect_uri: SF_CALLBACK_URL,
     code_challenge: challenge,
     code_challenge_method: 'S256',
@@ -79,15 +81,20 @@ export async function exchangeCodeForTokens(code: string): Promise<void> {
     throw new Error('PKCE session data missing — please retry the login flow');
   }
 
-  console.log('[SF] Exchanging authorization code for tokens via Ares...');
+  console.log('[SF] Exchanging authorization code for tokens via proxy...');
 
+  // Route through Vite proxy → Ares → Hermes → Salesforce.
+  // x-token-delivery: header tells Ares to return tokens in the response body
+  // instead of stripping them into httpOnly cookies.
   const response = await fetch(`${getGatewayUrl()}/v1/salesforce/auth/token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-token-delivery': 'header',
+    },
     body: JSON.stringify({
       grant_type: 'authorization_code',
-      client_id: SF_CLIENT_ID,
+      client_id: getSfClientId(),
       redirect_uri: SF_CALLBACK_URL,
       code,
       code_verifier: verifier,
@@ -104,8 +111,15 @@ export async function exchangeCodeForTokens(code: string): Promise<void> {
 
   console.log('[SF] Token exchange successful — instance:', json.instance_url);
 
-  // Store non-sensitive display values only.
-  // Tokens are set as httpOnly cookies by Ares.
+  // Tokens come from response headers (Ares strips them from body for security).
+  // x-token-delivery: header tells Ares to include them in response headers.
+  const accessToken = response.headers.get('x-sf-access-token') || json.access_token;
+  const refreshToken = response.headers.get('x-sf-refresh-token') || json.refresh_token;
+
+  // Store tokens in localStorage — sent as headers on chat requests,
+  // encrypted to Poseidon's public key via cosmos-logos envelope.
+  if (accessToken) localStorage.setItem('sf_access_token', accessToken);
+  if (refreshToken) localStorage.setItem('sf_refresh_token', refreshToken);
   if (json.instance_url) localStorage.setItem('sf_instance_url', json.instance_url);
   if (json.token_type) localStorage.setItem('sf_token_type', json.token_type);
   if (json.issued_at) localStorage.setItem('sf_issued_at', json.issued_at);
@@ -121,20 +135,24 @@ export async function exchangeCodeForTokens(code: string): Promise<void> {
  */
 export async function refreshSalesforceToken(): Promise<void> {
   const instanceUrl = localStorage.getItem('sf_instance_url');
+  const refreshToken = localStorage.getItem('sf_refresh_token');
 
-  if (!instanceUrl) {
+  if (!instanceUrl || !refreshToken) {
     throw new Error('sf_session_expired');
   }
 
-  console.log('[SF] Refreshing access token via Ares...');
+  console.log('[SF] Refreshing access token via proxy...');
 
   const response = await fetch(`${getGatewayUrl()}/v1/salesforce/auth/token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-token-delivery': 'header',
+      'x-sf-refresh-token': refreshToken,
+    },
     body: JSON.stringify({
       grant_type: 'refresh_token',
-      client_id: SF_CLIENT_ID,
+      client_id: getSfClientId(),
       login_url: instanceUrl,
     }),
   });
@@ -148,10 +166,10 @@ export async function refreshSalesforceToken(): Promise<void> {
   }
 
   console.log('[SF] Token refresh successful');
+  const newAccessToken = response.headers.get('x-sf-access-token') || json.access_token;
+  if (newAccessToken) localStorage.setItem('sf_access_token', newAccessToken);
   if (json.issued_at) localStorage.setItem('sf_issued_at', json.issued_at);
-  if (json.instance_url) {
-    localStorage.setItem('sf_instance_url', json.instance_url);
-  }
+  if (json.instance_url) localStorage.setItem('sf_instance_url', json.instance_url);
 }
 
 /**
@@ -172,6 +190,8 @@ export function disconnectSalesforce(): void {
 }
 
 function clearSalesforceTokens(): void {
+  localStorage.removeItem('sf_access_token');
+  localStorage.removeItem('sf_refresh_token');
   localStorage.removeItem('sf_instance_url');
   localStorage.removeItem('sf_token_type');
   localStorage.removeItem('sf_issued_at');

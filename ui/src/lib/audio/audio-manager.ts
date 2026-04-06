@@ -66,8 +66,8 @@ function getActiveVoiceIntent(): Record<string, unknown> | undefined {
 export async function speak(text: string) {
   cleanup();
 
-  const baseUrl = useApolloStore.getState().getTTSBaseUrl();
-  if (!baseUrl) return;
+  const ttsUrl = useApolloStore.getState().getTTSBaseUrl();
+  if (!ttsUrl) return;
 
   fetchController = new AbortController();
   useApolloStore.setState({ _isBuffering: true });
@@ -75,7 +75,7 @@ export async function speak(text: string) {
   const intent = getActiveVoiceIntent();
 
   try {
-    const res = await fetch(`${baseUrl}/play`, {
+    const res = await fetch(ttsUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, intent }),

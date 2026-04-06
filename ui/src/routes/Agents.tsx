@@ -8,10 +8,13 @@ import { CreateAgentModal } from '@/components/agents/CreateAgentModal';
 import { sealToken, signRequest, loadOrGenerateKeypair } from '@/lib/cosmos-logos/crypto';
 import type { Agent } from '@/types/agent';
 import { agentDisplayName, type ConnectedAgent } from '@/lib/cosmos-logos/types';
+import { useAgentThemeStore } from '@/lib/store/agent-theme-store';
+import { OceanAgentsView } from '@/components/agents/OceanAgentsView';
+import { OlympusAgentsView } from '@/components/agents/OlympusAgentsView';
 
 // ── Agent Configuration ──────────────────────────────────────
 
-interface AgentConfig {
+export interface AgentConfig {
   codename: string;
   name: string;
   icon: string;
@@ -25,7 +28,7 @@ interface AgentConfig {
 }
 
 /** All cosmos-logos agents with 3 deployment modes. */
-const COSMOS_AGENTS: AgentConfig[] = [
+export const COSMOS_AGENTS: AgentConfig[] = [
   {
     codename: 'cosmos',
     name: 'Cosmos',
@@ -73,6 +76,282 @@ const COSMOS_AGENTS: AgentConfig[] = [
     cloud: { url: 'https://api-int.turtleshell.ai/v1/poseidon', description: 'Cloud-hosted on AWS via Olympus-Grid. Requires Sea Shells.' },
     developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/poseidon', port: 3411, description: 'Run Poseidon on your machine, expose via ngrok.' },
     offgrid: { port: 3411, description: 'Poseidon inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'apollo-616',
+    name: 'Apollo',
+    icon: '☀️',
+    color: '#e8a820',
+    repo: 'https://github.com/olympus-616/apollo',
+    docsPath: '/app/docs/apollo',
+    description: 'Voice engine — text-to-speech and speech-to-text',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/apollo', description: 'Cloud-hosted on AWS via Olympus-Grid. Requires Sea Shells.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/apollo', port: 3421, description: 'Run Apollo on your machine, expose via ngrok.' },
+    offgrid: { port: 3421, description: 'Apollo inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'ares-616',
+    name: 'Ares',
+    icon: '⚔️',
+    color: '#c43a2a',
+    repo: 'https://github.com/olympus-616/ares',
+    docsPath: '/app/docs/ares',
+    description: 'API gateway — zero trust security perimeter',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/ares', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/ares', port: 3451, description: 'Run Ares on your machine, expose via ngrok.' },
+    offgrid: { port: 3451, description: 'Ares inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'hermes-616',
+    name: 'Hermes',
+    icon: '🪽',
+    color: '#60e8b0',
+    repo: 'https://github.com/olympus-616/hermes',
+    docsPath: '/app/docs/hermes',
+    description: 'CORS proxy and HTTP router — message transport',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/hermes', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/hermes', port: 3411, description: 'Run Hermes on your machine, expose via ngrok.' },
+    offgrid: { port: 3411, description: 'Hermes inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'proteus-616',
+    name: 'Proteus',
+    icon: '🌊',
+    color: '#40c080',
+    repo: 'https://github.com/olympus-616/proteus',
+    docsPath: '/app/docs/proteus',
+    description: 'Universal ORM — multi-database data operations',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/proteus', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/proteus', port: 3461, description: 'Run Proteus on your machine, expose via ngrok.' },
+    offgrid: { port: 3461, description: 'Proteus inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'plutus-616',
+    name: 'Plutus',
+    icon: '🪙',
+    color: '#c87820',
+    repo: 'https://github.com/olympus-616/plutus',
+    docsPath: '/app/docs/plutus',
+    description: 'Billing, metering, and Sea Shell entitlements',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/plutus', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/plutus', port: 3441, description: 'Run Plutus on your machine, expose via ngrok.' },
+    offgrid: { port: 3441, description: 'Plutus inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'aeon-616',
+    name: 'Aeon',
+    icon: '⚙️',
+    color: '#4090d0',
+    repo: 'https://github.com/olympus-616/aeon',
+    docsPath: '/app/docs/aeon',
+    description: 'Agent kernel — lifecycle management and thread orchestration',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/aeon', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/aeon', port: 3581, description: 'Run Aeon on your machine, expose via ngrok.' },
+    offgrid: { port: 3581, description: 'Aeon inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'zeus-616',
+    name: 'Zeus',
+    icon: '⚡',
+    color: '#ffd700',
+    repo: 'https://github.com/olympus-616/zeus',
+    docsPath: '/app/docs/zeus',
+    description: 'Supreme command — infrastructure policy and CDK orchestration',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/zeus', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/zeus', port: 3501, description: 'Run Zeus on your machine, expose via ngrok.' },
+    offgrid: { port: 3501, description: 'Zeus inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'alpha-616',
+    name: 'Alpha',
+    icon: '💫',
+    color: '#28dc78',
+    repo: 'https://github.com/olympus-616/alpha',
+    docsPath: '/app/docs/alpha',
+    description: 'Boot sequence — brings the entire pantheon online',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/alpha', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/alpha', port: 3621, description: 'Run Alpha on your machine, expose via ngrok.' },
+    offgrid: { port: 3621, description: 'Alpha inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'omega-616',
+    name: 'Omega',
+    icon: '◯',
+    color: '#a080d0',
+    repo: 'https://github.com/olympus-616/omega',
+    docsPath: '/app/docs/omega',
+    description: 'Graceful shutdown — final state persistence',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/omega', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/omega', port: 3631, description: 'Run Omega on your machine, expose via ngrok.' },
+    offgrid: { port: 3631, description: 'Omega inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'iris-616',
+    name: 'Iris',
+    icon: '🎨',
+    color: '#e060c0',
+    repo: 'https://github.com/olympus-616/iris',
+    docsPath: '/app/docs/iris',
+    description: 'Portal framework — React, LWC, any surface',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/iris', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/iris', port: 3641, description: 'Run Iris on your machine, expose via ngrok.' },
+    offgrid: { port: 3641, description: 'Iris inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'oracle-616',
+    name: 'Oracle',
+    icon: '🔮',
+    color: '#cc2030',
+    repo: 'https://github.com/olympus-616/oracle',
+    docsPath: '/app/docs/oracle',
+    description: 'Auth and identity — OAuth PKCE, SSO',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/oracle', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/oracle', port: 3651, description: 'Run Oracle on your machine, expose via ngrok.' },
+    offgrid: { port: 3651, description: 'Oracle inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'hecate-616',
+    name: 'Hecate',
+    icon: '🔐',
+    color: '#8040c0',
+    repo: 'https://github.com/olympus-616/hecate',
+    docsPath: '/app/docs/hecate',
+    description: 'Cryptographic vault — keys, tokens, Ed25519',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/hecate', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/hecate', port: 3661, description: 'Run Hecate on your machine, expose via ngrok.' },
+    offgrid: { port: 3661, description: 'Hecate inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'hestia-616',
+    name: 'Hestia',
+    icon: '🏠',
+    color: '#f08060',
+    repo: 'https://github.com/olympus-616/hestia',
+    docsPath: '/app/docs/hestia',
+    description: 'Config management — settings and environment',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/hestia', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/hestia', port: 3671, description: 'Run Hestia on your machine, expose via ngrok.' },
+    offgrid: { port: 3671, description: 'Hestia inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'hephaestus-616',
+    name: 'Hephaestus',
+    icon: '🔨',
+    color: '#e08040',
+    repo: 'https://github.com/olympus-616/hephaestus',
+    docsPath: '/app/docs/hephaestus',
+    description: 'Build tools — code execution and forge',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/hephaestus', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/hephaestus', port: 3681, description: 'Run Hephaestus on your machine, expose via ngrok.' },
+    offgrid: { port: 3681, description: 'Hephaestus inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'eos-616',
+    name: 'Eos',
+    icon: '🌅',
+    color: '#ff8040',
+    repo: 'https://github.com/olympus-616/eos',
+    docsPath: '/app/docs/eos',
+    description: 'CI/CD — Docker build, ECR push, Fargate deploy',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/eos', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/eos', port: 3691, description: 'Run Eos on your machine, expose via ngrok.' },
+    offgrid: { port: 3691, description: 'Eos inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'hades-616',
+    name: 'Hades',
+    icon: '💀',
+    color: '#606080',
+    repo: 'https://github.com/olympus-616/hades',
+    docsPath: '/app/docs/hades',
+    description: 'Garbage collection — log rotation, DLQ sweep',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/hades', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/hades', port: 3701, description: 'Run Hades on your machine, expose via ngrok.' },
+    offgrid: { port: 3701, description: 'Hades inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'hera-616',
+    name: 'Hera',
+    icon: '👑',
+    color: '#d040a0',
+    repo: 'https://github.com/olympus-616/hera',
+    docsPath: '/app/docs/hera',
+    description: 'Compliance — audit logs, SOC 2 enforcement',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/hera', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/hera', port: 3711, description: 'Run Hera on your machine, expose via ngrok.' },
+    offgrid: { port: 3711, description: 'Hera inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'delphi-616',
+    name: 'Delphi',
+    icon: '🌿',
+    color: '#40c0c0',
+    repo: 'https://github.com/olympus-616/delphi',
+    docsPath: '/app/docs/delphi',
+    description: 'Event bus — pub/sub messaging between gods',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/delphi', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/delphi', port: 3721, description: 'Run Delphi on your machine, expose via ngrok.' },
+    offgrid: { port: 3721, description: 'Delphi inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'chronos-616',
+    name: 'Chronos',
+    icon: '⏱️',
+    color: '#c0a060',
+    repo: 'https://github.com/olympus-616/chronos',
+    docsPath: '/app/docs/chronos',
+    description: 'BPM engine — workflow orchestration and scheduling',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/chronos', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/chronos', port: 3731, description: 'Run Chronos on your machine, expose via ngrok.' },
+    offgrid: { port: 3731, description: 'Chronos inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'dionysus-616',
+    name: 'Dionysus',
+    icon: '🎭',
+    color: '#c040e0',
+    repo: 'https://github.com/olympus-616/dionysus',
+    docsPath: '/app/docs/dionysus',
+    description: 'Load testing — performance benchmarking and chaos engineering',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/dionysus', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/dionysus', port: 3741, description: 'Run Dionysus on your machine, expose via ngrok.' },
+    offgrid: { port: 3741, description: 'Dionysus inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'artemis-616',
+    name: 'Artemis',
+    icon: '🎯',
+    color: '#00c8f0',
+    repo: 'https://github.com/olympus-616/artemis',
+    docsPath: '/app/docs/artemis',
+    description: 'Search and discovery — indexing across the grid',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/artemis', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/artemis', port: 3751, description: 'Run Artemis on your machine, expose via ngrok.' },
+    offgrid: { port: 3751, description: 'Artemis inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'orion-616',
+    name: 'Orion',
+    icon: '⚔️',
+    color: '#4090d0',
+    repo: 'https://github.com/olympus-616/orion',
+    docsPath: '/app/docs/orion',
+    description: 'Async jobs — task queue and background orchestration',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/orion', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/orion', port: 3761, description: 'Run Orion on your machine, expose via ngrok.' },
+    offgrid: { port: 3761, description: 'Orion inside the TurtleShell Off-Grid Docker fleet.' },
+  },
+  {
+    codename: 'demeter-616',
+    name: 'Demeter',
+    icon: '🌾',
+    color: '#80c040',
+    repo: 'https://github.com/olympus-616/demeter',
+    docsPath: '/app/docs/demeter',
+    description: 'Data pipelines — feed management and keep-alive monitoring',
+    cloud: { url: 'https://api-int.turtleshell.ai/v1/demeter', description: 'Cloud-hosted on AWS via Olympus-Grid.' },
+    developer: { defaultUrl: 'https://athena-616.ngrok.io/v1/demeter', port: 3771, description: 'Run Demeter on your machine, expose via ngrok.' },
+    offgrid: { port: 3771, description: 'Demeter inside the TurtleShell Off-Grid Docker fleet.' },
   },
   {
     codename: 'thoth',
@@ -132,9 +411,11 @@ function modeKey(codename: string, mode: 'cloud' | 'dev' | 'offgrid'): ModeKey {
 function findConnectedAgent(agents: ConnectedAgent[], config: AgentConfig, mode: 'cloud' | 'dev' | 'offgrid', offgridUrl = ''): ConnectedAgent | undefined {
   return agents.find(a => {
     if (a.manifest.identity.codename !== config.codename) return false;
+    // Use stored connectionMode if available (new connections)
+    if (a.connectionMode) return a.connectionMode === mode;
+    // Fallback heuristics for legacy connections without connectionMode
     if (mode === 'cloud') return a.url === config.cloud.url;
     if (mode === 'offgrid') return a.url.includes(':717/') || (offgridUrl && a.url.startsWith(offgridUrl.replace(/\/+$/, '')));
-    // dev = not cloud and not offgrid
     const isOffgrid = a.url.includes(':717/') || (offgridUrl && a.url.startsWith(offgridUrl.replace(/\/+$/, '')));
     return a.url !== config.cloud.url && !isOffgrid;
   });
@@ -415,7 +696,7 @@ function AgentRow({ agent, expanded, onExpand }: {
       const displayName = mode === 'dev'
         ? (devNames[agent.config.codename] ?? `${agent.config.name.toLowerCase()}-dev`).trim() || agent.config.name
         : mode === 'offgrid' ? `${agent.config.name} Off-Grid` : agent.config.name;
-      cosmosStore.addAgent(agentUrl, manifest, displayName);
+      cosmosStore.addAgent(agentUrl, manifest, displayName, mode);
       useAgentStore.getState().reloadHidden();
     } catch (e: any) {
       setError(e.message || 'Connection failed');
@@ -928,6 +1209,11 @@ function AutoConnect() {
 }
 
 export function Agents() {
+  const { agentTheme } = useAgentThemeStore();
+
+  if (agentTheme === 'ocean') return <OceanAgentsView />;
+  if (agentTheme === 'olympus') return <OlympusAgentsView />;
+
   const agents = useAgentList();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
