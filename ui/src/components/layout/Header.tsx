@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Menu, ChevronRight } from 'lucide-react';
 import { useAgentStatus } from '@/lib/hooks/useAgentStatus';
 import type { AgentHealth } from '@/lib/hooks/useAgentStatus';
@@ -88,11 +89,11 @@ export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMen
 
         {/* Mobile: TurtleShell logo + agent picker */}
         <div className="flex items-center gap-2 md:hidden">
-          <a href="/" className="flex items-center gap-2 no-underline">
+          <Link to="/app/chat" className="flex items-center gap-2 no-underline">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-xs">
               🐢
             </div>
-          </a>
+          </Link>
           <AgentPicker compact />
         </div>
 
