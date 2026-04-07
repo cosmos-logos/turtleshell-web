@@ -328,27 +328,33 @@ export async function testSalesforceConnection(): Promise<SfTestConnectionResult
     steps.push({ label: 'SObjects catalog', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
   }
 
-  // 3. Token refresh flow
-  const t2 = performance.now();
-  try {
-    await refreshSalesforceToken();
-    const ms = Math.round(performance.now() - t2);
-    steps.push({ label: 'Token refresh', status: 'pass', detail: `Refresh successful (${ms}ms)`, durationMs: ms });
-
-    // 4. Verify refreshed token works
-    const t3 = performance.now();
+  // 3. Token refresh flow — only run if a refresh token was issued.
+  // Connected Apps without the offline_access scope won't return one, which is fine.
+  if (!localStorage.getItem('sf_refresh_token')) {
+    steps.push({ label: 'Token refresh', status: 'skip', detail: 'No refresh token (offline_access scope not granted)', durationMs: 0 });
+    steps.push({ label: 'Post-refresh API call', status: 'skip', detail: 'No refresh token to test', durationMs: 0 });
+  } else {
+    const t2 = performance.now();
     try {
-      await sfRequest('GET', '/services/data/v63.0/');
-      const ms3 = Math.round(performance.now() - t3);
-      steps.push({ label: 'Post-refresh API call', status: 'pass', detail: `200 (${ms3}ms)`, durationMs: ms3 });
+      await refreshSalesforceToken();
+      const ms = Math.round(performance.now() - t2);
+      steps.push({ label: 'Token refresh', status: 'pass', detail: `Refresh successful (${ms}ms)`, durationMs: ms });
+
+      // 4. Verify refreshed token works
+      const t3 = performance.now();
+      try {
+        await sfRequest('GET', '/services/data/v63.0/');
+        const ms3 = Math.round(performance.now() - t3);
+        steps.push({ label: 'Post-refresh API call', status: 'pass', detail: `200 (${ms3}ms)`, durationMs: ms3 });
+      } catch (err) {
+        const ms3 = Math.round(performance.now() - t3);
+        steps.push({ label: 'Post-refresh API call', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms3 });
+      }
     } catch (err) {
-      const ms3 = Math.round(performance.now() - t3);
-      steps.push({ label: 'Post-refresh API call', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms3 });
+      const ms = Math.round(performance.now() - t2);
+      steps.push({ label: 'Token refresh', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
+      steps.push({ label: 'Post-refresh API call', status: 'skip', detail: 'Refresh failed', durationMs: 0 });
     }
-  } catch (err) {
-    const ms = Math.round(performance.now() - t2);
-    steps.push({ label: 'Token refresh', status: 'fail', detail: err instanceof Error ? err.message : String(err), durationMs: ms });
-    steps.push({ label: 'Post-refresh API call', status: 'skip', detail: 'Refresh failed', durationMs: 0 });
   }
 
   const overall = steps.every((s) => s.status !== 'fail') ? 'pass' : 'fail';
