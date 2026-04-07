@@ -84,10 +84,12 @@ export async function exchangeCodeForTokens(code: string): Promise<void> {
   console.log('[SF] Exchanging authorization code for tokens via proxy...');
 
   // Route through Vite proxy → Ares → Hermes → Salesforce.
-  // x-token-delivery: header tells Ares to return tokens in the response body
-  // instead of stripping them into httpOnly cookies.
+  // x-token-delivery: header tells Ares to also include tokens in response headers
+  // (alongside setting httpOnly cookies). credentials: 'include' is required so the
+  // cross-origin Set-Cookie response headers actually get persisted by the browser.
   const response = await fetch(`${getGatewayUrl()}/v1/salesforce/auth/token`, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       'x-token-delivery': 'header',
@@ -211,8 +213,10 @@ export function getSalesforceInstanceUrl(): string | null {
 
 /**
  * Make authenticated SF API calls via Ares → Hermes → Salesforce.
- * The SF access token flows as: __Host-sf_access cookie → x-salesforce-token header (Ares)
- * → Authorization: Bearer (Hermes SF proxy).
+ * The SF access token is sent in the x-salesforce-token header from localStorage.
+ * Ares cookie→header middleware will fall back to __Host-sf_access cookie if the
+ * header is missing, but we always send the header so we don't depend on
+ * cross-origin third-party cookies (which Chrome is phasing out).
  */
 export async function sfRequest(
   method: string,
@@ -225,6 +229,16 @@ export async function sfRequest(
     throw new Error('Not connected to Salesforce');
   }
 
+  function buildHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-salesforce-instance-url': instanceUrl!,
+    };
+    const token = localStorage.getItem('sf_access_token');
+    if (token) headers['x-salesforce-token'] = token;
+    return headers;
+  }
+
   // Route through Ares → Hermes SF API proxy
   const proxyUrl = `${getGatewayUrl()}/v1/salesforce/api${path}`;
   console.log('[SF] REQUEST:', method, proxyUrl);
@@ -232,10 +246,7 @@ export async function sfRequest(
   let response = await fetch(proxyUrl, {
     method,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-salesforce-instance-url': instanceUrl,
-    },
+    headers: buildHeaders(),
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
 
@@ -247,10 +258,7 @@ export async function sfRequest(
       response = await fetch(proxyUrl, {
         method,
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-salesforce-instance-url': instanceUrl,
-        },
+        headers: buildHeaders(),
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch {

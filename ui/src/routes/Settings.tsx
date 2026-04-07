@@ -1,7 +1,5 @@
-import { Info, Volume2, Sun, Moon, Brain, Wrench } from 'lucide-react';
-import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
+import { Info, Sun, Moon, Brain, Wrench } from 'lucide-react';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
-import { useApolloStore } from '@/lib/store/apollo-store';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useThemeStore } from '@/lib/store/theme-store';
 import { useAgentThemeStore, type AgentTheme } from '@/lib/store/agent-theme-store';
@@ -58,7 +56,6 @@ export function Settings() {
 
   const { theme, setTheme } = useThemeStore();
   const { memoryEnabled, setMemoryEnabled } = useChatStore();
-  const { ttsAutoPlay, ttsTalkMode, setTTSAutoPlay, setTTSTalkMode } = useApolloStore();
   const { showAgentAvatars, setShowAgentAvatars } = useChatPreferencesStore();
 
   return (
@@ -94,7 +91,7 @@ export function Settings() {
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
             💬 Chat
           </h2>
-          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl">
+          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold">Agent Avatars</div>
@@ -104,6 +101,7 @@ export function Settings() {
               </div>
               <Toggle on={showAgentAvatars} onToggle={() => setShowAgentAvatars(!showAgentAvatars)} />
             </div>
+            {showAgentAvatars && <AgentThemeSelector />}
           </div>
         </section>
 
@@ -112,7 +110,7 @@ export function Settings() {
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
             <Wrench size={14} /> Developer
           </h2>
-          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
+          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold">Developer Mode</div>
@@ -122,43 +120,7 @@ export function Settings() {
               </div>
               <Toggle on={developerMode} onToggle={() => setDeveloperMode(!developerMode)} />
             </div>
-            {developerMode && <AgentThemeSelector />}
           </div>
-        </section>
-
-        {/* Voice */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-            <Volume2 size={14} /> Voice
-          </h2>
-          {useCosmosLogosStore.getState().agents.some(a => a.capabilities.includes('x-tts')) ? (
-            <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-semibold">Talk Mode</div>
-                  <div className="text-2xs text-text-muted mt-0.5">
-                    Microphone listens and auto-sends after you speak
-                  </div>
-                </div>
-                <Toggle on={ttsTalkMode} onToggle={() => setTTSTalkMode(!ttsTalkMode)} />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-semibold">Auto-Play Audio</div>
-                  <div className="text-2xs text-text-muted mt-0.5">
-                    Automatically speak AI responses aloud
-                  </div>
-                </div>
-                <Toggle on={ttsAutoPlay} onToggle={() => setTTSAutoPlay(!ttsAutoPlay)} />
-              </div>
-            </div>
-          ) : (
-            <div className="p-4 bg-surface-1 border border-border-muted rounded-xl">
-              <p className="text-2xs text-text-muted">
-                Connect a TTS agent (like Apollo) via Agent Setup to enable voice features.
-              </p>
-            </div>
-          )}
         </section>
 
         {/* Memory */}

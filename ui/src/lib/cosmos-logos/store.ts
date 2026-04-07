@@ -58,6 +58,10 @@ export const useCosmosLogosStore = create<CosmosLogosStore>()(
           connectedAt: new Date().toISOString(),
           capabilities: manifest.capabilities.map(c => c.verb),
         }
+        // Re-adding athena clears the manual-disconnect flag
+        if (manifest.identity.codename === 'athena-616') {
+          localStorage.removeItem('turtleshell-athena-disconnected')
+        }
         set(state => ({
           agents: [...state.agents, agent]
         }))
@@ -88,6 +92,10 @@ export const useCosmosLogosStore = create<CosmosLogosStore>()(
         // Find the agent's codename before removing
         const agent = get().agents.find(a => a.id === agentId)
         const codename = agent?.manifest.identity.codename
+        // Persist disconnect for athena so auto-connect doesn't bring it back on next boot
+        if (codename === 'athena-616') {
+          localStorage.setItem('turtleshell-athena-disconnected', '1')
+        }
         set(state => ({
           agents: state.agents.filter(a => a.id !== agentId),
           activeChatAgentId: state.activeChatAgentId === agentId ? null : state.activeChatAgentId,

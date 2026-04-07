@@ -596,6 +596,23 @@ export function Onboarding() {
           store.toggleVisibility(a.id);
         }
       }
+    } else if (selectedGuide === 'athena') {
+      // Athena lives in the cosmos-logos store, not the catalog.
+      // Ensure auto-connect runs (clears manual disconnect flag) then activate.
+      const { autoConnectAthena, clearAthenaDisconnectFlag } = await import('@/lib/cosmos-logos/auto-connect');
+      const { useCosmosLogosStore } = await import('@/lib/cosmos-logos/store');
+      clearAthenaDisconnectFlag();
+      await autoConnectAthena();
+      const cosmosStore = useCosmosLogosStore.getState();
+      const athena = cosmosStore.agents.find(a => a.manifest.identity.codename === 'athena-616');
+      if (athena) {
+        cosmosStore.setActiveChatAgent(athena.id);
+        useChatStore.getState().switchAgent(athena.id);
+      } else {
+        console.warn('[Onboarding] Athena auto-connect failed — falling back to Logos');
+        const logos = agents.find(a => a.id === 'logos');
+        if (logos) { setActiveAgent(logos); useChatStore.getState().switchAgent('logos'); }
+      }
     } else if (selectedGuide) {
       const builtinAgent = agents.find(a => a.id === selectedGuide);
       if (builtinAgent) setActiveAgent(builtinAgent);
