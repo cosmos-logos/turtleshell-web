@@ -1,9 +1,9 @@
-import { Info, Volume2, Sun, Moon, Brain, Wrench } from 'lucide-react';
-import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
+import { Info, Sun, Moon, Brain, Wrench } from 'lucide-react';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
-import { useApolloStore } from '@/lib/store/apollo-store';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useThemeStore } from '@/lib/store/theme-store';
+import { useAgentThemeStore, type AgentTheme } from '@/lib/store/agent-theme-store';
+import { useChatPreferencesStore } from '@/lib/store/chat-preferences-store';
 
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
@@ -20,12 +20,43 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   );
 }
 
+const AGENT_THEMES: { value: AgentTheme; label: string }[] = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'ocean', label: 'Ocean' },
+  { value: 'olympus', label: 'Olympus' },
+];
+
+function AgentThemeSelector() {
+  const { agentTheme, setAgentTheme } = useAgentThemeStore();
+  return (
+    <div className="pt-3 border-t border-border-muted">
+      <div className="text-sm font-semibold mb-1">Agent Theme</div>
+      <div className="text-2xs text-text-muted mb-3">Controls agent avatars in chat, sidebar, and picker</div>
+      <div className="flex gap-1 bg-surface-2 p-1 rounded-lg">
+        {AGENT_THEMES.map(t => (
+          <button
+            key={t.value}
+            onClick={() => setAgentTheme(t.value)}
+            className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-all ${
+              agentTheme === t.value
+                ? 'bg-shell-500 text-white shadow-sm'
+                : 'text-text-muted hover:text-text-secondary'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function Settings() {
   const { developerMode, setDeveloperMode } = useEnvironmentStore();
 
   const { theme, setTheme } = useThemeStore();
   const { memoryEnabled, setMemoryEnabled } = useChatStore();
-  const { ttsAutoPlay, ttsTalkMode, setTTSAutoPlay, setTTSTalkMode } = useApolloStore();
+  const { showAgentAvatars, setShowAgentAvatars } = useChatPreferencesStore();
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -55,6 +86,25 @@ export function Settings() {
           </div>
         </section>
 
+        {/* Chat Display */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+            💬 Chat
+          </h2>
+          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold">Agent Avatars</div>
+                <div className="text-2xs text-text-muted mt-0.5">
+                  Show agent emoji next to messages in chat
+                </div>
+              </div>
+              <Toggle on={showAgentAvatars} onToggle={() => setShowAgentAvatars(!showAgentAvatars)} />
+            </div>
+            {showAgentAvatars && <AgentThemeSelector />}
+          </div>
+        </section>
+
         {/* Developer Mode Toggle */}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
@@ -71,41 +121,6 @@ export function Settings() {
               <Toggle on={developerMode} onToggle={() => setDeveloperMode(!developerMode)} />
             </div>
           </div>
-        </section>
-
-        {/* Voice */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-            <Volume2 size={14} /> Voice
-          </h2>
-          {useCosmosLogosStore.getState().agents.some(a => a.capabilities.includes('x-tts')) ? (
-            <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-semibold">Talk Mode</div>
-                  <div className="text-2xs text-text-muted mt-0.5">
-                    Microphone listens and auto-sends after you speak
-                  </div>
-                </div>
-                <Toggle on={ttsTalkMode} onToggle={() => setTTSTalkMode(!ttsTalkMode)} />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-semibold">Auto-Play Audio</div>
-                  <div className="text-2xs text-text-muted mt-0.5">
-                    Automatically speak AI responses aloud
-                  </div>
-                </div>
-                <Toggle on={ttsAutoPlay} onToggle={() => setTTSAutoPlay(!ttsAutoPlay)} />
-              </div>
-            </div>
-          ) : (
-            <div className="p-4 bg-surface-1 border border-border-muted rounded-xl">
-              <p className="text-2xs text-text-muted">
-                Connect a TTS agent (like Apollo) via Agent Setup to enable voice features.
-              </p>
-            </div>
-          )}
         </section>
 
         {/* Memory */}

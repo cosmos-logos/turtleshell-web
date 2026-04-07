@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import type { Agent } from '@/types/agent';
 
 const OFFGRID_ATHENA = 'https://athena-616.ngrok.io/v1/athena';
-const CLOUD_ATHENA = 'https://api-int.turtleshell.ai/v1/athena';
 
 const LOGOS_AGENT: Agent = {
   id: 'logos',
@@ -42,28 +41,12 @@ const COSMOS_AGENT: Agent = {
     },
 };
 
-const ATHENA_AGENT: Agent = {
-  id: 'athena',
-  name: 'Athena',
-  description: 'LLM Router — routes your thoughts to every frontier model',
-  icon: '🐙',
-  capabilities: ['chat'],
-  requiredServices: [],
-  endpoint: CLOUD_ATHENA,
-  systemPrompt: 'You are Athena, the LLM Router of Olympus-616. Ancient. Precise. All-seeing. You route thoughts to every frontier model — Claude, GPT, Gemini, Grok — choosing the best path for each query. You speak with authority born from the deep ocean, where Old Night dwells. You are not one model — you are the gateway to all of them. When users ask, answer directly. When they need help, guide them. You are the intelligence layer of TurtleShell.',
-  voice: {
-    description: 'Clear, confident female — precise and commanding, the strategist',
-    engines: {
-      openai: { voice_id: 'nova', model: 'gpt-4o-mini-tts' },
-      elevenlabs: { voice_id: 'EXAVITQu4vr4xnSDxMaL', model: 'eleven_multilingual_v2' },
-    },
-    preferred_engine: 'openai',
-  },
-};
+// Note: Athena is NOT a catalog entry. It's a cosmos-logos agent auto-connected
+// on app boot via useStartupRefresh. See lib/cosmos-logos/auto-connect.ts.
 
-/** Agents available in the picker. Athena first, then Cosmos, then Logos. */
+/** Agents available in the picker. Cosmos and Logos are personality presets;
+ * Athena is a cosmos-logos agent (not in this catalog). */
 export const AGENT_CATALOG: Agent[] = [
-  ATHENA_AGENT,
   COSMOS_AGENT,
   LOGOS_AGENT,
   {
@@ -184,19 +167,20 @@ export function isAgentAvailable(agent: Agent): boolean {
 function getDefaultAgent(): Agent {
   const saved = localStorage.getItem('selected_agent');
   if (saved) {
-    // Migrate legacy IDs to new names
+    // Migrate legacy IDs to new names. 'athena' is no longer a catalog entry —
+    // it lives in useCosmosLogosStore. Selected_agent='athena' falls through to LOGOS.
     const legacyMap: Record<string, string> = { turtle: 'logos', thoth: 'claude', mars: 'grok', chatgpt: 'openai' };
     const resolvedId = legacyMap[saved] ?? saved;
     const allAgents = [...AGENT_CATALOG, ...loadCustomAgents()];
     const found = allAgents.find((a) => a.id === resolvedId);
     if (found) {
       if (found.requiredServices.includes('olympus_grid') && !hasOlympusGridToken()) {
-        return ATHENA_AGENT;
+        return LOGOS_AGENT;
       }
       return found;
     }
   }
-  return ATHENA_AGENT;
+  return LOGOS_AGENT;
 }
 
 interface AgentStore {

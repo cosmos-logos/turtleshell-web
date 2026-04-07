@@ -10,12 +10,52 @@ import { streamDirect, hasDirectProvider } from '@/lib/providers/direct-chat';
 import { hasUserApiKey } from '@/lib/store/agent-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { useAgentStore } from '@/lib/store/agent-store';
+import { useChatPreferencesStore } from '@/lib/store/chat-preferences-store';
+import { useAgentThemeStore } from '@/lib/store/agent-theme-store';
+import { OLYMPUS_AGENTS } from '@/lib/agents/olympus-data';
 import { generateId, formatTimestamp } from '@/lib/utils/helpers';
 import { useApollo } from '@/lib/hooks/useApollo';
 import type { ChatMessage } from '@/types/chat';
 
 // Matches "[Calling tool <name> with args <json>]" lines from Athena
 const TOOL_CALL_PATTERN = /^\[Calling tool .+ with args .+\]$/;
+
+const OCEAN_EMOJIS: Record<string, string> = {
+  'athena-616': '🐙', 'poseidon-616': '🔱', 'apollo-616': '🐬',
+  cosmos: '🐟', logos: '🐢',
+};
+
+/** Resolve the avatar emoji for the active agent, respecting theme setting */
+function useAgentAvatar(): string {
+  const activeAgent = useAgentStore((s) => s.activeAgent);
+  const activeCosmos = useCosmosLogosStore((s) => s.activeChatAgentId);
+  const cosmosAgents = useCosmosLogosStore((s) => s.agents);
+  const agentTheme = useAgentThemeStore((s) => s.agentTheme);
+
+  // Cosmos-logos connected agent (e.g. Athena-616)
+  if (activeCosmos) {
+    const ca = cosmosAgents.find(a => a.id === activeCosmos);
+    if (ca) {
+      const codename = ca.manifest.identity.codename;
+      if (agentTheme === 'olympus') {
+        const oa = OLYMPUS_AGENTS.find(o => codename.startsWith(o.codename) || o.codename.startsWith(codename));
+        if (oa) return oa.godEmoji;
+      }
+      if (agentTheme === 'ocean') return OCEAN_EMOJIS[codename] ?? ca.manifest.identity.name.charAt(0);
+      return ca.manifest.identity.name.charAt(0);
+    }
+  }
+
+  // Built-in agent
+  if (agentTheme === 'olympus') {
+    const oa = OLYMPUS_AGENTS.find(o => o.codename === activeAgent.id || o.codename === activeAgent.id + '-616');
+    if (oa) return oa.godEmoji;
+  }
+  if (agentTheme === 'ocean') return OCEAN_EMOJIS[activeAgent.id] ?? activeAgent.icon ?? '🐢';
+  if (agentTheme === 'standard') return activeAgent.name.charAt(0).toUpperCase();
+
+  return activeAgent.icon || '🐢';
+}
 
 // Splits text into segments of plain text and URLs
 const URL_REGEX = /(https?:\/\/[^\s<>"')\]]+)/g;
@@ -84,6 +124,8 @@ export function Chat() {
   const { messages, isStreaming, error, addMessage, updateLastAssistantMessage, setStreaming, setError, clearMessages, newThread, setConversationId, memoryEnabled, saveConversation, setMemoryEnabled, setSaveConversation } =
     useChatStore();
   const developerMode = useEnvironmentStore((s) => s.developerMode);
+  const showAvatars = useChatPreferencesStore((s) => s.showAgentAvatars);
+  const agentAvatar = useAgentAvatar();
   const [resumedAt] = useState(() =>
     useChatStore.getState().messages.length > 0 && useChatStore.getState().currentConversationId
       ? new Date()
@@ -432,8 +474,13 @@ export function Chat() {
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            className={`flex items-start gap-2.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
+            {msg.role === 'assistant' && showAvatars && (
+              <div className="w-8 h-8 rounded-full bg-surface-2 border border-border-muted flex items-center justify-center text-lg shrink-0 mt-0.5">
+                {agentAvatar}
+              </div>
+            )}
             <div
               className={`message-bubble group ${
                 msg.role === 'user'
