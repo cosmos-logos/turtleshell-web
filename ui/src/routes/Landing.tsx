@@ -468,7 +468,7 @@ function SupportSection() {
           <button
             type="submit"
             disabled={submitted}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-shell-500 text-white text-sm font-semibold rounded-lg hover:bg-shell-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:-translate-y-px hover:shadow-lg hover:shadow-shell-500/30"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-surface-2 border border-border-muted text-text-primary text-sm font-semibold rounded-lg hover:bg-surface-3 hover:border-border-default disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {submitted ? 'Opening email client...' : 'Send Support Request'}
           </button>

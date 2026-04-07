@@ -308,14 +308,14 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
       >
         {/* Header with close button */}
         <div className="flex items-center justify-between px-4 h-14 border-b border-border-muted flex-shrink-0">
-          <a href="/" className="flex items-center gap-2.5 no-underline">
+          <Link to="/app/chat" className="flex items-center gap-2.5 no-underline">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-sm">
               🐢
             </div>
             <span className="font-semibold text-sm tracking-tight text-text-primary">
               TurtleShell<span className="text-shell-400">.ai</span>
             </span>
-          </a>
+          </Link>
           <button
             onClick={onClose}
             className="p-1.5 rounded-md hover:bg-surface-3 text-text-muted transition-colors"
@@ -352,7 +352,7 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
     >
       {/* Logo */}
       <div className="flex items-center justify-between px-4 h-14 border-b border-border-muted flex-shrink-0">
-        <a href="/" className="flex items-center gap-2.5 no-underline">
+        <Link to="/app/chat" className="flex items-center gap-2.5 no-underline">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-sm flex-shrink-0">
             🐢
           </div>
@@ -361,7 +361,7 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
               TurtleShell<span className="text-shell-400">.ai</span>
             </span>
           )}
-        </a>
+        </Link>
         {open && (
           <button
             onClick={onToggle}

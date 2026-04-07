@@ -62,13 +62,20 @@ export function MarketingLayout() {
             </Link>
           </div>
 
-          {/* Hamburger button */}
-          <button
-            type="button"
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="md:hidden p-2 rounded-lg text-text-secondary hover:bg-surface-2 transition-colors"
-            aria-label="Toggle menu"
-          >
+          {/* Mobile: Launch App + hamburger */}
+          <div className="flex items-center gap-2 md:hidden">
+            <Link
+              to="/app/chat"
+              className="inline-flex items-center px-3.5 py-2 rounded-lg text-xs font-semibold bg-shell-500 text-white hover:bg-shell-600 transition-colors"
+            >
+              Launch App →
+            </Link>
+            <button
+              type="button"
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="p-2 rounded-lg text-text-secondary hover:bg-surface-2 transition-colors"
+              aria-label="Toggle menu"
+            >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               {menuOpen ? (
                 <>
@@ -83,22 +90,14 @@ export function MarketingLayout() {
                 </>
               )}
             </svg>
-          </button>
+            </button>
+          </div>
         </div>
 
         {/* Mobile menu */}
         {menuOpen && (
           <div className="md:hidden border-t border-border-muted bg-surface-0/95 backdrop-blur-xl">
             <div className="py-2">
-              <div className="px-4 pt-1 pb-3">
-                <Link
-                  to="/app/chat"
-                  onClick={closeMenu}
-                  className="block w-full text-center px-5 py-2.5 rounded-lg text-sm font-semibold bg-shell-500 text-white hover:bg-shell-600 transition-all"
-                >
-                  Launch App →
-                </Link>
-              </div>
               <a href="/#features" onClick={closeMenu} className={mobileLinkClass}>Features</a>
               <a href="/#services" onClick={closeMenu} className={mobileLinkClass}>Services</a>
               <a href="/#pricing" onClick={closeMenu} className={mobileLinkClass}>Pricing</a>
