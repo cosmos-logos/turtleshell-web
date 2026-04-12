@@ -9,7 +9,6 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
-import { getShellId } from '@/lib/api/olympus-grid-client';
 
 type MemoryScope = 'tenant' | 'shell' | 'agent' | 'agent-tenant' | 'agent-shell';
 type MemoryCategory = 'identity' | 'preference' | 'project' | 'relationship' | 'knowledge' | 'system';
@@ -64,14 +63,11 @@ export function Memory() {
     setLoading(true);
     try {
       const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
-      const params = new URLSearchParams({
-        agentId: 'athena',
-        shellId: getShellId(),
-        tenantId: 'tenant-default',
+      // v1.7.6: scope is implicit in the JWT cookie — no query params needed.
+      // credentials:'include' sends __Host-og_access so Ares can extract identity_sub.
+      const res = await fetch(`${mnUrl}/api/memory/reflect`, {
+        credentials: 'include',
       });
-      if (showInactive) params.set('showInactive', 'true');
-
-      const res = await fetch(`${mnUrl}/api/memory/reflect?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setMemories(data.memories || []);
@@ -91,8 +87,9 @@ export function Memory() {
     setForgetting(id);
     try {
       const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
-      const res = await fetch(`${mnUrl}/api/memory/${id}?agentId=athena&shellId=${encodeURIComponent(getShellId())}&tenantId=tenant-default`, {
+      const res = await fetch(`${mnUrl}/api/memory/${id}`, {
         method: 'DELETE',
+        credentials: 'include',
       });
       if (res.ok) {
         await fetchMemories();
