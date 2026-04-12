@@ -7,6 +7,9 @@ import {
   Filter,
   Eye,
   EyeOff,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 
@@ -58,15 +61,33 @@ export function Memory() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [forgetting, setForgetting] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  // Same JWT-from-localStorage pattern as olympus-grid-client.ts. Used by every
+  // mutating call so cross-origin requests carry identity without relying on cookies.
+  function authHeaders(): Record<string, string> {
+    const h: Record<string, string> = {};
+    const ogToken = localStorage.getItem('og_access_token');
+    if (ogToken) h['x-user-identity'] = ogToken;
+    return h;
+  }
 
   const fetchMemories = useCallback(async () => {
     setLoading(true);
     try {
       const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
-      // v1.7.6: scope is implicit in the JWT cookie — no query params needed.
-      // credentials:'include' sends __Host-og_access so Ares can extract identity_sub.
+      // Same localStorage + x-user-identity header pattern as olympus-grid-client.ts.
+      // Cookies don't reliably traverse cross-origin (turtleshell.ai → api-int.turtleshell.ai
+      // in prod, localhost:5173 → athena-616.ngrok.io in dev) so the JWT travels
+      // explicitly in the header. The token was captured during verifyCode().
+      const headers: Record<string, string> = {};
+      const ogToken = localStorage.getItem('og_access_token');
+      if (ogToken) headers['x-user-identity'] = ogToken;
       const res = await fetch(`${mnUrl}/api/memory/reflect`, {
         credentials: 'include',
+        headers,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -84,20 +105,77 @@ export function Memory() {
   }, [fetchMemories]);
 
   const forgetMemory = async (id: string) => {
+    if (!confirm('Delete this memory? This cannot be undone.')) return;
     setForgetting(id);
     try {
       const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
       const res = await fetch(`${mnUrl}/api/memory/${id}`, {
         method: 'DELETE',
         credentials: 'include',
+        headers: authHeaders(),
       });
       if (res.ok) {
-        await fetchMemories();
+        // Optimistic remove instead of refetch — agent will see fresh state on
+        // its next recall (no cache anywhere).
+        setMemories((prev) => prev.filter((m) => m.id !== id));
+      } else {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `HTTP ${res.status}`);
       }
     } catch (err: any) {
       console.warn('[Memory] Failed to forget:', err.message);
+      alert(`Failed to delete: ${err.message}`);
     } finally {
       setForgetting(null);
+    }
+  };
+
+  const startEdit = (m: MemoryRecord) => {
+    setEditingId(m.id);
+    setEditValue(m.value);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditValue('');
+  };
+
+  const saveEdit = async (m: MemoryRecord) => {
+    const trimmed = editValue.trim();
+    if (!trimmed || trimmed === m.value) {
+      cancelEdit();
+      return;
+    }
+    setSavingId(m.id);
+    try {
+      const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
+      // POST with the same key+identity upserts on the deterministic MemoryId__c
+      // hash, so the existing row's Content__c just gets updated in place.
+      const res = await fetch(`${mnUrl}/api/memory`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          key: m.key,
+          value: trimmed,
+          agentId: m.agentId || 'athena',
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `HTTP ${res.status}`);
+      }
+      // Optimistic in-place update — the next chat turn's recall will see the
+      // new value because Athena queries Salesforce on every turn (no cache).
+      setMemories((prev) =>
+        prev.map((row) => (row.id === m.id ? { ...row, value: trimmed, updatedAt: new Date().toISOString() } : row))
+      );
+      cancelEdit();
+    } catch (err: any) {
+      console.warn('[Memory] Failed to save edit:', err.message);
+      alert(`Failed to save: ${err.message}`);
+    } finally {
+      setSavingId(null);
     }
   };
 
@@ -241,7 +319,39 @@ export function Memory() {
                     <div className="mb-1">
                       <span className="font-medium text-sm text-text-primary">{m.key}</span>
                     </div>
-                    <p className="text-sm text-text-secondary break-words">{m.value}</p>
+                    {editingId === m.id ? (
+                      <div className="flex items-start gap-2">
+                        <textarea
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          autoFocus
+                          rows={Math.min(5, Math.max(1, editValue.split('\n').length))}
+                          className="flex-1 bg-surface-2 border border-shell-400 rounded-lg px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-shell-400 resize-y"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveEdit(m);
+                            if (e.key === 'Escape') cancelEdit();
+                          }}
+                        />
+                        <button
+                          onClick={() => saveEdit(m)}
+                          disabled={savingId === m.id}
+                          className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-colors flex-shrink-0"
+                          title="Save (⌘+Enter)"
+                        >
+                          {savingId === m.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                        </button>
+                        <button
+                          onClick={cancelEdit}
+                          disabled={savingId === m.id}
+                          className="p-1.5 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
+                          title="Cancel (Esc)"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-text-secondary break-words">{m.value}</p>
+                    )}
 
                     {/* Meta row */}
                     <div className="flex flex-wrap items-center gap-3 mt-2 text-2xs text-text-muted">
@@ -264,20 +374,29 @@ export function Memory() {
                     )}
                   </div>
 
-                  {/* Forget button */}
-                  {m.active && (
-                    <button
-                      onClick={() => forgetMemory(m.id)}
-                      disabled={forgetting === m.id}
-                      className="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
-                      title="Forget this memory"
-                    >
-                      {forgetting === m.id ? (
-                        <Loader2 size={16} className="animate-spin" />
-                      ) : (
-                        <Trash2 size={16} />
-                      )}
-                    </button>
+                  {/* Edit + Forget buttons */}
+                  {m.active && editingId !== m.id && (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => startEdit(m)}
+                        className="p-2 rounded-lg text-text-muted hover:text-shell-400 hover:bg-shell-500/10 transition-colors"
+                        title="Edit this memory"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        onClick={() => forgetMemory(m.id)}
+                        disabled={forgetting === m.id}
+                        className="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        title="Forget this memory"
+                      >
+                        {forgetting === m.id ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={16} />
+                        )}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

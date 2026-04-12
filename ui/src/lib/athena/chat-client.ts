@@ -58,6 +58,15 @@ export async function* streamChat(
     ...(options?.agentId ? { 'x-agent-id': options.agentId } : {}),
   };
 
+  // Same JWT pattern olympus-grid-client.ts uses: read the access token from
+  // localStorage and pass it as x-user-identity. This is the production-correct
+  // path because cross-origin requests (turtleshell.ai → api-int.turtleshell.ai)
+  // can't rely on cookies for auth, even if credentials: 'include' is set.
+  // The localStorage token is captured during the verifyCode() flow via the
+  // x-token-delivery: header response from Ares.
+  const ogToken = localStorage.getItem('og_access_token');
+  if (ogToken) headers['x-user-identity'] = ogToken;
+
   const response = await fetch(url, {
     method: 'POST',
     headers,

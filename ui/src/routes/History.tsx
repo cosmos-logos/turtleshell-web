@@ -124,7 +124,10 @@ export function History() {
     setLoading(true);
     try {
       const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
-      const res = await fetch(`${mnUrl}/api/conversation/saved`);
+      const ogToken = localStorage.getItem('og_access_token');
+      const headers: Record<string, string> = {};
+      if (ogToken) headers['x-user-identity'] = ogToken;
+      const res = await fetch(`${mnUrl}/api/conversation/saved`, { headers });
       if (res.ok) {
         const data = await res.json();
         setConversations(Array.isArray(data) ? data : []);
@@ -141,12 +144,36 @@ export function History() {
   }, [fetchConversations]);
 
   const handleResume = async (conv: SavedConversation) => {
-    const turns: ChatMessage[] = conv.data.turns.map((t, i) => ({
-      id: `${conv.id}-${i}`,
-      role: t.role,
-      content: t.content,
-      timestamp: new Date(t.timestamp).getTime(),
-    }));
+    let turns: ChatMessage[] = [];
+    // List endpoint returns empty turns for performance — fetch full conversation
+    if (!conv.data.turns || conv.data.turns.length === 0) {
+      try {
+        const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
+        const ogToken = localStorage.getItem('og_access_token');
+        const headers: Record<string, string> = {};
+        if (ogToken) headers['x-user-identity'] = ogToken;
+        const res = await fetch(`${mnUrl}/api/conversation/saved/${conv.id}`, { headers });
+        if (res.ok) {
+          const full = await res.json();
+          const fullTurns = full?.data?.turns || [];
+          turns = fullTurns.map((t: any, i: number) => ({
+            id: `${conv.id}-${i}`,
+            role: t.role,
+            content: t.content,
+            timestamp: new Date(t.timestamp).getTime(),
+          }));
+        }
+      } catch (err) {
+        console.warn('[History] Failed to fetch conversation turns:', err);
+      }
+    } else {
+      turns = conv.data.turns.map((t, i) => ({
+        id: `${conv.id}-${i}`,
+        role: t.role,
+        content: t.content,
+        timestamp: new Date(t.timestamp).getTime(),
+      }));
+    }
     resumeConversation(conv.id, turns);
     navigate('/app/chat');
   };
@@ -159,7 +186,10 @@ export function History() {
   const handleDelete = async (id: string) => {
     try {
       const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
-      const res = await fetch(`${mnUrl}/api/conversation/saved/${id}`, { method: 'DELETE' });
+      const ogToken = localStorage.getItem('og_access_token');
+      const headers: Record<string, string> = {};
+      if (ogToken) headers['x-user-identity'] = ogToken;
+      const res = await fetch(`${mnUrl}/api/conversation/saved/${id}`, { method: 'DELETE', headers });
       if (res.ok) {
         setConversations((prev) => prev.filter((c) => c.id !== id));
       }
@@ -218,8 +248,11 @@ export function History() {
                         clearAllHistory();
                         // Also delete all server-side saved conversations
                         const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
+                        const ogToken = localStorage.getItem('og_access_token');
+                        const delHeaders: Record<string, string> = {};
+                        if (ogToken) delHeaders['x-user-identity'] = ogToken;
                         for (const conv of conversations) {
-                          try { await fetch(`${mnUrl}/api/conversation/saved/${conv.id}`, { method: 'DELETE' }); } catch {}
+                          try { await fetch(`${mnUrl}/api/conversation/saved/${conv.id}`, { method: 'DELETE', headers: delHeaders }); } catch {}
                         }
                         setConversations([]);
                         setShowClearConfirm(false);
