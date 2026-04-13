@@ -210,7 +210,8 @@ export function Chat() {
         ? 'athena'
         : (['claude', 'openai', 'grok', 'gemini'].includes(builtinAgent.id) ? builtinAgent.id : 'athena');
 
-      const agentEndpoint = builtinAgent.endpoint;
+      // Cosmos-logos agent URL takes precedence over builtin endpoint
+      const agentEndpoint = cosmosAgent?.url || builtinAgent.endpoint;
       console.log('[CHAT] agent:', activeChatAgentId || builtinAgent.id,
         useDirectProvider ? '→ DIRECT' : `→ Athena (${llmAgentId})`,
         agentEndpoint ? `endpoint: ${agentEndpoint}` : '',
