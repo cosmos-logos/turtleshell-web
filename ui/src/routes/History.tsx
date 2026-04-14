@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
+import { useTestBetaEnabled } from '@/lib/beta';
 import type { ChatMessage } from '@/types/chat';
 
 type Category = 'all' | 'conversations' | 'logs' | 'images' | 'actions';
@@ -56,12 +57,19 @@ const SEED_MEMORIES: SeedMemory[] = [
 
 // ── Categories + Mock Data ────────────────────────────
 
-const CATEGORIES: { key: Category; label: string; icon: typeof MessageSquare }[] = [
+// All tabs (shown when Test Beta Features is on). Non-beta users see only
+// "Conversations" — logs/images/actions are currently mock-data surfaces
+// that don't yet round-trip from Mnemosyne/Plutus, so they're confusing
+// for regular signups.
+const CATEGORIES_ALL: { key: Category; label: string; icon: typeof MessageSquare }[] = [
   { key: 'all', label: 'All', icon: Clock },
   { key: 'conversations', label: 'Conversations', icon: MessageSquare },
   { key: 'logs', label: 'Logs', icon: FileText },
   { key: 'images', label: 'Images', icon: Image },
   { key: 'actions', label: 'Actions', icon: Zap },
+];
+const CATEGORIES_BETA_OFF: typeof CATEGORIES_ALL = [
+  { key: 'conversations', label: 'Conversations', icon: MessageSquare },
 ];
 
 const MOCK_LOGS = [
@@ -113,7 +121,10 @@ const TYPE_BADGES = {
 
 export function History() {
   const navigate = useNavigate();
-  const [category, setCategory] = useState<Category>('all');
+  const testBetaEnabled = useTestBetaEnabled();
+  const CATEGORIES = testBetaEnabled ? CATEGORIES_ALL : CATEGORIES_BETA_OFF;
+  // Beta-off users land directly on "Conversations" since it's the only tab
+  const [category, setCategory] = useState<Category>(testBetaEnabled ? 'all' : 'conversations');
   const [conversations, setConversations] = useState<SavedConversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
