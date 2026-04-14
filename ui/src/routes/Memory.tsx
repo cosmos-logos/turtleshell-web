@@ -93,16 +93,23 @@ export function Memory() {
         credentials: 'include',
         headers,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        // Server error (endpoint missing, 4xx, 5xx). Keep prior state to avoid
+        // wiping the view and flicker-rendering the empty card.
+        console.warn('[Memory] server returned', res.status);
+        return;
+      }
       const data = await res.json();
       setMemories(data.memories || []);
     } catch (err: any) {
+      // Network error — don't clobber prior state.
       console.warn('[Memory] Failed to fetch:', err.message);
-      setMemories([]);
     } finally {
       setLoading(false);
     }
-  }, [showInactive, scope]);
+    // Depend on scope.key (primitive) not scope (object) to avoid dep churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showInactive, scope.key]);
 
   useEffect(() => {
     fetchMemories();
