@@ -115,26 +115,27 @@ export function Settings() {
             <Wrench size={14} /> Developer
           </h2>
           <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
                 <div className="text-sm font-semibold">Developer Mode</div>
                 <div className="text-2xs text-text-muted mt-0.5">
-                  Show debug info and developer tools in the console
+                  Debug info and developer tools.
                 </div>
               </div>
               <Toggle on={developerMode} onToggle={() => setDeveloperMode(!developerMode)} />
             </div>
-            <div className="flex items-center justify-between pt-3 border-t border-border-muted">
-              <div>
-                <div className="text-sm font-semibold">Test Beta Features</div>
-                <div className="text-2xs text-text-muted mt-0.5">
-                  Reveal the full interface: additional agents, cosmos-logos
-                  connections, Services, Service Desk, and theme options.
-                  Default off keeps the experience simple for new signups.
+            {/* Test Beta lives inside Developer Mode — only visible to devs. */}
+            {developerMode && (
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-border-muted">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold">Test Beta Features</div>
+                  <div className="text-2xs text-text-muted mt-0.5">
+                    Show the full UI.
+                  </div>
                 </div>
+                <Toggle on={testBetaEnabled} onToggle={() => setTestBetaEnabled(!testBetaEnabled)} />
               </div>
-              <Toggle on={testBetaEnabled} onToggle={() => setTestBetaEnabled(!testBetaEnabled)} />
-            </div>
+            )}
           </div>
         </section>
 

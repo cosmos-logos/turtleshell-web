@@ -135,6 +135,8 @@ export function History() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const scope = useActiveAgentScope();
 
+  // Depend on scope.key (primitive) — not scope (object) — so this useCallback
+  // is stable across renders and the useEffect below doesn't loop-fetch.
   const fetchConversations = useCallback(async () => {
     setLoading(true);
     try {
@@ -148,13 +150,19 @@ export function History() {
       if (res.ok) {
         const data = await res.json();
         setConversations(Array.isArray(data) ? data : []);
+      } else {
+        // Server rejected (endpoint missing, 4xx, 5xx). Keep prior state instead
+        // of wiping to avoid empty-state flicker.
+        console.warn('[History] server returned', res.status);
       }
     } catch (err) {
+      // Network error — don't clobber prior state, just log.
       console.warn('[History] Failed to fetch conversations:', err);
     } finally {
       setLoading(false);
     }
-  }, [scope]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope.key]);
 
   useEffect(() => {
     fetchConversations();
