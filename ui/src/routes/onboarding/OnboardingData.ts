@@ -8,12 +8,14 @@ export const CAUSES = [
   { emoji: '🤝', name: 'AI for Those in Need', desc: 'Sovereign AI for the underserved', label: '🤝 given', pledge: '"7% of every shell flows to those in need."' },
 ] as const
 
+// Tier IDs match the canonical set in Shells.tsx and Plutus STRIPE_PRICES.
+// Names/emojis stay oceanic but the id/shells/price reflect actual Stripe products
+// so a user's onboarding selection aligns with what they're actually billed for.
 export const TIERS = [
-  { name: '🌊 Ocean', shells: '1,000 shells / mo', price: '$1', id: 'ocean', popular: false, isEnterprise: false },
-  { name: '🪸 Reef', shells: '15,000 shells / mo', price: '$10', id: 'reef', popular: false, isEnterprise: false },
-  { name: '🌀 Current', shells: '100,000 shells / mo', price: '$49', id: 'current', popular: true, isEnterprise: false },
-  { name: '⚓ Fleet', shells: '500,000 shells / mo', price: '$199', id: 'fleet', popular: false, isEnterprise: false },
-  { name: '🏛️ Enterprise', shells: 'Custom volume · custom pricing', price: 'Talk to us', id: 'enterprise', popular: false, isEnterprise: true },
+  { name: '🐚 Beachcomber', shells: '500 shells / mo',     price: '$4.99',  id: 'beachcomber', popular: false, isEnterprise: false },
+  { name: '🌊 Tide',        shells: '2,000 shells / mo',   price: '$14.99', id: 'tide',        popular: false, isEnterprise: false },
+  { name: '🪸 Reef',        shells: '10,000 shells / mo',  price: '$39.99', id: 'reef',        popular: true,  isEnterprise: false },
+  { name: '🌌 Abyss',       shells: 'Unlimited shells',    price: '$99.99', id: 'abyss',       popular: false, isEnterprise: false },
 ] as const
 
 export const PERKS = [
