@@ -86,25 +86,28 @@ export function Settings() {
           </div>
         </section>
 
-        {/* Chat Display */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-            💬 Chat
-          </h2>
-          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-semibold">Agent Avatars</div>
-                <div className="text-2xs text-text-muted mt-0.5">
-                  Show agent emoji next to messages in chat
+        {/* Chat Display — agent avatars + theme selector are advanced knobs.
+            Revealed only when Developer Mode is ON so regular signups see a
+            very simple Settings page (Dark / Dev / Beta / Memory only). */}
+        {developerMode && (
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+              💬 Chat
+            </h2>
+            <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold">Agent Avatars</div>
+                  <div className="text-2xs text-text-muted mt-0.5">
+                    Show agent emoji next to messages in chat
+                  </div>
                 </div>
+                <Toggle on={showAgentAvatars} onToggle={() => setShowAgentAvatars(!showAgentAvatars)} />
               </div>
-              <Toggle on={showAgentAvatars} onToggle={() => setShowAgentAvatars(!showAgentAvatars)} />
+              {showAgentAvatars && <AgentThemeSelector />}
             </div>
-            {/* Theme selector is an advanced surface — gated behind Test Beta Features */}
-            {showAgentAvatars && testBetaEnabled && <AgentThemeSelector />}
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* Developer Mode + Test Beta Features */}
         <section className="space-y-3">
