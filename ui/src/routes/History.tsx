@@ -15,6 +15,7 @@ import {
 import { useChatStore } from '@/lib/store/chat-store';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { useTestBetaEnabled } from '@/lib/beta';
+import { useActiveAgentScope } from '@/lib/agent-scope';
 import type { ChatMessage } from '@/types/chat';
 
 type Category = 'all' | 'conversations' | 'logs' | 'images' | 'actions';
@@ -23,6 +24,8 @@ interface SavedConversation {
   id: string;
   data: {
     shellId: string;
+    /** Agent identifier stamped at creation time — used to scope by agent. */
+    agentId?: string | null;
     title: string;
     turns: { role: 'user' | 'assistant'; content: string; timestamp: string }[];
     messageCount: number;
@@ -130,6 +133,7 @@ export function History() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const { saveConversation, setSaveConversation, memoryEnabled, resumeConversation, startFromSeed, clearAllHistory } = useChatStore();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const scope = useActiveAgentScope();
 
   const fetchConversations = useCallback(async () => {
     setLoading(true);
@@ -138,7 +142,9 @@ export function History() {
       const ogToken = localStorage.getItem('og_access_token');
       const headers: Record<string, string> = {};
       if (ogToken) headers['x-user-identity'] = ogToken;
-      const res = await fetch(`${mnUrl}/api/conversation/saved`, { headers });
+      // Scope server-side first; client-side filter below is defense in depth.
+      const qs = scope.toQueryParams().toString();
+      const res = await fetch(`${mnUrl}/api/conversation/saved${qs ? `?${qs}` : ''}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setConversations(Array.isArray(data) ? data : []);
@@ -148,11 +154,15 @@ export function History() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
     fetchConversations();
   }, [fetchConversations]);
+
+  // Client-side safety filter — even if the server returned extras, only show
+  // records stamped with an agentId that belongs to the active scope.
+  const scopedConversations = conversations.filter((c) => scope.matches(c.data.agentId));
 
   const handleResume = async (conv: SavedConversation) => {
     let turns: ChatMessage[] = [];
@@ -218,12 +228,21 @@ export function History() {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">History</h1>
-          <p className="text-sm text-text-muted mt-1">
-            Your activity timeline across conversations, logs, and actions.
-          </p>
+        {/* Header — scoped to the active agent. Switching agents in the
+            top-of-screen picker re-filters this page automatically. */}
+        <div className="flex items-center gap-3">
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 border"
+            style={{ backgroundColor: `${scope.color}25`, color: scope.color, borderColor: `${scope.color}40` }}
+          >
+            {scope.avatar}
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">History with {scope.displayName}</h1>
+            <p className="text-sm text-text-muted mt-0.5">
+              Every conversation, kept between you and {scope.displayName}.
+            </p>
+          </div>
         </div>
 
         {/* Category tabs */}
@@ -339,16 +358,34 @@ export function History() {
                   <Loader2 size={20} className="animate-spin mr-2" />
                   Loading conversations...
                 </div>
-              ) : conversations.length === 0 ? (
-                <div className="p-5 bg-surface-1 border border-border-muted rounded-xl text-center">
-                  <p className="text-sm text-text-muted">
+              ) : scopedConversations.length === 0 ? (
+                <div
+                  className="p-6 rounded-xl text-center border"
+                  style={{ backgroundColor: `${scope.color}0F`, borderColor: `${scope.color}33` }}
+                >
+                  <div className="text-3xl mb-2">{scope.avatar}</div>
+                  <p className="text-sm text-text-primary font-medium mb-1">
                     {saveConversation
-                      ? 'No saved conversations yet. Start a chat to begin.'
+                      ? `Nothing between you and ${scope.displayName} yet.`
                       : 'Enable Auto-Save to persist conversations.'}
                   </p>
+                  {saveConversation && (
+                    <>
+                      <p className="text-sm text-text-muted italic max-w-md mx-auto mt-2 leading-relaxed">
+                        "{scope.greeting}"
+                      </p>
+                      <button
+                        onClick={() => navigate('/app/chat')}
+                        className="mt-4 px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                        style={{ backgroundColor: scope.color, color: '#0b0f14' }}
+                      >
+                        {scope.cta}
+                      </button>
+                    </>
+                  )}
                 </div>
               ) : (
-                conversations.map((conv) => (
+                scopedConversations.map((conv) => (
                   <div
                     key={conv.id}
                     className="group flex items-center gap-3 p-4 bg-surface-1 border border-border-muted rounded-xl hover:border-border transition-all cursor-pointer"

@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
+import { useActiveAgentScope } from '@/lib/agent-scope';
 
 type MemoryScope = 'tenant' | 'shell' | 'agent' | 'agent-tenant' | 'agent-shell';
 type MemoryCategory = 'identity' | 'preference' | 'project' | 'relationship' | 'knowledge' | 'system';
@@ -64,6 +65,7 @@ export function Memory() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
+  const scope = useActiveAgentScope();
 
   // Same JWT-from-localStorage pattern as olympus-grid-client.ts. Used by every
   // mutating call so cross-origin requests carry identity without relying on cookies.
@@ -85,7 +87,9 @@ export function Memory() {
       const headers: Record<string, string> = {};
       const ogToken = localStorage.getItem('og_access_token');
       if (ogToken) headers['x-user-identity'] = ogToken;
-      const res = await fetch(`${mnUrl}/api/memory/reflect`, {
+      // Scope server-side; client-side filter below is defense-in-depth.
+      const qs = scope.toQueryParams().toString();
+      const res = await fetch(`${mnUrl}/api/memory/reflect${qs ? `?${qs}` : ''}`, {
         credentials: 'include',
         headers,
       });
@@ -98,7 +102,7 @@ export function Memory() {
     } finally {
       setLoading(false);
     }
-  }, [showInactive]);
+  }, [showInactive, scope]);
 
   useEffect(() => {
     fetchMemories();
@@ -179,8 +183,12 @@ export function Memory() {
     }
   };
 
+  // Client-side safety filter — only memories stamped with an agentId that
+  // belongs to the active scope. Server should already filter, but we hedge.
+  const scopedMemories = memories.filter((m) => scope.matches(m.agentId));
+
   // Filter memories
-  const filtered = memories.filter(m => {
+  const filtered = scopedMemories.filter(m => {
     if (scopeFilter !== 'all' && m.scope !== scopeFilter) return false;
     if (categoryFilter !== 'all' && m.category !== categoryFilter) return false;
     if (searchQuery) {
@@ -194,14 +202,18 @@ export function Memory() {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
+        {/* Header — memories are scoped to the active agent (the top-of-screen
+            picker). Each agent forms its own relationship with you. */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">
-            <Brain size={20} className="text-white" />
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center text-lg border flex-shrink-0"
+            style={{ backgroundColor: `${scope.color}25`, color: scope.color, borderColor: `${scope.color}40` }}
+          >
+            {scope.avatar}
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-text-primary">Memory Control Panel</h1>
-            <p className="text-sm text-text-muted">All memories across all scopes.</p>
+            <h1 className="text-xl font-semibold text-text-primary">Memory with {scope.displayName}</h1>
+            <p className="text-sm text-text-muted">What {scope.displayName} remembers about you.</p>
           </div>
         </div>
 
@@ -259,8 +271,8 @@ export function Memory() {
         {/* Stats */}
         <div className="flex items-center gap-4 mb-4 text-sm text-text-muted">
           <span>{filtered.length} memor{filtered.length === 1 ? 'y' : 'ies'}</span>
-          {filtered.length !== memories.length && (
-            <span>({memories.length} total)</span>
+          {filtered.length !== scopedMemories.length && (
+            <span>({scopedMemories.length} total with {scope.displayName})</span>
           )}
         </div>
 
@@ -271,16 +283,31 @@ export function Memory() {
           </div>
         )}
 
-        {/* Empty state */}
+        {/* Empty state — invitational when nothing exists yet; utilitarian
+            when filters exclude everything. */}
         {!loading && filtered.length === 0 && (
-          <div className="text-center py-16">
-            <Brain size={48} className="mx-auto mb-4 text-text-muted opacity-40" />
-            <p className="text-text-muted">
-              {memories.length === 0
-                ? 'No memories yet. Athena will remember things as you chat.'
-                : 'No memories match your filters.'}
-            </p>
-          </div>
+          scopedMemories.length === 0 ? (
+            <div
+              className="text-center py-12 px-6 rounded-xl border max-w-xl mx-auto"
+              style={{ backgroundColor: `${scope.color}0F`, borderColor: `${scope.color}33` }}
+            >
+              <div className="text-4xl mb-3">{scope.avatar}</div>
+              <p className="text-text-primary font-medium mb-2">
+                {scope.displayName} hasn't formed any memories with you yet.
+              </p>
+              <p className="text-sm text-text-muted italic leading-relaxed max-w-md mx-auto">
+                "{scope.greeting}"
+              </p>
+              <p className="text-xs text-text-muted mt-4">
+                Every conversation writes to this memory — privately, scoped to this relationship.
+              </p>
+            </div>
+          ) : (
+            <div className="text-center py-16">
+              <Brain size={48} className="mx-auto mb-4 text-text-muted opacity-40" />
+              <p className="text-text-muted">No memories match your filters.</p>
+            </div>
+          )
         )}
 
         {/* Memory table */}
