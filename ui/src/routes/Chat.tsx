@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Send, Square, Trash2, Mic, Copy, Check, Volume2, Settings2, X, Wrench, ExternalLink, Brain, Bookmark } from 'lucide-react';
+import { useSearchParams, Link } from 'react-router-dom';
+import { Send, Square, Trash2, Mic, Copy, Check, Volume2, Settings2, X, Wrench, ExternalLink, Brain, Bookmark, Shell } from 'lucide-react';
+import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
+import { getShellId } from '@/lib/api/olympus-grid-client';
 import * as audioManager from '@/lib/audio/audio-manager';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useApolloStore } from '@/lib/store/apollo-store';
@@ -150,6 +152,26 @@ export function Chat() {
   const activeThreadAgentId = useChatStore((s) => s.activeAgentId);
   const isActiveAgentHidden = hiddenAgentIds.has(activeThreadAgentId);
 
+  // Shell-burndown gate — block chat when user is out of Sea Shells.
+  // Front-end only (no Ares enforcement yet). Triggers on Plutus `blocked`
+  // OR on `shells_remaining <= 0` for non-free, non-unlimited tiers.
+  const [quota, setQuota] = useState<QuotaResponse | null>(null);
+  useEffect(() => {
+    const fetchQuota = () => plutusClient.getQuota(getShellId()).then(setQuota).catch(() => {});
+    fetchQuota();
+    const interval = setInterval(fetchQuota, 15000);
+    window.addEventListener('shells:updated', fetchQuota);
+    return () => { clearInterval(interval); window.removeEventListener('shells:updated', fetchQuota); };
+  }, []);
+  const isOutOfShells = (() => {
+    if (!quota) return false;
+    if (quota.blocked) return true;
+    // Paid tier ran out of shells
+    const isUnlimited = quota.shells_remaining === null || quota.shells_remaining === undefined;
+    if (!isUnlimited && quota.tier !== 'free' && (quota.shells_remaining ?? 0) <= 0) return true;
+    return false;
+  })();
+
   const apollo = useApollo({
     onTranscript: (text) => {
       if (useApolloStore.getState().ttsTalkMode) {
@@ -162,6 +184,10 @@ export function Chat() {
 
   const handleSendMessage = useCallback(async (prompt: string) => {
     if (!prompt.trim() || isStreaming) return;
+    if (isOutOfShells) {
+      setError('You are out of Sea Shells. Upgrade to continue.');
+      return;
+    }
 
     setInput('');
     setError(null);
@@ -695,7 +721,27 @@ export function Chat() {
             )}
           </div>
 
-          {isActiveAgentHidden ? (
+          {isOutOfShells ? (
+            <div className="flex-1 flex items-center justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Shell size={18} className="flex-shrink-0 text-red-400" />
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-red-300 truncate">
+                    You're out of Sea Shells.
+                  </div>
+                  <div className="text-xs text-red-400/70 truncate">
+                    Top up to keep the conversation going.
+                  </div>
+                </div>
+              </div>
+              <Link
+                to="/app/shells"
+                className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-shell-400 text-black hover:bg-shell-300 transition-colors no-underline whitespace-nowrap"
+              >
+                Get More 🐚
+              </Link>
+            </div>
+          ) : isActiveAgentHidden ? (
             <div className="flex-1 bg-surface-2 border border-border-muted rounded-xl px-4 py-2.5 text-sm text-text-muted/60 italic">
               This conversation is read-only — {chatAgentName} is not currently active. Enable in Agent Setup to continue.
             </div>
@@ -712,7 +758,7 @@ export function Chat() {
           )}
 
           {/* Send button — tap to send, hold to record */}
-          {!isActiveAgentHidden && <button
+          {!isActiveAgentHidden && !isOutOfShells && <button
             onPointerDown={handleSendPointerDown}
             onPointerUp={handleSendPointerUp}
             onPointerCancel={endHold}
