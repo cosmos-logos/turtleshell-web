@@ -200,10 +200,21 @@ function QuotaBar({ quota }: { quota: QuotaResponse }) {
         </p>
       )}
       {quota.blocked && (
-        <div className="mt-3 px-4 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
-          <p className="text-sm text-red-400 font-medium">
-            Your Sea Shells are empty. Upgrade to continue.
-          </p>
+        <div className="mt-3 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm text-red-300 font-semibold">
+              🐚 Your Sea Shells are empty.
+            </p>
+            <p className="text-xs text-red-400/80 mt-0.5">
+              Pick a plan below to keep the conversation going.
+            </p>
+          </div>
+          <a
+            href="#pick-a-plan"
+            className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-shell-400 text-black hover:bg-shell-300 transition-colors no-underline whitespace-nowrap"
+          >
+            Pick a plan
+          </a>
         </div>
       )}
     </div>
@@ -319,7 +330,7 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
 
       {/* Tier cards for switching plans */}
       <div>
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Switch Plan</h3>
+        <h3 id="pick-a-plan" className="text-lg font-semibold text-text-primary mb-4">Switch Plan</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {TIERS.map((tier) => {
             const isCurrent = quota.tier === tier.id;
@@ -760,7 +771,9 @@ export function Shells() {
 
       {/* Paid users: plan management. Free users: pricing cards */}
       {isFree ? (
-        <PricingCards quota={quota} loading={loading} onSubscribe={handleSubscribe} />
+        <div id="pick-a-plan">
+          <PricingCards quota={quota} loading={loading} onSubscribe={handleSubscribe} />
+        </div>
       ) : (
         displayQuota && <CurrentPlan quota={displayQuota} onPlanChanged={fetchQuota} />
       )}
