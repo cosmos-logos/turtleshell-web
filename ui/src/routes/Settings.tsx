@@ -52,7 +52,7 @@ function AgentThemeSelector() {
 }
 
 export function Settings() {
-  const { developerMode, setDeveloperMode } = useEnvironmentStore();
+  const { developerMode, setDeveloperMode, testBetaEnabled, setTestBetaEnabled } = useEnvironmentStore();
 
   const { theme, setTheme } = useThemeStore();
   const { memoryEnabled, setMemoryEnabled } = useChatStore();
@@ -101,16 +101,17 @@ export function Settings() {
               </div>
               <Toggle on={showAgentAvatars} onToggle={() => setShowAgentAvatars(!showAgentAvatars)} />
             </div>
-            {showAgentAvatars && <AgentThemeSelector />}
+            {/* Theme selector is an advanced surface — gated behind Test Beta Features */}
+            {showAgentAvatars && testBetaEnabled && <AgentThemeSelector />}
           </div>
         </section>
 
-        {/* Developer Mode Toggle */}
+        {/* Developer Mode + Test Beta Features */}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
             <Wrench size={14} /> Developer
           </h2>
-          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl">
+          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold">Developer Mode</div>
@@ -119,6 +120,17 @@ export function Settings() {
                 </div>
               </div>
               <Toggle on={developerMode} onToggle={() => setDeveloperMode(!developerMode)} />
+            </div>
+            <div className="flex items-center justify-between pt-3 border-t border-border-muted">
+              <div>
+                <div className="text-sm font-semibold">Test Beta Features</div>
+                <div className="text-2xs text-text-muted mt-0.5">
+                  Reveal the full interface: additional agents, cosmos-logos
+                  connections, Services, Service Desk, and theme options.
+                  Default off keeps the experience simple for new signups.
+                </div>
+              </div>
+              <Toggle on={testBetaEnabled} onToggle={() => setTestBetaEnabled(!testBetaEnabled)} />
             </div>
           </div>
         </section>

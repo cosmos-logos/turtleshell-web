@@ -18,6 +18,11 @@ import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { agentDisplayName } from '@/lib/cosmos-logos/types';
 import { OLYMPUS_AGENTS } from '@/lib/agents/olympus-data';
 import { useAgentThemeStore } from '@/lib/store/agent-theme-store';
+import {
+  useTestBetaEnabled,
+  isBuiltinAgentVisibleInBeta,
+  isCosmosAgentVisibleInBeta,
+} from '@/lib/beta';
 
 const OCEAN_EMOJIS: Record<string, string> = {
   'athena-616': '🐙', 'poseidon-616': '🔱', 'apollo-616': '🐬',
@@ -61,10 +66,13 @@ function useNavItems(): NavItem[] {
   const builtinAgents = useAgentStore((s) => s.agents);
   const hiddenIds = useAgentStore((s) => s.hiddenAgentIds);
   const agentTheme = useAgentThemeStore((s) => s.agentTheme);
+  const testBetaEnabled = useTestBetaEnabled();
 
-  // Built-in agents (Logos, Cosmos, Claude, OpenAI, Grok, Gemini, custom)
+  // Built-in agents (Logos, Cosmos, Claude, OpenAI, Grok, Gemini, custom).
+  // When beta is OFF, restrict to the core allowlist (cosmos, logos).
   const builtinItems: NavItem[] = builtinAgents
     .filter(a => !hiddenIds.has(a.id))
+    .filter(a => isBuiltinAgentVisibleInBeta(a.id, testBetaEnabled))
     .map((a) => ({
       to: `/app/chat?agent_builtin=${a.id}`,
       label: a.name,
@@ -74,9 +82,11 @@ function useNavItems(): NavItem[] {
       isBuiltinChat: a.id,
     }));
 
-  // Cosmos-logos agents (Athena, Homework Buddy, Thoth, etc.)
+  // Cosmos-logos agents (Athena, Homework Buddy, Thoth, etc.).
+  // When beta is OFF, restrict to Athena-class instances (athena-616, athena-717, …).
   const cosmosItems: NavItem[] = cosmosAgents
     .filter(a => !hiddenIds.has(a.id))
+    .filter(a => isCosmosAgentVisibleInBeta(a.manifest.identity.codename, testBetaEnabled))
     .map((a) => {
       const name = agentDisplayName(a);
       const codename = a.manifest.identity.codename;
@@ -89,18 +99,27 @@ function useNavItems(): NavItem[] {
       };
     });
 
-  return [
+  // Nav items. Services / Service Desk live behind the beta gate — they're
+  // power-user surfaces that distract from the core chat flow for new signups.
+  const items: NavItem[] = [
     { label: 'Agents', type: 'section' },
     ...builtinItems,
     ...cosmosItems,
     { to: '/app/history', icon: History, label: 'History' },
     { to: '/app/memory', icon: Brain, label: 'Memory' },
-    { to: '/app/services', icon: Plug, label: 'Services' },
-    { to: '/app/service-desk', icon: LifeBuoy, label: 'Service Desk' },
+  ];
+  if (testBetaEnabled) {
+    items.push(
+      { to: '/app/services', icon: Plug, label: 'Services' },
+      { to: '/app/service-desk', icon: LifeBuoy, label: 'Service Desk' },
+    );
+  }
+  items.push(
     { to: '/app/docs', icon: BookOpen, label: 'Docs' },
     { to: '/app/shells', icon: Shell, label: 'Sea Shells' },
     { to: '/app/settings', icon: Settings, label: 'Settings' },
-  ];
+  );
+  return items;
 }
 
 
@@ -238,19 +257,24 @@ function useIsNavActive(item: NavItem): boolean {
 }
 
 function AgentSectionHeader({ expanded, onClick }: { expanded: boolean; onClick?: () => void }) {
+  // Agent Setup gear links to /app/agents, which is a beta/dev surface — hide
+  // when beta is off so new signups don't see the configuration side-door.
+  const testBetaEnabled = useTestBetaEnabled();
   return (
     <div className={`flex items-center justify-between ${expanded ? 'px-3 pt-4 pb-1' : 'px-1 pt-3 pb-1'}`}>
       {expanded ? (
         <>
           <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Agents</span>
-          <NavLink
-            to="/app/agents"
-            onClick={onClick}
-            className="p-1 rounded-md text-text-muted hover:text-text-secondary hover:bg-surface-2 transition-colors"
-            title="Agent Setup"
-          >
-            <Settings size={12} />
-          </NavLink>
+          {testBetaEnabled && (
+            <NavLink
+              to="/app/agents"
+              onClick={onClick}
+              className="p-1 rounded-md text-text-muted hover:text-text-secondary hover:bg-surface-2 transition-colors"
+              title="Agent Setup"
+            >
+              <Settings size={12} />
+            </NavLink>
+          )}
         </>
       ) : (
         <div className="w-full border-t border-border-muted mx-1" />
