@@ -53,10 +53,20 @@ interface EnvironmentStore {
   current: AppEnvironment;
   endpoints: ServiceEndpoints;
   developerMode: boolean;
+  /**
+   * Test Beta Features — when FALSE (default, what real signups see) we hide
+   * almost all system complexity: extra agents, cosmos-logos connections,
+   * Services / Service Desk nav, theme selector, BYOK guides in onboarding.
+   * When TRUE, the full UI is visible. This is the end-user simplicity knob —
+   * kept separate from `developerMode` (which exposes engineer-facing plumbing
+   * like env selectors and custom endpoints).
+   */
+  testBetaEnabled: boolean;
 
   setEnvironment:   (env: AppEnvironment) => void;
   setEndpoint:      (service: keyof ServiceEndpoints, url: string) => void;
   setDeveloperMode: (enabled: boolean) => void;
+  setTestBetaEnabled: (enabled: boolean) => void;
 
   // Getters for individual services
   getAthenaUrl:    () => string;
@@ -78,9 +88,10 @@ const defaultEnv: AppEnvironment = isCloud ? 'cloud' : 'offgrid';
 export const useEnvironmentStore = create<EnvironmentStore>()(
   persist(
     (set, get) => ({
-      current:       defaultEnv,
-      endpoints:     SERVICE_DEFAULTS[defaultEnv],
-      developerMode: false,
+      current:         defaultEnv,
+      endpoints:       SERVICE_DEFAULTS[defaultEnv],
+      developerMode:   false,
+      testBetaEnabled: false,
 
       setEnvironment: (current) =>
         set({ current, endpoints: SERVICE_DEFAULTS[current] }),
@@ -91,7 +102,8 @@ export const useEnvironmentStore = create<EnvironmentStore>()(
           endpoints: { ...state.endpoints, [service]: url },
         })),
 
-      setDeveloperMode: (developerMode) => set({ developerMode }),
+      setDeveloperMode:   (developerMode)   => set({ developerMode }),
+      setTestBetaEnabled: (testBetaEnabled) => set({ testBetaEnabled }),
 
       getAthenaUrl:    () => get().endpoints.athena,
       getHermesUrl:    () => get().endpoints.hermes,

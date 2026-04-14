@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CAUSES, TIERS, PERKS, GUIDES, BYOK_GUIDES, CREATURES, type GuideKey, type CauseIndex } from './OnboardingData';
+import { useTestBetaEnabled } from '@/lib/beta';
 import { ogRequest } from '@/lib/api/olympus-grid-client';
 import { useAgentStore, setUserApiKey } from '@/lib/store/agent-store';
 import { useChatStore } from '@/lib/store/chat-store';
@@ -132,16 +133,22 @@ function CauseScreen({ onNext, selectedCause, setSelectedCause }: {
 }
 
 // ── Screen: Choose Your Guide ──────────────────────
-function GuideChooseScreen({ selected, onSelect, onNext, onByok }: {
+function GuideChooseScreen({ selected, onSelect, onNext, onByok, testBetaEnabled }: {
   selected: GuideKey | null; onSelect: (k: GuideKey) => void; onNext: () => void; onByok: () => void;
+  testBetaEnabled: boolean;
 }) {
+  // Beta-off users see only the three core guides (Athena / Cosmos / Logos).
+  // Custom + BYOK are advanced surfaces.
+  const visibleGuides = testBetaEnabled
+    ? GUIDE_ENTRIES
+    : GUIDE_ENTRIES.filter(g => g.key !== 'custom');
   return (
     <div className="flex flex-col items-center min-h-[80vh] justify-center pt-16 pb-12 text-center px-4">
       <h1 className="text-2xl font-bold mb-2 text-text-primary">Choose Your Guide</h1>
       <p className="text-sm mb-7 text-text-muted">Who walks with you through the ocean?</p>
 
       <div className="flex flex-col gap-3 w-full max-w-[340px] mb-8">
-        {GUIDE_ENTRIES.map(({ key, style, selectedBg, selectedBorder }) => {
+        {visibleGuides.map(({ key, style, selectedBg, selectedBorder }) => {
           const g = GUIDES[key];
           const sel = selected === key;
           return (
@@ -169,10 +176,12 @@ function GuideChooseScreen({ selected, onSelect, onNext, onByok }: {
 
       <Btn onClick={onNext} disabled={!selected}>This Is My Guide</Btn>
 
-      <button onClick={onByok}
-        className="mt-4 text-xs text-text-muted hover:text-shell-400 transition-colors underline underline-offset-2">
-        Use your own API keys →
-      </button>
+      {testBetaEnabled && (
+        <button onClick={onByok}
+          className="mt-4 text-xs text-text-muted hover:text-shell-400 transition-colors underline underline-offset-2">
+          Use your own API keys →
+        </button>
+      )}
     </div>
   );
 }
@@ -512,6 +521,7 @@ export function Onboarding() {
   const [selectedGuide, setSelectedGuide] = useState<GuideKey | null>(null);
   const [customAgent, setCustomAgent] = useState<{ name: string; personality: string; creature: string } | null>(null);
   const [transitioning, setTransitioning] = useState(false);
+  const testBetaEnabled = useTestBetaEnabled();
 
   const { setActiveAgent, addAgent, agents } = useAgentStore();
 
@@ -653,7 +663,8 @@ export function Onboarding() {
         {step === 'guide-choose' && (
           <GuideChooseScreen selected={selectedGuide} onSelect={setSelectedGuide}
             onNext={() => goTo(selectedGuide === 'custom' ? 'guide-custom' : 'guide-dive')}
-            onByok={() => goTo('guide-byok')} />
+            onByok={() => goTo('guide-byok')}
+            testBetaEnabled={testBetaEnabled} />
         )}
         {step === 'guide-byok' && (
           <ByokScreen selected={selectedGuide} onSelect={setSelectedGuide}

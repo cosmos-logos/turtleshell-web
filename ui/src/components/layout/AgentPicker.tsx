@@ -8,6 +8,11 @@ import { agentDisplayName } from '@/lib/cosmos-logos/types';
 import { useChatStore } from '@/lib/store/chat-store';
 import { OLYMPUS_AGENTS } from '@/lib/agents/olympus-data';
 import { useAgentThemeStore } from '@/lib/store/agent-theme-store';
+import {
+  useTestBetaEnabled,
+  isBuiltinAgentVisibleInBeta,
+  isCosmosAgentVisibleInBeta,
+} from '@/lib/beta';
 import type { Agent } from '@/types/agent';
 
 const OCEAN_EMOJIS: Record<string, string> = {
@@ -29,9 +34,14 @@ interface AgentPickerProps {
 
 export function AgentPicker({ compact }: AgentPickerProps) {
   const { activeAgent, setActiveAgent, agents: allBuiltinAgentsRaw, hiddenAgentIds } = useAgentStore();
-  const allBuiltinAgents = allBuiltinAgentsRaw.filter(a => !hiddenAgentIds.has(a.id));
+  const testBetaEnabled = useTestBetaEnabled();
+  const allBuiltinAgents = allBuiltinAgentsRaw
+    .filter(a => !hiddenAgentIds.has(a.id))
+    .filter(a => isBuiltinAgentVisibleInBeta(a.id, testBetaEnabled));
   const cosmosAgentsRaw = useCosmosLogosStore((s) => s.agents);
-  const cosmosAgents = cosmosAgentsRaw.filter(a => !hiddenAgentIds.has(a.id));
+  const cosmosAgents = cosmosAgentsRaw
+    .filter(a => !hiddenAgentIds.has(a.id))
+    .filter(a => isCosmosAgentVisibleInBeta(a.manifest.identity.codename, testBetaEnabled));
   const agentTheme = useAgentThemeStore((s) => s.agentTheme);
   const activeChatAgentId = useCosmosLogosStore((s) => s.activeChatAgentId);
   const setActiveChatAgent = useCosmosLogosStore((s) => s.setActiveChatAgent);
