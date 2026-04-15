@@ -173,6 +173,78 @@ export async function verifyCode(
   return verified;
 }
 
+/**
+ * Sign in with Apple — exchanges Apple's identity token for a TurtleShell
+ * JWT, mirrors the lifecycle of `verifyCode` so RequireAuth + downstream
+ * routing treat it identically to the magic-link path.
+ *
+ * Endpoint: POST {gateway}/v1/auth/apple/identity/verify
+ *   - Hosted on Ares (NOT under /v1/grid/master)
+ *   - Ares verifies the JWT against Apple's JWKS, then forwards extracted
+ *     claims to Apex /v1/grid/master/auth/apple/identity/verify with
+ *     `x-service-name: ares` so Apex trusts the inbound path.
+ */
+export async function signInWithApple(args: {
+  identityToken: string;
+  user?: { email?: string; name?: { firstName?: string; lastName?: string } };
+}): Promise<VerifyResult & { accountStatus?: string; onboardingComplete?: boolean }> {
+  const url = `${getGatewayUrl()}/v1/auth/apple/identity/verify`;
+  const response = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-token-delivery': 'header',
+    },
+    body: JSON.stringify({
+      identityToken: args.identityToken,
+      clientId: 'turtleshell-web',
+      user: args.user,
+    }),
+  });
+
+  // Same response-header token-extraction pattern used by /verify
+  const accessToken = response.headers.get('x-og-access-token');
+  const refreshToken = response.headers.get('x-og-refresh-token');
+
+  const json = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(json?.error || `Apple sign-in failed (${response.status})`);
+  }
+
+  const verified = (json?.result ?? json) as VerifyResult & {
+    accountStatus?: string;
+    onboardingComplete?: boolean;
+  };
+
+  if (accessToken) localStorage.setItem('og_access_token', accessToken);
+  else if (verified.accessToken) localStorage.setItem('og_access_token', verified.accessToken);
+  if (refreshToken) localStorage.setItem('og_refresh_token', refreshToken);
+  else if (verified.refreshToken) localStorage.setItem('og_refresh_token', verified.refreshToken);
+
+  // Identity-switch detection — same logic as verifyCode
+  const previousSub = localStorage.getItem('olympus_grid_shell_id');
+  const identitySwitched = verified.user?.sub && previousSub && previousSub !== verified.user.sub;
+  if (identitySwitched) {
+    console.log('[Auth] Identity changed (Apple sign-in) — clearing per-identity app state');
+    localStorage.removeItem('turtleshell-chat');
+    localStorage.removeItem('turtleshell-cosmos-agents');
+    localStorage.removeItem('turtleshell-onboarding');
+    localStorage.removeItem('turtleshell-guide');
+    localStorage.removeItem('turtleshell_username');
+    localStorage.removeItem('turtleshell-hidden-agents');
+    localStorage.removeItem('turtleshell-custom-agents');
+    localStorage.removeItem('turtleshell-athena-disconnected');
+    localStorage.removeItem('selected_agent');
+  }
+
+  if (verified.user?.email) localStorage.setItem('olympus_grid_email', verified.user.email);
+  localStorage.setItem('olympus_grid_service_url', getGridBase());
+  if (verified.user?.sub) localStorage.setItem('olympus_grid_shell_id', verified.user.sub);
+
+  return verified;
+}
+
 export function clearStoredTokens() {
   localStorage.removeItem('olympus_grid_email');
   localStorage.removeItem('olympus_grid_service_url');
