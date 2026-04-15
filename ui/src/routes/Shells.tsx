@@ -256,13 +256,23 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
     setActionError(null);
     try {
       await plutusClient.changePlan(getShellId(), tierId);
-      // Poll until webhook updates Plutus (keeps spinner active)
+      // Poll until the /quota endpoint reflects the new tier. The server's
+      // change-plan handler writes the override inline, so this usually takes
+      // one roundtrip; the loop is just a safety net for the edge case where
+      // the webhook races ahead or the write is still flushing.
+      let reflected = false;
       for (let i = 0; i < 10; i++) {
         await new Promise((r) => setTimeout(r, 1500));
         const data = await plutusClient.getQuota(getShellId());
-        if (data.tier === tierId) break;
+        if (data.tier === tierId) { reflected = true; break; }
       }
       onPlanChanged();
+      window.dispatchEvent(new Event('shells:updated'));
+      if (!reflected) {
+        // Server accepted the change but quota still stale — Stripe webhook
+        // will catch up within a minute. No error, just warn.
+        console.warn('[Shells] Plan change succeeded on Stripe but quota still stale; background webhook will reconcile.');
+      }
     } catch {
       setActionError('Could not change plan. Please try again.');
     } finally {
@@ -694,11 +704,16 @@ export function Shells() {
     setLoading(tierId);
     setError(null);
     try {
+      // Pull the email captured during sign-in (Login.tsx stores it here)
+      // so Stripe Checkout pre-fills and the customer record maps cleanly
+      // back to the TurtleShell identity.
+      const email = localStorage.getItem('olympus_grid_email') || undefined;
       const { checkout_url } = await plutusClient.createCheckout(
         getShellId(),
         tierId,
         `${window.location.origin}/app/shells?success=${tierId}`,
         `${window.location.origin}/app/shells`,
+        email,
       );
       window.location.href = checkout_url;
     } catch {

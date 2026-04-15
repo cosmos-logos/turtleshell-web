@@ -33,6 +33,7 @@ export const plutusClient = {
     tier: string,
     successUrl: string,
     cancelUrl: string,
+    email?: string,
   ): Promise<{ checkout_url: string }> => {
     const res = await fetch(`${getBaseUrl()}/stripe/checkout`, {
       method: 'POST',
@@ -43,6 +44,11 @@ export const plutusClient = {
         tier,
         success_url: successUrl,
         cancel_url: cancelUrl,
+        // Pre-fill the Stripe checkout email field so the logged-in
+        // TurtleShell user doesn't have to retype their address — matches
+        // the customer record created by the waitlist/sign-in flow and
+        // keeps Stripe customers 1:1 with TurtleshellProfile__c identities.
+        ...(email ? { email } : {}),
       }),
     });
     if (!res.ok) throw new Error('Checkout creation failed');

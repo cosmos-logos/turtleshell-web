@@ -137,6 +137,32 @@ export async function verifyCode(
   if (accessToken) localStorage.setItem('og_access_token', accessToken);
   if (refreshToken) localStorage.setItem('og_refresh_token', refreshToken);
 
+  // Detect an identity switch BEFORE we overwrite the stored sub. When the
+  // user signs in as someone different (or after the operator nuked scratch
+  // records and the same email re-minted a new Identity__c with a fresh
+  // sub), the persisted chat threads, cosmos-logos agents, and guide
+  // selection all belong to the old identity and bleed into the new
+  // session ("why is my old Athena chat here?"). Wipe per-identity app
+  // state so the new session starts clean.
+  const previousSub = localStorage.getItem('olympus_grid_shell_id');
+  const identitySwitched = verified.user.sub && previousSub && previousSub !== verified.user.sub;
+  if (identitySwitched) {
+    console.log('[Auth] Identity changed — clearing per-identity app state');
+    // Chat threads and active agent ids
+    localStorage.removeItem('turtleshell-chat');
+    // Cosmos-logos connected agents + active chat agent id
+    localStorage.removeItem('turtleshell-cosmos-agents');
+    // Onboarding selections
+    localStorage.removeItem('turtleshell-onboarding');
+    localStorage.removeItem('turtleshell-guide');
+    localStorage.removeItem('turtleshell_username');
+    // Custom/hidden agents
+    localStorage.removeItem('turtleshell-hidden-agents');
+    localStorage.removeItem('turtleshell-custom-agents');
+    localStorage.removeItem('turtleshell-athena-disconnected');
+    localStorage.removeItem('selected_agent');
+  }
+
   localStorage.setItem('olympus_grid_email', verified.user.email);
   localStorage.setItem('olympus_grid_service_url', getGridBase());
 

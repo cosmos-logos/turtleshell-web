@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { Send, Square, Trash2, Mic, Copy, Check, Volume2, Settings2, X, Wrench, ExternalLink, Brain, Bookmark, Shell } from 'lucide-react';
+import { Send, Square, Trash2, Mic, Copy, Check, Volume2, Settings2, X, Wrench, ExternalLink, Brain, Bookmark, Shell, Shuffle } from 'lucide-react';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
 import { getShellId } from '@/lib/api/olympus-grid-client';
 import * as audioManager from '@/lib/audio/audio-manager';
@@ -26,6 +26,40 @@ const OCEAN_EMOJIS: Record<string, string> = {
   'athena-616': '🐙', 'poseidon-616': '🔱', 'apollo-616': '🐬',
   cosmos: '🐟', logos: '🐢',
 };
+
+// Pronoun lookup for "<agent> will introduce <pronoun>" copy. Case-insensitive
+// match on the display name. Unknowns get the neutral "themselves" — safe
+// across custom/BYOK agents where the user picked the name.
+const AGENT_PRONOUNS: Record<string, string> = {
+  athena: 'herself',
+  apollo: 'himself',
+  poseidon: 'himself',
+  ares: 'himself',
+  hermes: 'himself',
+  zeus: 'himself',
+  logos: 'himself',
+  cosmos: 'itself',
+  mnemosyne: 'herself',
+};
+function pronounFor(name: string | null | undefined): string {
+  if (!name) return 'themselves';
+  return AGENT_PRONOUNS[name.toLowerCase().trim()] ?? 'themselves';
+}
+
+// Returning-user empty-state prompts — rotate per mount so the CTA never
+// feels rote. Clicking the button sends the current prompt to the agent;
+// a 🎲 shuffle button next to it swaps the visible suggestion without
+// sending. Keep entries short and open-ended so they work for any agent.
+const WELCOME_PROMPTS: readonly string[] = [
+  'Tell me about myself',
+  'Tell me something random',
+  'Tell me about yourself',
+  'Surprise me',
+  'What should I do today?',
+  'Help me start something new',
+  'What have we talked about?',
+  'What\u2019s worth my attention right now?',
+];
 
 /** Resolve the avatar emoji for the active agent, respecting theme setting */
 function useAgentAvatar(): string {
@@ -115,11 +149,30 @@ export function Chat() {
     }
   }, [searchParams, setActiveChatAgent, switchChatAgent, setSearchParams, setBuiltinActive, allBuiltinAgents]);
 
+  // Post-subscribe celebration — Stripe success_url lands here with
+  // ?welcome=<tier>. Show a transient banner for 6s then drop the param
+  // so a refresh doesn't re-trigger it. Pure UI — no server call.
+  const [welcomeTier, setWelcomeTier] = useState<string | null>(null);
+  useEffect(() => {
+    const w = searchParams.get('welcome');
+    if (!w) return;
+    setWelcomeTier(w);
+    setSearchParams({}, { replace: true });
+    const t = setTimeout(() => setWelcomeTier(null), 6000);
+    return () => clearTimeout(t);
+  }, [searchParams, setSearchParams]);
+
   const [input, setInput] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [isHoldingMic, setIsHoldingMic] = useState(false);
   const [showInception, setShowInception] = useState(() => !localStorage.getItem('turtleshell-inception'));
+  // Rotating welcome-prompt CTA — "I'm Feeling Lucky" style. Random starting
+  // index per mount so returning users see a different suggestion each visit;
+  // 🎲 button cycles to the next one client-side without sending.
+  const [promptIdx, setPromptIdx] = useState(() => Math.floor(Math.random() * WELCOME_PROMPTS.length));
+  const rotatingPrompt = WELCOME_PROMPTS[promptIdx];
+  const shufflePrompt = () => setPromptIdx(i => (i + 1) % WELCOME_PROMPTS.length);
   const controlsRef = useRef<HTMLDivElement>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const didHoldRef = useRef(false);
@@ -450,6 +503,17 @@ export function Chat() {
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
+      {welcomeTier && (
+        <div className="mx-auto mt-4 max-w-md w-full px-4">
+          <div className="rounded-xl bg-gradient-to-r from-shell-500/15 to-amber-500/15 border border-shell-500/40 px-4 py-3 text-center shadow-lg shadow-shell-500/10">
+            <div className="text-2xl mb-1">🐚</div>
+            <div className="text-sm font-semibold text-text-primary">
+              Welcome to the ocean — you're on the <span className="text-shell-400 capitalize">{welcomeTier}</span> tide.
+            </div>
+            <div className="text-xs text-text-muted mt-1">Your shells are ready. Your guide is waiting.</div>
+          </div>
+        </div>
+      )}
       {/* Messages area */}
       <div ref={scrollRef} className="chat-container space-y-4">
         {messages.length === 0 && showInception && (
@@ -459,17 +523,18 @@ export function Chat() {
               className="text-center space-y-4 group cursor-pointer focus:outline-none"
             >
               <div className="text-6xl transition-transform group-hover:scale-110 group-active:scale-95">
-                {'\ud83d\udc22'}
+                {agentAvatar}
               </div>
               <h2 className="text-xl font-semibold text-text-primary">
                 Tap to begin
               </h2>
               <p className="text-sm text-text-muted max-w-md">
-                TurtleShell.ai will introduce itself, then listen for your voice.
+                {chatAgentName} will introduce {pronounFor(chatAgentName)}
+                {hasTTS ? ', then listen for your voice.' : '.'}
               </p>
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-shell-500 text-white text-sm font-semibold rounded-lg group-hover:bg-shell-600 transition-all group-hover:-translate-y-px group-hover:shadow-lg group-hover:shadow-shell-500/30">
-                <Mic size={16} />
-                Start Conversation
+                {hasTTS ? <Mic size={16} /> : null}
+                Who are you?
               </div>
             </button>
           </div>
@@ -477,15 +542,35 @@ export function Chat() {
 
         {messages.length === 0 && !showInception && (
           <div className="flex-1 flex items-center justify-center min-h-[60vh]">
-            <div className="text-center space-y-4">
-              <div className="text-5xl">{'\ud83d\udc22'}</div>
+            <div className="text-center space-y-5 max-w-md px-4">
+              <div className="text-6xl">{agentAvatar}</div>
               <h2 className="text-xl font-semibold text-text-primary">
-                Welcome to TurtleShell.ai
+                Ready when you are.
               </h2>
-              <p className="text-sm text-text-muted max-w-md">
-                Start a conversation with Athena. Connect enterprise services
-                from the Services tab to enable MCP-powered workflows.
+              <p className="text-sm text-text-muted">
+                Ask {chatAgentName} anything — or let her surprise you.
               </p>
+              {/* "I'm Feeling Lucky" style rotating CTA. Click the pill to
+                  send the current suggestion; click the 🎲 to cycle to
+                  another without sending. */}
+              <div className="flex items-center justify-center gap-2 pt-2">
+                <button
+                  onClick={() => handleSendMessage(rotatingPrompt)}
+                  disabled={isStreaming || isOutOfShells}
+                  className="group inline-flex items-center gap-2 px-5 py-2.5 bg-shell-500 text-white text-sm font-semibold rounded-full hover:bg-shell-600 transition-all hover:-translate-y-px hover:shadow-lg hover:shadow-shell-500/30 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                >
+                  <Send size={14} className="opacity-80" />
+                  {rotatingPrompt}
+                </button>
+                <button
+                  onClick={shufflePrompt}
+                  aria-label="Shuffle suggestion"
+                  className="p-2.5 rounded-full bg-surface-2 text-text-muted hover:text-text-primary hover:bg-surface-3 transition-all hover:rotate-180 duration-300"
+                  title="Another one"
+                >
+                  <Shuffle size={14} />
+                </button>
+              </div>
             </div>
           </div>
         )}

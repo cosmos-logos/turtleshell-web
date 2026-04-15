@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CAUSES, TIERS, PERKS, GUIDES, BYOK_GUIDES, CREATURES, type GuideKey, type CauseIndex } from './OnboardingData';
 import { useTestBetaEnabled } from '@/lib/beta';
-import { ogRequest } from '@/lib/api/olympus-grid-client';
+import { ogRequest, getShellId } from '@/lib/api/olympus-grid-client';
+import { plutusClient } from '@/lib/api/plutus-client';
 import { useAgentStore, setUserApiKey } from '@/lib/store/agent-store';
 import { useChatStore } from '@/lib/store/chat-store';
 
@@ -433,8 +434,12 @@ function ShellsScreen({ onNext }: { onNext: () => void }) {
 }
 
 // ── Screen: Choose Your Tide (subscription) ──────────
-function TierScreen({ onNext, selectedTier, setSelectedTier }: {
-  onNext: () => void; selectedTier: string | null; setSelectedTier: (t: string) => void;
+function TierScreen({ onSubscribe, onSkip, selectedTier, setSelectedTier, subscribing }: {
+  onSubscribe: () => void;
+  onSkip: () => void;
+  selectedTier: string | null;
+  setSelectedTier: (t: string) => void;
+  subscribing: boolean;
 }) {
   return (
     <div className="flex flex-col items-center min-h-[80vh] justify-center pt-16 pb-12 text-center px-4">
@@ -467,46 +472,229 @@ function TierScreen({ onNext, selectedTier, setSelectedTier }: {
         <span className="font-bold text-amber-400">7% of every shell spent</span> flows to your cause, regardless of tier.
       </p>
       <div className="w-full max-w-[320px] space-y-3">
-        <Btn onClick={onNext} disabled={!selectedTier}>
-          {selectedTier === 'enterprise' ? 'Contact Us' : selectedTier ? `Subscribe · ${TIERS.find(t => t.id === selectedTier)?.price ?? ''}/mo` : 'Start My Subscription'}
+        <Btn onClick={onSubscribe} disabled={!selectedTier || subscribing}>
+          {subscribing
+            ? 'Opening Stripe…'
+            : selectedTier === 'enterprise'
+              ? 'Contact Us'
+              : selectedTier
+                ? `Subscribe · ${TIERS.find(t => t.id === selectedTier)?.price ?? ''}/mo`
+                : 'Start My Subscription'}
         </Btn>
-        <Btn variant="ghost" onClick={onNext}>Start with my free shells first</Btn>
+        <Btn variant="ghost" onClick={onSkip} disabled={subscribing}>Start with my free shells first</Btn>
       </div>
     </div>
   );
 }
 
 // ── Screen: Enter the Ocean (final) ──────────────────
-function FinalScreen({ guide, selectedCause, onComplete }: {
-  guide: { emoji: string; name: string }; selectedCause: CauseIndex | null; onComplete: () => void;
+// Tier → monthly shells (matches Plutus TIER_SHELLS — must stay in sync).
+// `null` = Abyss unlimited.
+const TIER_SHELLS_MAP: Record<string, number | null> = {
+  free: 0,
+  beachcomber: 500,
+  tide: 2000,
+  reef: 10000,
+  abyss: null,
+};
+
+const TIER_LABELS: Record<string, string> = {
+  free: 'Free',
+  beachcomber: 'Beachcomber',
+  tide: 'Tide',
+  reef: 'Reef',
+  abyss: 'Abyss',
+};
+
+function FinalScreen({ guide, selectedCause, selectedTier, onComplete }: {
+  guide: { emoji: string; name: string };
+  selectedCause: CauseIndex | null;
+  selectedTier: string | null;
+  onComplete: () => void;
 }) {
   const cause = selectedCause !== null ? CAUSES[selectedCause] : CAUSES[0];
 
-  return (
-    <div className="flex flex-col items-center min-h-[80vh] justify-center pt-16 pb-12 text-center px-4">
-      <span className="text-7xl block mb-2 animate-pulse">🐚</span>
-      <div className="text-5xl font-bold text-amber-200 mb-1">1,000</div>
-      <div className="text-xs tracking-widest uppercase text-text-muted mb-1">Sea Shells Ready</div>
-      <div className="text-sm text-shell-400 mb-6">🌊 0 shells given to {cause.name} so far</div>
+  const SIGNUP_BONUS = 1000;
+  const tierShells = selectedTier ? TIER_SHELLS_MAP[selectedTier] : 0;
+  const isUnlimited = selectedTier === 'abyss';
+  const hasPaidTier = !!selectedTier && selectedTier !== 'free' && !isUnlimited;
+  const targetBalance = isUnlimited ? SIGNUP_BONUS : SIGNUP_BONUS + (tierShells ?? 0);
+  const tierLabel = selectedTier ? (TIER_LABELS[selectedTier] ?? selectedTier) : null;
 
-      <div className="flex gap-2 flex-wrap justify-center mb-8">
-        <span className="text-xs rounded-full px-3 py-1.5 bg-surface-1 border border-border-muted text-text-secondary">
-          Guide: <span className="text-text-primary font-medium">{guide.emoji} {guide.name}</span>
-        </span>
-        <span className="text-xs rounded-full px-3 py-1.5 bg-surface-1 border border-border-muted text-text-secondary">
-          Tithe: <span className="text-text-primary font-medium">7% / turn</span>
-        </span>
+  // Three-phase choreography, matches the ShellsScreen → ShellRain patterns
+  // already established in the product:
+  //   phase 'granted' — show "1,000" pulsing + "Claim [Tier] Shells" button
+  //     (user-triggered start; this is the "video-game click to roll" moment)
+  //   phase 'rolling' — odometer ticks 1000 → target while shell rain pours
+  //   phase 'ready'   — final number pops, cause banner appears, "Enter the
+  //     Ocean" button fades in
+  // For free/skipped path there's no upgrade to claim, so jump straight to
+  // 'ready' with count = 1000.
+  const [phase, setPhase] = useState<'granted' | 'rolling' | 'ready'>(
+    hasPaidTier || isUnlimited ? 'granted' : 'ready',
+  );
+  const [count, setCount] = useState(SIGNUP_BONUS);
+
+  // Rolling tick: step the counter toward target until it lands, then bump
+  // to 'ready'. Same 18ms cadence and ease-feel as the ShellsScreen roll so
+  // the two screens read as a single motion language across onboarding.
+  useEffect(() => {
+    if (phase !== 'rolling') return;
+    if (count >= targetBalance) {
+      const done = setTimeout(() => setPhase('ready'), 350);
+      return () => clearTimeout(done);
+    }
+    const remaining = targetBalance - count;
+    const step = Math.max(1, Math.ceil(remaining / 80));
+    const t = setTimeout(() => setCount(c => Math.min(c + step, targetBalance)), 18);
+    return () => clearTimeout(t);
+  }, [phase, count, targetBalance]);
+
+  // Shell rain — only active during the 'rolling' phase. Same 25-shell
+  // count and animation curve as ShellRain on the Shells page so the
+  // celebration looks identical across the two post-subscribe entry points.
+  const rainShells = useMemo(() =>
+    Array.from({ length: 25 }, (_, i) => ({
+      id: i,
+      left: Math.random() * 100,
+      delay: Math.random() * 1.2,
+      duration: 1.8 + Math.random() * 1.5,
+      size: 20 + Math.random() * 22,
+    })),
+    [],
+  );
+
+  const claimButtonLabel = isUnlimited
+    ? `Dive into the Abyss`
+    : hasPaidTier
+      ? `Claim my ${tierLabel} shells`
+      : 'Claim my shells';
+
+  return (
+    <div className="flex flex-col items-center min-h-[80vh] justify-center pt-16 pb-12 text-center px-4 relative overflow-hidden">
+      <style>{`
+        @keyframes shellFall {
+          0%   { transform: translateY(-100px) rotate(0deg);   opacity: 1; }
+          100% { transform: translateY(110vh)  rotate(360deg); opacity: 0; }
+        }
+        @keyframes countPulse {
+          0%   { transform: scale(1);    }
+          50%  { transform: scale(1.04); }
+          100% { transform: scale(1);    }
+        }
+        @keyframes finalPop {
+          0%   { transform: scale(0.85); opacity: 0.6; }
+          60%  { transform: scale(1.12); opacity: 1;   }
+          100% { transform: scale(1);    opacity: 1;   }
+        }
+        @keyframes fadeUp {
+          0%   { transform: translateY(12px); opacity: 0; }
+          100% { transform: translateY(0);    opacity: 1; }
+        }
+      `}</style>
+
+      {phase === 'rolling' && (
+        <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+          {rainShells.map(s => (
+            <span
+              key={s.id}
+              className="absolute select-none"
+              style={{
+                left: `${s.left}%`,
+                top: 0,
+                fontSize: `${s.size}px`,
+                animation: `shellFall ${s.duration}s ease-in ${s.delay}s 1 forwards`,
+                opacity: 0,
+                animationFillMode: 'forwards',
+              }}
+            >🐚</span>
+          ))}
+        </div>
+      )}
+
+      {/* Hero shell — soft pulse in granted/ready, steady during roll */}
+      <div className="relative z-10 mb-2">
+        <div className={`absolute inset-[-24px] rounded-full bg-amber-300/10 ${phase !== 'rolling' ? 'animate-pulse' : ''}`} />
+        <span className="text-[80px] block">🐚</span>
       </div>
 
-      <p className="text-sm text-text-muted leading-relaxed max-w-[280px] mb-8">
-        The ocean is sovereign.<br />Your keys never leave your device.<br />Your guide is waiting.
-      </p>
+      {/* Odometer */}
+      <div
+        key={phase}
+        className="relative z-10 text-[72px] font-bold text-amber-200 tabular-nums leading-none"
+        style={{
+          animation: phase === 'ready'
+            ? 'finalPop 0.55s ease-out forwards'
+            : phase === 'rolling'
+              ? 'countPulse 0.24s ease-in-out infinite'
+              : undefined,
+        }}
+      >
+        {isUnlimited ? '∞' : count.toLocaleString()}
+      </div>
+      <div className="relative z-10 text-xs tracking-[0.28em] uppercase mt-1 mb-2 text-text-muted">
+        Sea Shells · {phase === 'granted' ? 'Signup Bonus' : phase === 'rolling' ? 'Loading your tier…' : 'Your Starting Balance'}
+      </div>
+      {hasPaidTier && phase === 'granted' && (
+        <div className="relative z-10 text-sm text-shell-400 mb-6" style={{ animation: 'fadeUp 0.4s ease-out' }}>
+          + {(tierShells as number).toLocaleString()} {tierLabel} shells waiting
+        </div>
+      )}
+      {phase === 'ready' && (
+        <div className="relative z-10 text-sm text-shell-400 mb-6" style={{ animation: 'fadeUp 0.5s ease-out' }}>
+          🌊 0 shells given to {cause.name} so far
+        </div>
+      )}
 
-      <button onClick={onComplete}
-        className="w-full max-w-[320px] py-3.5 rounded-xl text-base font-semibold transition-all hover:-translate-y-px active:translate-y-0 bg-gradient-to-r from-shell-500 to-amber-500 text-white">
-        Enter the Ocean
-      </button>
-      <div className="mt-4 text-[11px] tracking-widest uppercase text-text-muted">Your sovereign AI begins now</div>
+      {phase === 'ready' && (
+        <>
+          <div className="relative z-10 flex gap-2 flex-wrap justify-center mb-8" style={{ animation: 'fadeUp 0.55s ease-out 0.1s backwards' }}>
+            <span className="text-xs rounded-full px-3 py-1.5 bg-surface-1 border border-border-muted text-text-secondary">
+              Guide: <span className="text-text-primary font-medium">{guide.emoji} {guide.name}</span>
+            </span>
+            <span className="text-xs rounded-full px-3 py-1.5 bg-surface-1 border border-border-muted text-text-secondary">
+              Tithe: <span className="text-text-primary font-medium">7% / turn</span>
+            </span>
+          </div>
+
+          <p className="relative z-10 text-sm text-text-muted leading-relaxed max-w-[280px] mb-8" style={{ animation: 'fadeUp 0.55s ease-out 0.2s backwards' }}>
+            The ocean is sovereign.<br />Your keys never leave your device.<br />Your guide is waiting.
+          </p>
+        </>
+      )}
+
+      {/* Phase-gated primary action */}
+      {phase === 'granted' && (
+        <button
+          onClick={() => { setCount(SIGNUP_BONUS); setPhase('rolling'); }}
+          className="relative z-10 w-full max-w-[320px] py-3.5 rounded-xl text-base font-semibold transition-all hover:-translate-y-px active:translate-y-0 bg-gradient-to-r from-shell-500 to-amber-500 text-white shadow-lg shadow-shell-500/20"
+          style={{ animation: 'fadeUp 0.4s ease-out 0.15s backwards' }}
+        >
+          {claimButtonLabel}
+        </button>
+      )}
+      {phase === 'rolling' && (
+        <button
+          disabled
+          className="relative z-10 w-full max-w-[320px] py-3.5 rounded-xl text-base font-semibold bg-shell-500/60 text-white/80 cursor-wait"
+        >
+          Loading your shells…
+        </button>
+      )}
+      {phase === 'ready' && (
+        <>
+          <button
+            onClick={onComplete}
+            className="relative z-10 w-full max-w-[320px] py-3.5 rounded-xl text-base font-semibold transition-all hover:-translate-y-px active:translate-y-0 bg-gradient-to-r from-shell-500 to-amber-500 text-white shadow-lg shadow-shell-500/20"
+            style={{ animation: 'fadeUp 0.5s ease-out 0.3s backwards' }}
+          >
+            Enter the Ocean
+          </button>
+          <div className="relative z-10 mt-4 text-[11px] tracking-widest uppercase text-text-muted" style={{ animation: 'fadeUp 0.5s ease-out 0.4s backwards' }}>
+            Your sovereign AI begins now
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -524,6 +712,36 @@ export function Onboarding() {
   const testBetaEnabled = useTestBetaEnabled();
 
   const { setActiveAgent, addAgent, agents } = useAgentStore();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Stripe success round-trip: success_url = /onboarding?step=final&welcome=<tier>
+  // Fast-forward to the FinalScreen and restore the user's onboarding
+  // selections from localStorage (they got wiped out of React state when
+  // the browser navigated off to Stripe). If selections aren't in
+  // localStorage (user entered onboarding directly at step=final), just
+  // snap to the final step with defaults so they still see the celebration.
+  useEffect(() => {
+    if (searchParams.get('step') !== 'final') return;
+    try {
+      const raw = localStorage.getItem('turtleshell-onboarding');
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved.tier) setSelectedTier(saved.tier);
+        if (saved.guide) setSelectedGuide(saved.guide);
+        if (saved.cause != null) {
+          const idx = CAUSES.findIndex(c => c.name === saved.cause);
+          if (idx >= 0) setSelectedCause(idx as CauseIndex);
+        }
+      }
+    } catch {}
+    setStep('final');
+    // Keep the welcome= param so FinalScreen / chat banner can still read it;
+    // strip only the step param.
+    const next = new URLSearchParams(searchParams);
+    next.delete('step');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const goTo = useCallback((s: Step) => {
     setTransitioning(true);
@@ -553,7 +771,13 @@ export function Onboarding() {
     return GUIDES.cosmos;
   };
 
-  const handleComplete = async () => {
+  const [subscribing, setSubscribing] = useState(false);
+
+  // Persist everything the user picked + set the active agent. This is the
+  // "do the work of onboarding" half; navigation is handled by the callers
+  // (handleComplete navigates to /app/chat; handleSubscribe redirects to
+  // Stripe Checkout instead).
+  const finalizeOnboarding = async () => {
     const cause = selectedCause !== null ? CAUSES[selectedCause].name : null;
     const guideInfo = getGuideInfo();
 
@@ -564,7 +788,9 @@ export function Onboarding() {
     }));
     localStorage.setItem('turtleshell-guide', selectedGuide ?? 'cosmos');
 
-    // Create profile
+    // Create profile. The Apex handler grants the 1000 signup bonus on
+    // first completion — must run before Stripe checkout so the webhook's
+    // additive logic (balance = existing + tier_shells) finds the bonus.
     try {
       const email = localStorage.getItem('olympus_grid_email') || '';
       const username = (email.split('@')[0] ?? '').replace(/[^a-z0-9_-]/gi, '').toLowerCase() || 'user-' + Date.now();
@@ -618,6 +844,16 @@ export function Onboarding() {
       if (athena) {
         cosmosStore.setActiveChatAgent(athena.id);
         useChatStore.getState().switchAgent(athena.id);
+        // Hide every builtin catalog agent (Logos, Cosmos, BYOK) — Athena is
+        // the only agent the user chose, so the sidebar should only show
+        // her. Matches the symmetry of the other guide branches below,
+        // which hide non-selected builtins.
+        const store = useAgentStore.getState();
+        for (const a of store.agents) {
+          if (!store.hiddenAgentIds.has(a.id)) {
+            store.toggleVisibility(a.id);
+          }
+        }
       } else {
         console.warn('[Onboarding] Athena auto-connect failed — falling back to Logos');
         const logos = agents.find(a => a.id === 'logos');
@@ -640,8 +876,49 @@ export function Onboarding() {
         }
       }
     }
+  };
 
+  // Free path — persist everything, then drop the user into chat.
+  const handleComplete = async () => {
+    await finalizeOnboarding();
     navigate('/app/chat', { replace: true });
+  };
+
+  // Paid path — persist everything first so the Stripe webhook's additive
+  // logic can find the signup bonus, then redirect to Stripe Checkout.
+  // success_url/cancel_url both land on /app/chat because the profile is
+  // already in good shape either way; subscription state arrives async via
+  // webhook once the user completes payment.
+  const handleSubscribe = async () => {
+    if (!selectedTier || selectedTier === 'enterprise' || selectedTier === 'free') {
+      // Enterprise (Contact Us) and free fall back to the normal final screen.
+      goTo('final');
+      return;
+    }
+    setSubscribing(true);
+    try {
+      await finalizeOnboarding();
+      const email = localStorage.getItem('olympus_grid_email') || undefined;
+      // Success URL: return to the onboarding FINAL screen ("Enter the Ocean")
+      // so the user gets the celebratory moment before landing in chat. The
+      // query param is read on mount to fast-forward to `step=final`.
+      // Cancel URL: drop back in chat — they still have the signup bonus and
+      // onboarding side-effects already ran before we redirected.
+      const { checkout_url } = await plutusClient.createCheckout(
+        getShellId(),
+        selectedTier,
+        `${window.location.origin}/onboarding?step=final&welcome=${selectedTier}`,
+        `${window.location.origin}/app/chat`,
+        email,
+      );
+      window.location.href = checkout_url;
+    } catch (err) {
+      console.error('[Onboarding] Subscribe failed:', err);
+      setSubscribing(false);
+      // User still has signup bonus — drop them in the app so they can retry
+      // from Settings → Shells. Don't strand them on a broken screen.
+      navigate('/app/chat', { replace: true });
+    }
   };
 
   const guideInfo = getGuideInfo();
@@ -685,10 +962,21 @@ export function Onboarding() {
           <ShellsScreen onNext={() => goTo('tier')} />
         )}
         {step === 'tier' && (
-          <TierScreen onNext={() => goTo('final')} selectedTier={selectedTier} setSelectedTier={setSelectedTier} />
+          <TierScreen
+            onSubscribe={handleSubscribe}
+            onSkip={() => goTo('final')}
+            selectedTier={selectedTier}
+            setSelectedTier={setSelectedTier}
+            subscribing={subscribing}
+          />
         )}
         {step === 'final' && (
-          <FinalScreen guide={guideInfo} selectedCause={selectedCause} onComplete={handleComplete} />
+          <FinalScreen
+            guide={guideInfo}
+            selectedCause={selectedCause}
+            selectedTier={selectedTier}
+            onComplete={handleComplete}
+          />
         )}
       </div>
     </div>
