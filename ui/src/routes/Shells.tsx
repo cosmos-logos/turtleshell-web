@@ -228,12 +228,84 @@ const TIER_ORDER = ['beachcomber', 'tide', 'reef', 'abyss'];
 function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanChanged: () => void }) {
   const [portalLoading, setPortalLoading] = useState(false);
   const [changingTo, setChangingTo] = useState<string | null>(null);
+  const [resumeLoading, setResumeLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const shellsLimit = quota.shells_limit;
   const price = TIER_PRICES[quota.tier] ?? '';
   const isUnlimited = shellsLimit === null;
   const currentIdx = TIER_ORDER.indexOf(quota.tier);
+  // A subscription is "cancelling" if EITHER:
+  //  - cancel_at_period_end boolean is true (normal portal flow), OR
+  //  - cancel_at is set to a future date (Stripe Portal on some tiers uses
+  //    this mechanism — "Cancel subscription" schedules a cancel_at instead
+  //    of setting the period-end flag). We must treat both as cancellation.
+  const isCancelling = !!quota.cancel_at_period_end
+    || (!!quota.cancel_at && new Date(quota.cancel_at).getTime() > Date.now());
+  const endsDate = quota.cancel_at || quota.current_period_end || quota.period_ends;
+  const endsDateFmt = endsDate
+    ? new Date(endsDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : null;
+  const daysLeft = endsDate
+    ? Math.max(0, Math.ceil((new Date(endsDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null;
+
+  // Churn feedback — captured inline when a person has cancelled, so we can
+  // learn why and respond. Saved to localStorage immediately (never lost).
+  const churnFeedbackKey = `turtleshell-churn-feedback-${getShellId()}`;
+  const churnDismissKey  = `turtleshell-churn-feedback-dismissed-${getShellId()}`;
+  const [churnWhy, setChurnWhy] = useState('');
+  const [churnBetter, setChurnBetter] = useState('');
+  const [churnTrust, setChurnTrust] = useState('');
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState<boolean>(() => {
+    return !!localStorage.getItem(churnFeedbackKey) || !!localStorage.getItem(churnDismissKey);
+  });
+  const [feedbackSaving, setFeedbackSaving] = useState(false);
+
+  const handleResume = async () => {
+    setResumeLoading(true);
+    setActionError(null);
+    try {
+      await plutusClient.changePlan(getShellId(), quota.tier);
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const data = await plutusClient.getQuota(getShellId());
+        if (!data.cancel_at_period_end) break;
+      }
+      onPlanChanged();
+    } catch {
+      setActionError('Could not resume subscription. Please try again.');
+    } finally {
+      setResumeLoading(false);
+    }
+  };
+
+  const submitChurnFeedback = async () => {
+    const hasAnything = churnWhy.trim() || churnBetter.trim() || churnTrust.trim();
+    if (!hasAnything) {
+      localStorage.setItem(churnDismissKey, String(Date.now()));
+      setFeedbackSubmitted(true);
+      return;
+    }
+    setFeedbackSaving(true);
+    const payload = {
+      shell_id: getShellId(),
+      tier: quota.tier,
+      cancel_at: endsDate,
+      submitted_at: new Date().toISOString(),
+      why: churnWhy.trim(),
+      better: churnBetter.trim(),
+      trust: churnTrust.trim(),
+    };
+    localStorage.setItem(churnFeedbackKey, JSON.stringify(payload));
+    try {
+      await plutusClient.submitChurnFeedback(payload);
+    } catch {
+      // Silent — the write is on disk, we'll pick it up later.
+    }
+    setFeedbackSaving(false);
+    setFeedbackSubmitted(true);
+  };
 
   const openPortal = async () => {
     setPortalLoading(true);
@@ -300,20 +372,135 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
           </div>
         </div>
 
-        {quota.cancel_at_period_end ? (
-          <div className="mb-6 px-4 py-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-            <p className="text-sm font-medium text-amber-400">
-              Subscription cancelled — active until{' '}
-              {new Date(quota.cancel_at || quota.current_period_end || quota.period_ends).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-            </p>
-            <p className="text-xs text-text-muted mt-1">
-              Your Sea Shells remain available until this date. After that, your account returns to the Free tier.
-            </p>
+        {isCancelling ? (
+          <div className="mb-6 rounded-xl border border-amber-500/40 bg-amber-500/5 p-5">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="mt-0.5 w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" style={{ boxShadow: '0 0 0 4px rgba(251, 191, 36, 0.15)' }} />
+              <div className="flex-1">
+                <p className="text-base font-semibold text-amber-300">
+                  Your {quota.tier.charAt(0).toUpperCase() + quota.tier.slice(1)} plan ends {endsDateFmt}
+                  {daysLeft !== null && daysLeft > 0 && (
+                    <span className="text-sm font-normal text-amber-400/80"> · {daysLeft} day{daysLeft === 1 ? '' : 's'} remaining</span>
+                  )}
+                </p>
+                <p className="text-sm text-text-secondary mt-2 leading-relaxed">
+                  We heard you. Nothing disappears at midnight.
+                </p>
+                <ul className="text-sm text-text-secondary mt-3 space-y-1.5">
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-400/80 mt-0.5 flex-shrink-0">•</span>
+                    <span>
+                      Every one of your{' '}
+                      {isUnlimited ? 'unlimited' : formatNumber(shellsLimit as number)} Sea Shells stays with you until {endsDateFmt}.
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-400/80 mt-0.5 flex-shrink-0">•</span>
+                    <span>Your agents, history, and memory remain exactly where you left them — forever.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-amber-400/80 mt-0.5 flex-shrink-0">•</span>
+                    <span>After {endsDateFmt}, your account rests on the Free tier. You can come back any time.</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-amber-500/20 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:justify-between">
+              <p className="text-sm text-text-secondary italic">
+                Changed your mind? We'd love to have you back.
+              </p>
+              <button
+                onClick={handleResume}
+                disabled={resumeLoading}
+                className="px-5 py-2.5 rounded-lg text-sm font-semibold bg-shell-400 text-black hover:bg-shell-300 transition-colors disabled:opacity-50 w-full sm:w-auto"
+              >
+                {resumeLoading ? 'Resuming...' : `Resume ${quota.tier.charAt(0).toUpperCase() + quota.tier.slice(1)} Subscription`}
+              </button>
+            </div>
+
+            <div className="mt-5 pt-5 border-t border-amber-500/20">
+              {feedbackSubmitted ? (
+                <p className="text-sm text-text-secondary italic text-center py-2">
+                  Thank you. We read every word. — Homer & the TurtleShell team 🐚
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-text-primary mb-1">
+                      Before you go — will you help us become worthy of trust?
+                    </h4>
+                    <p className="text-xs text-text-muted">
+                      Three questions. Answer any, all, or none. Everything you write is read by a human.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                      What made you decide to cancel?
+                    </label>
+                    <textarea
+                      value={churnWhy}
+                      onChange={(e) => setChurnWhy(e.target.value)}
+                      rows={2}
+                      placeholder="It's okay to be direct — we can handle it."
+                      className="w-full px-3 py-2 text-sm rounded-lg bg-surface-1 border border-border-muted text-text-primary placeholder-text-muted focus:outline-none focus:border-shell-400 resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                      What could we do better?
+                    </label>
+                    <textarea
+                      value={churnBetter}
+                      onChange={(e) => setChurnBetter(e.target.value)}
+                      rows={2}
+                      placeholder="A feature, a fix, a different tone — anything."
+                      className="w-full px-3 py-2 text-sm rounded-lg bg-surface-1 border border-border-muted text-text-primary placeholder-text-muted focus:outline-none focus:border-shell-400 resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                      What would earn your trust again someday?
+                    </label>
+                    <textarea
+                      value={churnTrust}
+                      onChange={(e) => setChurnTrust(e.target.value)}
+                      rows={2}
+                      placeholder="If there's a door back in, we want to find it."
+                      className="w-full px-3 py-2 text-sm rounded-lg bg-surface-1 border border-border-muted text-text-primary placeholder-text-muted focus:outline-none focus:border-shell-400 resize-none"
+                    />
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
+                    <button
+                      onClick={() => {
+                        localStorage.setItem(churnDismissKey, String(Date.now()));
+                        setFeedbackSubmitted(true);
+                      }}
+                      disabled={feedbackSaving}
+                      className="px-4 py-2 rounded-lg text-sm font-medium text-text-muted hover:text-text-secondary transition-colors"
+                    >
+                      Not now
+                    </button>
+                    <button
+                      onClick={submitChurnFeedback}
+                      disabled={feedbackSaving}
+                      className="px-5 py-2 rounded-lg text-sm font-semibold bg-surface-3 text-text-primary hover:bg-surface-2 border border-border-muted transition-colors disabled:opacity-50"
+                    >
+                      {feedbackSaving ? 'Sending...' : 'Send feedback'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         ) : (quota.current_period_end || quota.period_ends) ? (
           <div className="mb-6">
             <p className="text-sm text-text-muted">
-              Renews: {new Date(quota.current_period_end || quota.period_ends).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              Renews: {endsDateFmt}
             </p>
             <p className="text-xs text-text-muted mt-1">
               {isUnlimited
@@ -323,7 +510,7 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
           </div>
         ) : null}
 
-        {!quota.cancel_at_period_end && (
+        {!isCancelling && (
           <button
             onClick={openPortal}
             disabled={portalLoading}
@@ -344,7 +531,7 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {TIERS.map((tier) => {
             const isCurrent = quota.tier === tier.id;
-            const isCancelled = isCurrent && !!quota.cancel_at_period_end;
+            const isCancelled = isCurrent && !!isCancelling;
             const tierIdx = TIER_ORDER.indexOf(tier.id);
             const isUpgrade = tierIdx > currentIdx;
             const isDowngrade = tierIdx < currentIdx;
@@ -396,7 +583,7 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
                   className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${
                     isCurrent && !isCancelled
                       ? 'bg-surface-3 text-text-muted cursor-default'
-                      : quota.cancel_at_period_end
+                      : isCancelling
                         ? 'bg-shell-400 text-black hover:bg-shell-300'
                         : isUpgrade
                           ? 'bg-shell-400 text-black hover:bg-shell-300'
@@ -405,9 +592,9 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
                 >
                   {changingTo === tier.id
                     ? 'Switching...'
-                    : isCurrent && !quota.cancel_at_period_end
+                    : isCurrent && !isCancelling
                       ? 'Current Plan'
-                      : quota.cancel_at_period_end
+                      : isCancelling
                         ? 'Restart'
                         : isUpgrade
                           ? 'Upgrade'
@@ -659,6 +846,21 @@ export function Shells() {
     }
   }, [plutusTier, cachedTier]);
 
+  // Stripe-authoritative subscription status. This overrides SF's cancel_at
+  // and cancel_at_period_end fields when available, so the Sea Shells page
+  // always reflects the payment authority. If the endpoint isn't deployed
+  // yet (pre-v1.7.4.29 Plutus), stripeStatus stays null and the page falls
+  // back to quota (SF-derived) — which the normalization fix on webhook
+  // write makes correct going forward anyway.
+  const [stripeStatus, setStripeStatus] = useState<{
+    cancelling: boolean;
+    cancel_at: string | null;
+    cancel_at_period_end: boolean;
+    current_period_end: string | null;
+    tier: string | null;
+    status: string | null;
+  } | null>(null);
+
   const fetchQuota = useCallback(async () => {
     try {
       const data = await plutusClient.getQuota(getShellId());
@@ -666,6 +868,26 @@ export function Shells() {
       window.dispatchEvent(new Event('shells:updated'));
     } catch {
       // Plutus unreachable — show page without quota bar
+    }
+    // Fetch Stripe-authoritative status in parallel (don't let it block quota)
+    try {
+      const s = await plutusClient.getSubscriptionStatus(getShellId());
+      if (s.has_subscription) {
+        setStripeStatus({
+          cancelling:           s.cancelling,
+          cancel_at:            s.cancel_at,
+          cancel_at_period_end: s.cancel_at_period_end,
+          current_period_end:   s.current_period_end,
+          tier:                 s.tier,
+          status:               s.status,
+        });
+      } else {
+        setStripeStatus(null);
+      }
+    } catch {
+      // Endpoint not deployed yet — leave stripeStatus null, fall through
+      // to quota-derived state. (Safe: the SF webhook normalization also
+      // writes cancelAtPeriodEnd correctly for new cancels.)
     }
   }, []);
 
@@ -728,13 +950,25 @@ export function Shells() {
 
   // Build a quota-like object that respects the effective tier for display
   const cachedTierShells = effectiveTierData?.shells ?? null;
-  const displayQuota: QuotaResponse | null = quota
+  const baseQuota: QuotaResponse | null = quota
     ? effectiveTier !== quota.tier
       ? { ...quota, tier: effectiveTier, usage_pct: 0, quota_status: 'ok', blocked: false, shells_remaining: cachedTierShells, shells_limit: cachedTierShells }
       : quota
     : effectiveTier !== 'free'
       ? { shell_id: getShellId(), tier: effectiveTier, usage_pct: 0, quota_status: 'ok', blocked: false, period_ends: '', shells_remaining: cachedTierShells, shells_limit: cachedTierShells }
       : null;
+
+  // Overlay Stripe's truth on top of SF-derived quota. Stripe is the payment
+  // authority — when we can reach it, what it says about cancel_at /
+  // cancel_at_period_end / current_period_end wins.
+  const displayQuota: QuotaResponse | null = baseQuota && stripeStatus
+    ? {
+        ...baseQuota,
+        cancel_at_period_end: stripeStatus.cancel_at_period_end || stripeStatus.cancelling,
+        cancel_at:            stripeStatus.cancel_at ?? baseQuota.cancel_at,
+        current_period_end:   stripeStatus.current_period_end ?? baseQuota.current_period_end,
+      }
+    : baseQuota;
 
   return (
     <div className="flex-1 overflow-y-auto scroll-smooth p-6 max-w-5xl mx-auto w-full">
