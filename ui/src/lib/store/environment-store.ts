@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type AppEnvironment = 'cloud' | 'offgrid' | 'custom';
+export type AppEnvironment = 'cloud' | 'offgrid' | 'local' | 'custom';
 
 /** Default URLs for each service per environment preset. */
 const SERVICE_DEFAULTS: Record<AppEnvironment, ServiceEndpoints> = {
@@ -14,6 +14,19 @@ const SERVICE_DEFAULTS: Record<AppEnvironment, ServiceEndpoints> = {
     ares:      'https://api-int.turtleshell.ai/v1/ares',
   },
   offgrid: {
+    athena:    '/v1/athena',
+    hermes:    '/v1/hermes',
+    mnemosyne: '/v1/mnemosyne',
+    plutus:    '/v1/plutus/api',
+    apollo:    '/v1/apollo',
+    ares:      '/v1/ares',
+  },
+  // Dev-laptop preset — fleet running directly on the developer's machine.
+  // Uses relative paths so the Vite dev server proxies /v1/* → local Ares
+  // (:3451) → the appropriate god port. This matches vite.config.ts.
+  // Same shape as 'offgrid' but kept as a distinct preset so the UI can
+  // show "Local Dev" without conflating with the off-grid appliance path.
+  local: {
     athena:    '/v1/athena',
     hermes:    '/v1/hermes',
     mnemosyne: '/v1/mnemosyne',
@@ -81,9 +94,17 @@ interface EnvironmentStore {
   getGatewayUrl: () => string;
 }
 
-// Auto-detect environment: cloud if hosted on turtleshell.ai, offgrid otherwise
-const isCloud = typeof window !== 'undefined' && window.location.hostname.endsWith('turtleshell.ai');
-const defaultEnv: AppEnvironment = isCloud ? 'cloud' : 'offgrid';
+// Auto-detect environment:
+//   turtleshell.ai → cloud (production)
+//   localhost / 127.* → local (dev fleet running on this machine, Vite proxy
+//     forwards /v1/* to local Ares). Using 'offgrid' as the default here
+//     conflated "running on the dev laptop" with "running on the off-grid
+//     appliance" and made every dev assume the system was broken.
+//   anything else → offgrid (same-origin reverse-proxy on an appliance)
+const host = typeof window !== 'undefined' ? window.location.hostname : '';
+const isCloud = host.endsWith('turtleshell.ai');
+const isLocal = host === 'localhost' || host.startsWith('127.') || host === '0.0.0.0';
+const defaultEnv: AppEnvironment = isCloud ? 'cloud' : isLocal ? 'local' : 'offgrid';
 
 export const useEnvironmentStore = create<EnvironmentStore>()(
   persist(
@@ -125,6 +146,12 @@ export const useEnvironmentStore = create<EnvironmentStore>()(
         // v0 → v1: fix users stuck on 'offgrid' while running on turtleshell.ai
         if (version === 0 && isCloud && persisted?.current === 'offgrid') {
           return { ...persisted, current: 'cloud', endpoints: SERVICE_DEFAULTS['cloud'] };
+        }
+        // v1 → v2: dev laptops stuck on 'offgrid' should move to 'local' so
+        // the intent of the preset matches "fleet on this machine" rather
+        // than "fleet on an appliance behind a reverse proxy".
+        if (isLocal && persisted?.current === 'offgrid') {
+          return { ...persisted, current: 'local', endpoints: SERVICE_DEFAULTS['local'] };
         }
         return persisted;
       },

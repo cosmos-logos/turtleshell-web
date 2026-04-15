@@ -145,6 +145,12 @@ export const useCosmosLogosStore = create<CosmosLogosStore>()(
       name: 'turtleshell-cosmos-agents',
       partialize: (state) => ({
         agents: state.agents,
+        // Persist the active cosmos chat agent so Athena-as-guide survives a
+        // page reload (e.g. Stripe Checkout round-trip, hard refresh).
+        // Without this the store rehydrates with activeChatAgentId=null and
+        // Chat.tsx falls back to the builtin LOGOS agent, even though the
+        // user explicitly picked Athena during onboarding. See BC-001.
+        activeChatAgentId: state.activeChatAgentId,
       }),
     }
   )
