@@ -69,6 +69,44 @@ export const plutusClient = {
     return res.json();
   },
 
+  getSubscriptionStatus: async (shellId: string): Promise<{
+    has_subscription: boolean;
+    status: string | null;
+    tier: string | null;
+    cancelling: boolean;
+    cancel_at: string | null;
+    cancel_at_period_end: boolean;
+    current_period_end: string | null;
+    subscription_id: string | null;
+  }> => {
+    // Stripe-authoritative truth. Falls back to quota-derived state if this
+    // endpoint isn't deployed yet (pre-v1.7.4.29 Plutus).
+    const res = await fetch(`${getBaseUrl()}/stripe/subscription-status/${shellId}`, {
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error('Subscription status fetch failed');
+    return res.json();
+  },
+
+  submitChurnFeedback: async (payload: {
+    shell_id: string;
+    tier: string;
+    cancel_at: string | null | undefined;
+    submitted_at: string;
+    why: string;
+    better: string;
+    trust: string;
+  }): Promise<{ ok: boolean }> => {
+    const res = await fetch(`${getBaseUrl()}/feedback/churn`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Churn feedback submit failed');
+    return res.json();
+  },
+
   createPortalSession: async (
     shellId: string,
     returnUrl: string,
