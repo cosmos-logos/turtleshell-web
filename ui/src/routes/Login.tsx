@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, Mail, ArrowLeft } from 'lucide-react';
-import { requestMagicLink, verifyCode } from '@/lib/api/olympus-grid-client';
+import { requestMagicLink, verifyCode, signInWithApple } from '@/lib/api/olympus-grid-client';
 import { useServiceStore } from '@/lib/store/service-store';
+import { signInWithApple as appleSDKSignIn, isAppleSignInSupported } from '@/lib/auth/apple-signin';
 
 type Step = 'methods' | 'email' | 'waitlist' | 'signin-email' | 'code' | 'success';
 
@@ -70,6 +71,47 @@ export function Login() {
     }
   }, [code, requestId, navigate]);
 
+  /// Apple Sign-In click handler. Round-trip:
+  ///   1. Apple JS SDK popup → identity token (JWT)
+  ///   2. POST identity token to Ares /v1/auth/apple/identity/verify
+  ///   3. Ares verifies signature against Apple's JWKS, forwards extracted
+  ///      claims to Apex which finds-or-creates Identity__c + mints a
+  ///      TurtleShell JWT (same shape as magic-link flow)
+  ///   4. Route based on accountStatus + onboardingComplete:
+  ///      - Waitlist        → step 'waitlist' (gate screen)
+  ///      - Active + !onb.  → /onboarding (cause / guide / shells / tier)
+  ///      - Active + onb.   → /app/chat
+  const handleAppleSignIn = useCallback(async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const apple = await appleSDKSignIn();
+      const result = await signInWithApple({
+        identityToken: apple.identityToken,
+        user: apple.user,
+      });
+      useServiceStore.getState().setOlympusGridConnected(result.user);
+
+      if (result.accountStatus === 'Waitlist') {
+        setStep('waitlist');
+        return;
+      }
+      setStep('success');
+      const dest = result.onboardingComplete ? '/app/chat' : '/onboarding';
+      setTimeout(() => navigate(dest, { replace: true }), 600);
+    } catch (e) {
+      // Common Apple errors: popup_closed_by_user, popup_blocked_by_browser
+      const msg = e instanceof Error ? e.message : 'Apple sign-in failed';
+      if (msg.includes('popup_closed') || msg.includes('user_cancelled')) {
+        // User dismissed the Apple sheet — silent, no error banner
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [navigate]);
+
   const handleResend = useCallback(async () => {
     setError('');
     setLoading(true);
@@ -135,11 +177,30 @@ export function Login() {
               <span className="ml-auto text-xs text-text-muted">Soon</span>
             </button>
 
-            <button disabled className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium cursor-not-allowed opacity-35 bg-surface-1 border border-border-muted text-text-secondary">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
-              Apple
-              <span className="ml-auto text-xs text-text-muted">Soon</span>
-            </button>
+            {/* Sign in with Apple — gated by host whitelist (Apple rejects
+                popups whose Origin isn't on a registered Services-ID
+                domain, so localhost / preview URLs hide the button to
+                avoid confusing runtime errors). */}
+            {isAppleSignInSupported() ? (
+              <button
+                onClick={handleAppleSignIn}
+                disabled={loading}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium transition-all hover:-translate-y-px disabled:opacity-50 disabled:cursor-not-allowed bg-black border border-black text-white"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+                {loading ? 'Signing in…' : 'Sign in with Apple'}
+              </button>
+            ) : (
+              <button
+                disabled
+                title="Apple sign-in is only available on turtleshell.ai"
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium cursor-not-allowed opacity-35 bg-surface-1 border border-border-muted text-text-secondary"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+                Apple
+                <span className="ml-auto text-xs text-text-muted">turtleshell.ai only</span>
+              </button>
+            )}
 
             <div className="text-center pt-2">
               <button onClick={() => setStep('signin-email')}
