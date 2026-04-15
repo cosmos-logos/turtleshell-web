@@ -171,7 +171,10 @@ export function Chat() {
   // index per mount so returning users see a different suggestion each visit;
   // 🎲 button cycles to the next one client-side without sending.
   const [promptIdx, setPromptIdx] = useState(() => Math.floor(Math.random() * WELCOME_PROMPTS.length));
-  const rotatingPrompt = WELCOME_PROMPTS[promptIdx];
+  // Non-null assertion is safe — promptIdx is always `% WELCOME_PROMPTS.length`
+  // so the index is always in bounds. Required because strict TS with
+  // noUncheckedIndexedAccess widens array access to `T | undefined`.
+  const rotatingPrompt = WELCOME_PROMPTS[promptIdx]!;
   const shufflePrompt = () => setPromptIdx(i => (i + 1) % WELCOME_PROMPTS.length);
   const controlsRef = useRef<HTMLDivElement>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);

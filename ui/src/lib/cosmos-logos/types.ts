@@ -93,7 +93,11 @@ export interface TrustEntry {
   relationship?: string
 }
 
-export type ConnectionMode = 'cloud' | 'dev' | 'offgrid'
+// Connection modes must stay in lockstep with environment-store's
+// AppEnvironment union so autoConnectAthena can stamp the agent with
+// `env.current` directly. 'dev' is a legacy alias kept for persisted
+// records created before the 'local' preset was introduced.
+export type ConnectionMode = 'cloud' | 'dev' | 'offgrid' | 'local' | 'custom'
 
 export interface ConnectedAgent {
   id: string                       // unique instance ID (may differ from codename for multi-instance)
