@@ -51,6 +51,7 @@ export function MarketingLayout() {
           <div className="hidden md:flex items-center gap-7">
             <a href="/#mission" className={navLinkClass}>Mission</a>
             <a href="/#pricing" className={navLinkClass}>Plans</a>
+            <Link to="/causes" onClick={scrollToTop} className={navLinkClass}>Causes</Link>
             <a href="/#olympus" className={navLinkClass}>Olympus-Grid</a>
             <Link to="/offgrid" onClick={scrollToTop} className={navLinkClass}>Off-Grid</Link>
             <Link to="/learn" onClick={scrollToTop} className={navLinkClass}>Learn</Link>
@@ -103,6 +104,7 @@ export function MarketingLayout() {
             <div className="py-2">
               <a href="/#mission" onClick={closeMenu} className={mobileLinkClass}>Mission</a>
               <a href="/#pricing" onClick={closeMenu} className={mobileLinkClass}>Plans</a>
+              <Link to="/causes" onClick={() => { scrollToTop(); closeMenu(); }} className={mobileLinkClass}>Causes</Link>
               <a href="/#olympus" onClick={closeMenu} className={mobileLinkClass}>Olympus-Grid</a>
               <Link to="/offgrid" onClick={() => { scrollToTop(); closeMenu(); }} className={mobileLinkClass}>Off-Grid</Link>
               <Link to="/learn" onClick={() => { scrollToTop(); closeMenu(); }} className={mobileLinkClass}>Learn</Link>
@@ -128,13 +130,15 @@ export function MarketingLayout() {
           <div className="flex flex-wrap justify-center items-center gap-x-6 gap-y-2">
             <a href="/#mission" className={footerLinkClass}>Mission</a>
             <a href="/#pricing" className={footerLinkClass}>Plans</a>
+            <Link to="/causes" onClick={scrollToTop} className={footerLinkClass}>Causes</Link>
             <a href="/#olympus" className={footerLinkClass}>Olympus-Grid</a>
             <Link to="/offgrid" onClick={scrollToTop} className={footerLinkClass}>Off-Grid</Link>
             <Link to="/learn" onClick={scrollToTop} className={footerLinkClass}>Learn</Link>
             <Link to="/terms" onClick={scrollToTop} className={footerLinkClass}>Terms</Link>
             <Link to="/privacy" onClick={scrollToTop} className={footerLinkClass}>Privacy</Link>
             <Link to="/security" onClick={scrollToTop} className={footerLinkClass}>Security</Link>
-            <a href="https://github.com/olympus-616/foundation" target="_blank" rel="noopener noreferrer" className={footerLinkClass}>GitHub</a>
+            <a href="https://github.com/olympus-616/foundation" target="_blank" rel="noopener noreferrer" className={footerLinkClass}>Foundation</a>
+            <a href="https://github.com/cosmos-logos" target="_blank" rel="noopener noreferrer" className={footerLinkClass}>Source</a>
           </div>
         </div>
       </footer>

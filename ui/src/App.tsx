@@ -7,6 +7,7 @@ import { Terms } from './routes/Terms';
 import { Privacy } from './routes/Privacy';
 import { Security } from './routes/Security';
 import { SecurityFAQ } from './routes/SecurityFAQ';
+import { Causes } from './routes/Causes';
 import { Chat } from './routes/Chat';
 import { Services } from './routes/Services';
 import { Agents } from './routes/Agents';
@@ -45,6 +46,7 @@ export function App() {
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/security" element={<Security />} />
         <Route path="/security-faq" element={<SecurityFAQ />} />
+        <Route path="/causes" element={<Causes />} />
       </Route>
 
       {/* Login (public) */}

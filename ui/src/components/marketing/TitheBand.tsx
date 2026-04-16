@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { CAUSES } from '@/lib/causes';
 
 /**
@@ -76,6 +77,15 @@ export function TitheBand() {
           <Stat big="7%" label="Permanent Tithe" />
           <Stat big="7" label="Pillars" />
           <Stat big="∞" label="Multiplier at Scale" />
+        </div>
+
+        <div className="flex justify-center mt-12">
+          <Link
+            to="/causes"
+            className="inline-block px-7 py-3 border border-amber-500/30 text-amber-400 text-xs font-semibold tracking-[0.1em] uppercase hover:bg-amber-500/10 transition-colors rounded no-underline"
+          >
+            Read the Full Story — The Causes →
+          </Link>
         </div>
       </div>
     </section>

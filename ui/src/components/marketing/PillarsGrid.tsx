@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { CAUSES } from '@/lib/causes';
 
 /**
@@ -44,6 +45,15 @@ export function PillarsGrid() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="flex justify-center mt-10">
+        <Link
+          to="/causes"
+          className="inline-block px-7 py-3 border border-shell-500/30 text-shell-400 text-xs font-semibold tracking-[0.1em] uppercase hover:bg-shell-500/10 transition-colors rounded no-underline"
+        >
+          Read About the Seven Pillars →
+        </Link>
       </div>
     </section>
   );
