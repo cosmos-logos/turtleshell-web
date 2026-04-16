@@ -89,10 +89,12 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
       console.log('[OG] verifyCode ← user:', result.user, 'tokenType:', result.tokenType, 'expiresIn:', result.expiresIn);
       useServiceStore.getState().setOlympusGridConnected(result.user);
       setStep('success');
-      const hasOnboarded = !!localStorage.getItem('turtleshell-onboarding');
+      // Server is the source of truth for onboardingComplete — Apex
+      // reads TurtleshellProfile__c and returns it. localStorage gets
+      // wiped on logout / doesn't exist on fresh devices.
       setTimeout(() => {
         handleOpenChange(false);
-        if (!hasOnboarded) navigate('/onboarding');
+        if (!result.onboardingComplete) navigate('/onboarding');
       }, 1500);
     } catch (e) {
       console.error('[OG] verifyCode ERROR:', e);

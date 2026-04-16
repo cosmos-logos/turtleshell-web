@@ -115,7 +115,7 @@ function useNavItems(): NavItem[] {
     );
   }
   items.push(
-    { to: '/app/docs', icon: BookOpen, label: 'Docs' },
+    { to: '/app/docs', icon: BookOpen, label: 'Learn' },
     { to: '/app/shells', icon: Shell, label: 'Sea Shells' },
     { to: '/app/settings', icon: Settings, label: 'Settings' },
   );

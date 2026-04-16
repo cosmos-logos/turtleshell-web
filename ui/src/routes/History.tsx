@@ -133,6 +133,12 @@ export function History() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const { saveConversation, setSaveConversation, memoryEnabled, resumeConversation, startFromSeed, clearAllHistory } = useChatStore();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  // Progress indicator for the Clear All flow — surfaces a "Clearing…"
+  // label + spinner while the DELETE loop runs. Without it the Confirm
+  // button just sat there during the (potentially slow) sequential
+  // deletes, leaving the user wondering whether anything was happening.
+  // Matches iOS HistoryView's `clearingAll` state.
+  const [clearingAll, setClearingAll] = useState(false);
   const scope = useActiveAgentScope();
 
   // Depend on scope.key (primitive) — not scope (object) — so this useCallback
@@ -282,26 +288,52 @@ export function History() {
                 {showClearConfirm ? (
                   <div className="flex items-center gap-1.5">
                     <button
+                      disabled={clearingAll}
                       onClick={async () => {
-                        clearAllHistory();
-                        // Also delete all server-side saved conversations
-                        const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
-                        const ogToken = localStorage.getItem('og_access_token');
-                        const delHeaders: Record<string, string> = {};
-                        if (ogToken) delHeaders['x-user-identity'] = ogToken;
-                        for (const conv of conversations) {
-                          try { await fetch(`${mnUrl}/api/conversation/saved/${conv.id}`, { method: 'DELETE', headers: delHeaders }); } catch {}
+                        setClearingAll(true);
+                        try {
+                          clearAllHistory();
+                          // Delete server-side so the list doesn't
+                          // resurrect on refresh. Fire them concurrently
+                          // so the "Clearing…" state doesn't linger for
+                          // N * round-trip when there's a long list.
+                          const mnUrl = useEnvironmentStore.getState().getMnemosyneUrl();
+                          const ogToken = localStorage.getItem('og_access_token');
+                          const delHeaders: Record<string, string> = {};
+                          if (ogToken) delHeaders['x-user-identity'] = ogToken;
+                          await Promise.all(
+                            conversations.map((conv) =>
+                              fetch(`${mnUrl}/api/conversation/saved/${conv.id}`, {
+                                method: 'DELETE',
+                                headers: delHeaders,
+                              }).catch(() => {}),
+                            ),
+                          );
+                          setConversations([]);
+                        } finally {
+                          setClearingAll(false);
+                          setShowClearConfirm(false);
                         }
-                        setConversations([]);
-                        setShowClearConfirm(false);
                       }}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                        clearingAll
+                          ? 'bg-red-500/20 text-red-400/80 cursor-wait'
+                          : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                      }`}
                     >
-                      Confirm
+                      {clearingAll ? (
+                        <>
+                          <Loader2 size={11} className="animate-spin" />
+                          Clearing…
+                        </>
+                      ) : (
+                        'Confirm'
+                      )}
                     </button>
                     <button
+                      disabled={clearingAll}
                       onClick={() => setShowClearConfirm(false)}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium text-text-muted hover:bg-surface-2 transition-colors"
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium text-text-muted hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Cancel
                     </button>

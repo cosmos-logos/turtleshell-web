@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { Menu, ChevronRight } from 'lucide-react';
 import { useAgentStatus } from '@/lib/hooks/useAgentStatus';
 import type { AgentHealth } from '@/lib/hooks/useAgentStatus';
@@ -87,13 +86,11 @@ export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMen
           </button>
         )}
 
-        {/* Mobile: TurtleShell logo + agent picker */}
+        {/* Mobile: agent picker is the only left-side control — the
+            standalone TurtleShell logo used to sit next to it, but the
+            picker's own avatar is enough brand presence and a second
+            emoji was just noise. */}
         <div className="flex items-center gap-2 md:hidden">
-          <Link to="/app/chat" className="flex items-center gap-2 no-underline">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-xs">
-              🐢
-            </div>
-          </Link>
           <AgentPicker compact />
         </div>
 
@@ -103,9 +100,10 @@ export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMen
         </div>
       </div>
 
-      {/* Right side — build label + connection status (developer mode only) */}
+      {/* Right side — connection status (developer mode only). The
+          former "build 012" hardcoded label was removed; build version
+          lives in package.json / about dialog, not the chat header. */}
       <div className="flex items-center gap-3">
-        <span className="text-xs font-mono text-emerald-500/60">build 012</span>
         {showStatus && (
           <div className="relative">
             <button

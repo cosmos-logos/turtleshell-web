@@ -61,8 +61,12 @@ export function Login() {
       const result = await verifyCode(code, requestId);
       useServiceStore.getState().setOlympusGridConnected(result.user);
       setStep('success');
-      const hasOnboarded = !!localStorage.getItem('turtleshell-onboarding');
-      const dest = hasOnboarded ? '/app/chat' : '/onboarding';
+      // Gate on the server's `onboardingComplete` (Apex
+      // ApiRouteAuth.handleEmailLinkVerify reads TurtleshellProfile__c
+      // and sets it in the response). localStorage was unreliable —
+      // logging out or signing in on a new device would clear it and
+      // send the user through onboarding a second time.
+      const dest = result.onboardingComplete ? '/app/chat' : '/onboarding';
       setTimeout(() => navigate(dest, { replace: true }), 800);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Verification failed');
@@ -204,8 +208,9 @@ export function Login() {
 
             <div className="text-center pt-2">
               <button onClick={() => setStep('signin-email')}
-                      className="text-xs text-shell-400 hover:underline">
-                Already have an account? Sign in
+                      className="text-xs text-text-muted group">
+                Already have an account?{' '}
+                <span className="text-shell-400 group-hover:underline">Sign in</span>
               </button>
             </div>
           </div>
@@ -251,6 +256,19 @@ export function Login() {
             <p className="text-xs text-text-muted/50">
               Every shell given changes the world.
             </p>
+
+            {/* Escape hatch — waitlist is a terminal state for this session,
+                but the user shouldn't be stranded. Back to the methods step
+                so they can try another email, switch to Sign in with Apple,
+                or just read the terms / close the flow. */}
+            <div className="pt-4">
+              <button
+                onClick={() => { setStep('methods'); setEmail(''); setCode(''); setError(''); }}
+                className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary"
+              >
+                <ArrowLeft size={14} /> Back to sign in
+              </button>
+            </div>
           </div>
         )}
 
