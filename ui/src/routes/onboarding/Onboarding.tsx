@@ -826,7 +826,12 @@ export function Onboarding() {
         displayName: username,
         cause: cause || undefined,
         guideAgent: selectedGuide || undefined,
-        profilePublic: true,
+        // Profiles are private by default. The owner can flip to public
+        // from /app/profile once the Make-Profile-Public toggle is out
+        // of Beta (currently gated on testBetaEnabled). Shipping with
+        // private-by-default matches the "nothing exposed without
+        // explicit consent" stance in the security page.
+        profilePublic: false,
       }) as any;
       console.log('[🐢 Turtleshell] Profile created:', data);
       if (data?.username) {
