@@ -130,9 +130,17 @@ function CauseScreen({ onNext, selectedCause, setSelectedCause }: {
           );
         })}
       </div>
-      <p className="text-xs text-center max-w-[280px] leading-relaxed mb-8 text-text-muted">
+      <p className="text-xs text-center max-w-[280px] leading-relaxed mb-4 text-text-muted">
         This choice is <span className="font-bold text-amber-400">permanent</span> to your account. It defines who you are in the ocean.
       </p>
+      <a
+        href="/causes"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs text-shell-400 hover:text-shell-300 underline underline-offset-2 mb-8"
+      >
+        Read about the seven causes and the tithe ↗
+      </a>
       <Btn onClick={onNext} disabled={selectedCause === null}>This Is My Cause</Btn>
     </div>
   );
