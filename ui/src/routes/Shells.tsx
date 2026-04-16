@@ -346,7 +346,7 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
                     <span className="text-amber-400/80 mt-0.5 flex-shrink-0">•</span>
                     <span>
                       Every one of your{' '}
-                      {isUnlimited ? 'unlimited' : formatNumber(shellsLimit as number)} Sea Shells stays with you until {endsDateFmt}.
+                      {formatNumber(quota.shells_remaining ?? shellsLimit ?? 0)} Sea Shells stays with you until {endsDateFmt}.
                     </span>
                   </li>
                   <li className="flex items-start gap-2">
