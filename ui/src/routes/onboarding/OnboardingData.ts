@@ -1,25 +1,39 @@
-export const CAUSES = [
-  { emoji: '🌊', name: 'Save the Oceans', desc: 'Protect the seas that give us all life', label: '🌊 given', pledge: '"7% of every shell flows to the ocean."' },
-  { emoji: '💧', name: 'Clean Water for All', desc: 'Every human deserves clean water and sanitation', label: '💧 given', pledge: '"7% of every shell flows to clean water."' },
-  { emoji: '🍎', name: 'Food & Nutrition', desc: 'End hunger and ensure food security for all', label: '🍎 given', pledge: '"7% of every shell flows to feed the world."' },
-  { emoji: '🏥', name: 'Healthcare for All', desc: 'Essential medicine and care for every human', label: '🏥 given', pledge: '"7% of every shell flows to global health."' },
-  { emoji: '🏠', name: 'Shelter & Housing', desc: 'A safe place to live is a human right', label: '🏠 given', pledge: '"7% of every shell flows to shelter."' },
-  { emoji: '📚', name: 'Education & Literacy', desc: 'Quality learning to break the cycle of poverty', label: '📚 given', pledge: '"7% of every shell flows to education."' },
-  { emoji: '🤝', name: 'AI for Those in Need', desc: 'Sovereign AI for the underserved', label: '🤝 given', pledge: '"7% of every shell flows to those in need."' },
-] as const
+// Re-export the canonical causes list (lib/causes.ts) but reshape
+// each entry to the legacy `desc` field name that onboarding + chat
+// UI already read from. One source of truth, one edit point.
+import { CAUSES as CANONICAL_CAUSES } from '@/lib/causes';
 
-// Tier IDs match the canonical set in Shells.tsx and Plutus STRIPE_PRICES.
-// Names/emojis stay oceanic but the id/shells/price reflect actual Stripe products
-// so a user's onboarding selection aligns with what they're actually billed for.
+export const CAUSES = CANONICAL_CAUSES.map((c) => ({
+  emoji: c.emoji,
+  name: c.name,
+  desc: c.shortDesc,
+  label: c.label,
+  pledge: c.pledge,
+})) as readonly {
+  readonly emoji: string;
+  readonly name: string;
+  readonly desc: string;
+  readonly label: string;
+  readonly pledge: string;
+}[];
+
+// Tier IDs match the canonical set in lib/tiers.ts, Shells.tsx, and
+// Plutus STRIPE_PRICES. Free Forever (free) and Enterprise (custom)
+// are marketing-surface tiers only — onboarding is the paid-tier
+// selection step, so this list intentionally omits them.
+//
+// Abyss moved from "Unlimited" to 100,000 shells/mo to align with the
+// new public pricing grid. Plutus quota enforcement + iOS StoreKit must
+// migrate to match.
 export const TIERS = [
-  { name: '🐚 Beachcomber', shells: '500 shells / mo',     price: '$4.99',  id: 'beachcomber', popular: false, isEnterprise: false },
-  { name: '🌊 Tide',        shells: '2,000 shells / mo',   price: '$14.99', id: 'tide',        popular: false, isEnterprise: false },
-  { name: '🪸 Reef',        shells: '10,000 shells / mo',  price: '$39.99', id: 'reef',        popular: true,  isEnterprise: false },
-  { name: '🌌 Abyss',       shells: 'Unlimited shells',    price: '$99.99', id: 'abyss',       popular: false, isEnterprise: false },
+  { name: '🐚 Beachcomber', shells: '500 shells / mo',      price: '$4.99',  id: 'beachcomber', popular: false, isEnterprise: false },
+  { name: '🌊 Tide',        shells: '2,000 shells / mo',    price: '$14.99', id: 'tide',        popular: false, isEnterprise: false },
+  { name: '🪸 Reef',        shells: '10,000 shells / mo',   price: '$39.99', id: 'reef',        popular: true,  isEnterprise: false },
+  { name: '🌌 Abyss',       shells: '100,000 shells / mo',  price: '$99.99', id: 'abyss',       popular: false, isEnterprise: false },
 ] as const
 
 export const PERKS = [
-  { icon: '🪼', label: 'Chat with Athena', cost: '1 shell / turn' },
+  { icon: '🐙', label: 'Chat with Athena', cost: '1 shell / turn' },
   { icon: '🔱', label: 'Poseidon MCP tools', cost: '1 shell / call' },
   { icon: '🐬', label: 'Apollo voice', cost: '1 shell / response' },
   { icon: '🧜‍♀️', label: 'Memory writes', cost: '1 shell / write' },

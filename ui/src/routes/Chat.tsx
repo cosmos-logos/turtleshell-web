@@ -41,10 +41,10 @@ const AGENT_PRONOUNS: Record<string, string> = {
   cosmos: 'itself',
   mnemosyne: 'herself',
 };
-function pronounFor(name: string | null | undefined): string {
-  if (!name) return 'themselves';
-  return AGENT_PRONOUNS[name.toLowerCase().trim()] ?? 'themselves';
-}
+// `pronounFor` was used by the removed inception empty-state. The
+// AGENT_PRONOUNS map stays in case we reintroduce it — cheap and
+// descriptive — but the helper function was dead code under noUnused.
+void AGENT_PRONOUNS;
 
 // Returning-user empty-state prompts — rotate per mount so the CTA never
 // feels rote. Clicking the button sends the current prompt to the agent;
@@ -166,10 +166,14 @@ export function Chat() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [isHoldingMic, setIsHoldingMic] = useState(false);
-  const [showInception, setShowInception] = useState(() => !localStorage.getItem('turtleshell-inception'));
   // Rotating welcome-prompt CTA — "I'm Feeling Lucky" style. Random starting
   // index per mount so returning users see a different suggestion each visit;
   // 🎲 button cycles to the next one client-side without sending.
+  //
+  // The old "Tap to begin / Who are you?" inception flow was removed — the
+  // empty state is now always the "Ready when you are." screen with a
+  // rotating suggestion + shuffle. Onboarding already seeds memory/auto-save
+  // defaults, so the inception's auto-enable side effects were redundant.
   const [promptIdx, setPromptIdx] = useState(() => Math.floor(Math.random() * WELCOME_PROMPTS.length));
   // Non-null assertion is safe — promptIdx is always `% WELCOME_PROMPTS.length`
   // so the index is always in bounds. Required because strict TS with
@@ -393,18 +397,6 @@ export function Chat() {
     }
   }, [messages]);
 
-  const beginInception = useCallback(() => {
-    localStorage.setItem('turtleshell-inception', '1');
-    setShowInception(false);
-    // Enable all auto modes for first-time users
-    useApolloStore.getState().setTTSAutoPlay(true);
-    useApolloStore.getState().setTTSTalkMode(true);
-    useChatStore.getState().setSaveConversation(true);
-    useChatStore.getState().setMemoryEnabled(true);
-    // Small delay so React commits refs and talk mode mic can start after TTS
-    setTimeout(() => sendRef.current?.('Who are you?'), 100);
-  }, []);
-
   useEffect(() => {
     const pending = useChatStore.getState().consumePendingInput();
     if (pending) {
@@ -412,7 +404,6 @@ export function Chat() {
       setTimeout(() => sendRef.current?.(pending), 100);
       return;
     }
-    if (showInception) return; // Don't focus input — waiting for inception tap
     inputRef.current?.focus();
   }, []);
 
@@ -519,31 +510,7 @@ export function Chat() {
       )}
       {/* Messages area */}
       <div ref={scrollRef} className="chat-container space-y-4">
-        {messages.length === 0 && showInception && (
-          <div className="flex-1 flex items-center justify-center min-h-[60vh]">
-            <button
-              onClick={beginInception}
-              className="text-center space-y-4 group cursor-pointer focus:outline-none"
-            >
-              <div className="text-6xl transition-transform group-hover:scale-110 group-active:scale-95">
-                {agentAvatar}
-              </div>
-              <h2 className="text-xl font-semibold text-text-primary">
-                Tap to begin
-              </h2>
-              <p className="text-sm text-text-muted max-w-md">
-                {chatAgentName} will introduce {pronounFor(chatAgentName)}
-                {hasTTS ? ', then listen for your voice.' : '.'}
-              </p>
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-shell-500 text-white text-sm font-semibold rounded-lg group-hover:bg-shell-600 transition-all group-hover:-translate-y-px group-hover:shadow-lg group-hover:shadow-shell-500/30">
-                {hasTTS ? <Mic size={16} /> : null}
-                Who are you?
-              </div>
-            </button>
-          </div>
-        )}
-
-        {messages.length === 0 && !showInception && (
+        {messages.length === 0 && (
           <div className="flex-1 flex items-center justify-center min-h-[60vh]">
             <div className="text-center space-y-5 max-w-md px-4">
               <div className="text-6xl">{agentAvatar}</div>
@@ -596,34 +563,54 @@ export function Chat() {
                 {agentAvatar}
               </div>
             )}
+            {/* Column wrapping the bubble + metadata. `max-w-[75%]` caps
+                the bubble at 75% of the row so long assistant messages
+                don't span full-width, while short user messages hug
+                their content naturally (thanks to flex-col items-end).
+                The bubble itself no longer carries `max-w-[85%]` — that
+                CSS-level cap compounded with the column and produced
+                ~72% of the row, forcing even short text like "Tell me
+                something random" to wrap to two lines. */}
             <div
-              className={`message-bubble group ${
-                msg.role === 'user'
-                  ? 'message-bubble-user'
-                  : 'message-bubble-assistant'
+              className={`flex flex-col gap-1 max-w-[75%] ${
+                msg.role === 'user' ? 'items-end' : 'items-start'
               }`}
             >
-              <div className="text-sm leading-relaxed whitespace-pre-wrap">
-                {msg.role === 'assistant' && developerMode
-                  ? msg.content.split('\n').map((line, i, arr) => {
-                      const isToolCall = TOOL_CALL_PATTERN.test(line.trim());
-                      if (isToolCall) {
-                        return (
-                          <div key={i} className="flex items-start gap-1.5 my-1 px-2 py-1 bg-yellow-500/5 border border-yellow-500/10 rounded text-2xs font-mono text-text-muted">
-                            <Wrench size={10} className="flex-shrink-0 mt-0.5 text-yellow-500/50" />
-                            <span>{line}</span>
-                          </div>
-                        );
-                      }
-                      return <span key={i}>{renderTextWithLinks(line)}{i < arr.length - 1 ? '\n' : ''}</span>;
-                    })
-                  : renderTextWithLinks(msg.content)
-                }
-                {msg.isStreaming && isStreaming && (
-                  <span className="streaming-cursor" />
-                )}
+              <div
+                className={`message-bubble group ${
+                  msg.role === 'user'
+                    ? 'message-bubble-user'
+                    : 'message-bubble-assistant'
+                }`}
+              >
+                <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {msg.role === 'assistant' && developerMode
+                    ? msg.content.split('\n').map((line, i, arr) => {
+                        const isToolCall = TOOL_CALL_PATTERN.test(line.trim());
+                        if (isToolCall) {
+                          return (
+                            <div key={i} className="flex items-start gap-1.5 my-1 px-2 py-1 bg-yellow-500/5 border border-yellow-500/10 rounded text-2xs font-mono text-text-muted">
+                              <Wrench size={10} className="flex-shrink-0 mt-0.5 text-yellow-500/50" />
+                              <span>{line}</span>
+                            </div>
+                          );
+                        }
+                        return <span key={i}>{renderTextWithLinks(line)}{i < arr.length - 1 ? '\n' : ''}</span>;
+                      })
+                    : renderTextWithLinks(msg.content)
+                  }
+                  {msg.isStreaming && isStreaming && (
+                    <span className="streaming-cursor" />
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2 mt-1.5">
+              {/* Metadata row — OUTSIDE the message-bubble. Timestamp
+                  + copy + play are system chrome, not part of the speech
+                  act; keeping them on the neutral background makes the
+                  bubble's color a pure identity cue. Copy is available
+                  for both user and assistant messages — the user should
+                  be able to grab either side of the conversation. */}
+              <div className="flex items-center gap-2">
                 <span className="text-2xs text-text-muted">
                   {formatTimestamp(msg.timestamp)}
                 </span>
@@ -635,7 +622,7 @@ export function Chat() {
                         setCopiedId(msg.id);
                         setTimeout(() => setCopiedId(null), 1500);
                       }}
-                      className="p-0.5 rounded text-text-muted/30 hover:text-text-muted transition-colors"
+                      className="p-0.5 rounded text-text-muted hover:text-text-primary transition-colors"
                       title="Copy"
                     >
                       {copiedId === msg.id ? <Check size={10} /> : <Copy size={10} />}
@@ -643,7 +630,7 @@ export function Chat() {
                     {msg.role === 'assistant' && hasTTS && (
                       <button
                         onClick={() => apollo.speak(msg.content)}
-                        className="p-0.5 rounded text-text-muted/30 hover:text-text-muted transition-colors"
+                        className="p-0.5 rounded text-text-muted hover:text-text-primary transition-colors"
                         title="Play audio"
                       >
                         <Volume2 size={10} />

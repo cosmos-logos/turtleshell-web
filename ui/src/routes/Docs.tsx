@@ -1,6 +1,18 @@
 import { Routes, Route, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import { createContext, useContext, useState } from 'react';
+
+/* ================================================================ */
+/* Base-path context                                                  */
+/*                                                                    */
+/* The same Docs tree mounts at both `/app/docs/*` (authenticated,    */
+/* inside AppShell) and `/learn/*` (public, inside MarketingLayout).  */
+/* Every <Link> that needs an absolute URL reads its base from here   */
+/* so a page rendered on the public site can link back to /learn and  */
+/* a page rendered inside the app links back to /app/docs.            */
+/* ================================================================ */
+const BasePathContext = createContext<string>('/app/docs');
+function useBasePath() { return useContext(BasePathContext); }
 
 /* ================================================================ */
 /* Accordion helper                                                  */
@@ -26,8 +38,9 @@ function Section({ title, children, defaultOpen }: { title: string; children: Re
 }
 
 function BackLink({ label }: { label: string }) {
+  const base = useBasePath();
   return (
-    <Link to="/app/docs" className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors mb-6 no-underline">
+    <Link to={base} className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors mb-6 no-underline">
       <ArrowLeft size={14} />
       {label}
     </Link>
@@ -76,10 +89,40 @@ const TOPICS = [
   },
 ];
 
+// Featured agents — each has its own deep-dive doc. Previously reachable
+// only by direct URL; now surfaced in a second grid on the landing so
+// every doc has an entry point. Mirrors iOS AGENT_TOPICS exactly.
+const FEATURED_AGENTS = [
+  {
+    path: 'athena',
+    icon: '🦉',
+    title: 'Athena',
+    description: 'Multi-provider LLM gateway — the intelligence layer.',
+  },
+  {
+    path: 'thoth',
+    icon: '📜',
+    title: 'Thoth',
+    description: 'Sovereign writing and coding agent — your personal scribe.',
+  },
+  {
+    path: 'homework-buddy',
+    icon: '📚',
+    title: 'AI Homework Tutor',
+    description: 'AI-guided homework help with step-by-step tutoring.',
+  },
+  {
+    path: 'agora',
+    icon: '🏛️',
+    title: 'Agora',
+    description: 'Sovereign group collaboration for families and teams.',
+  },
+];
+
 function DocsLanding() {
   const navigate = useNavigate();
   return (
-    <div className="max-w-3xl mx-auto py-8 px-4 space-y-8">
+    <div className="max-w-3xl mx-auto py-8 px-4 space-y-10">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Learn</h1>
         <p className="text-sm text-text-muted mt-1">
@@ -99,6 +142,28 @@ function DocsLanding() {
             <p className="text-2xs text-text-muted leading-relaxed">{topic.description}</p>
           </button>
         ))}
+      </div>
+
+      {/* Featured agents — deep-dive docs for the flagship cosmos-logos
+          agents. Matches iOS Learn landing's second grid. */}
+      <div className="space-y-3">
+        <div>
+          <h2 className="text-xs font-semibold tracking-wider uppercase text-text-muted">Featured Agents</h2>
+          <p className="text-xs text-text-muted/80 mt-1">Deep-dive docs for the flagship cosmos-logos agents.</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {FEATURED_AGENTS.map((topic) => (
+            <button
+              key={topic.path}
+              onClick={() => navigate(topic.path)}
+              className="p-5 bg-surface-1 border border-border-muted rounded-xl hover:border-border hover:bg-surface-2 transition-colors text-left group"
+            >
+              <span className="text-2xl block mb-3">{topic.icon}</span>
+              <h3 className="text-sm font-semibold mb-1 group-hover:text-shell-400 transition-colors">{topic.title}</h3>
+              <p className="text-2xs text-text-muted leading-relaxed">{topic.description}</p>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -787,42 +852,42 @@ function HomeworkBuddyDocs() {
       <div className="flex items-center gap-3">
         <span className="text-3xl">📚</span>
         <div>
-          <h1 className="text-2xl font-bold">Homework Buddy</h1>
-          <p className="text-sm text-text-muted">AI homework tutor for kids 10–17</p>
+          <h1 className="text-2xl font-bold">AI Homework Tutor</h1>
+          <p className="text-sm text-text-muted">Step-by-step AI tutoring that guides without just giving answers</p>
         </div>
       </div>
 
-      <Section title="What is Homework Buddy?" defaultOpen>
+      <Section title="What is the AI Homework Tutor?" defaultOpen>
         <p>
-          <strong>Homework Buddy</strong> is an AI tutor that helps students with their homework
-          without just giving them the answers. It guides them step by step, uses encouraging language,
-          and tracks assignments with due dates and priorities.
+          The <strong>AI Homework Tutor</strong> helps students with their homework without just
+          giving them the answers. It guides step by step, uses encouraging language, and tracks
+          assignments with due dates and priorities.
         </p>
         <p>
-          It's also the first cosmos-logos agent designed to teach kids how AI works. The entire app
+          It's also a cosmos-logos agent that demonstrates how AI works in practice. The entire app
           runs on a local LAMP stack (PHP + MySQL + Docker) — making it a learning tool for both
           homework AND technology.
         </p>
       </Section>
 
-      <Section title="What can Homework Buddy do?">
+      <Section title="What can it do?">
         <ul className="list-disc list-inside space-y-1 text-text-muted">
           <li><strong className="text-text-secondary">AI Tutoring</strong> — Ask questions about any subject. Grok guides you to the answer.</li>
           <li><strong className="text-text-secondary">Assignment Tracking</strong> — Create, edit, and manage homework with due dates and priorities.</li>
           <li><strong className="text-text-secondary">AI Tool Use</strong> — Grok can create/update/complete assignments from chat using native function calling.</li>
           <li><strong className="text-text-secondary">AI Review</strong> — Click "Ask AI to Review" on any assignment for study tips.</li>
-          <li><strong className="text-text-secondary">Family Setup</strong> — Multiple family members, daily message limits for kids.</li>
+          <li><strong className="text-text-secondary">Multi-user Setup</strong> — Multiple accounts per installation with configurable daily message limits.</li>
         </ul>
       </Section>
 
-      <Section title="How to set up Homework Buddy">
+      <Section title="How to set it up">
         <div className="bg-surface-2 rounded-lg p-3 font-mono text-xs text-text-muted space-y-1">
           <div>$ git clone https://github.com/cosmos-logos/homework-buddy.git</div>
           <div>$ cd homework-buddy && docker compose up -d</div>
           <div>$ open http://localhost:8080</div>
         </div>
-        <p className="mt-2">Complete the family setup wizard, then connect in TurtleShell Agent Setup → <code className="text-shell-400">http://localhost:8080</code></p>
-        <p>Add your Grok API key in Homework Buddy's Settings tab (get one at <a href="https://console.x.ai" target="_blank" rel="noopener" className="text-shell-400 hover:underline">console.x.ai</a>).</p>
+        <p className="mt-2">Complete the setup wizard, then connect in TurtleShell Agent Setup → <code className="text-shell-400">http://localhost:8080</code></p>
+        <p>Add your Grok API key in the Settings tab (get one at <a href="https://console.x.ai" target="_blank" rel="noopener" className="text-shell-400 hover:underline">console.x.ai</a>).</p>
       </Section>
 
       <Section title="Technical details">
@@ -904,23 +969,31 @@ function AgoraDocs() {
 
 /* ================================================================ */
 /* Router                                                             */
+/*                                                                    */
+/* `basePath` lets the same tree mount in two places:                 */
+/*   - /app/docs/* (authenticated, inside AppShell) — default          */
+/*   - /learn/*    (public, inside MarketingLayout) — set via prop     */
+/* BackLink + any absolute Links read the basePath from context and   */
+/* stay within the currently-rendered surface.                        */
 /* ================================================================ */
-export function Docs() {
+export function Docs({ basePath = '/app/docs' }: { basePath?: string } = {}) {
   return (
-    <div className="flex-1 overflow-y-auto">
-      <Routes>
-        <Route index element={<DocsLanding />} />
-        <Route path="getting-started" element={<GettingStarted />} />
-        <Route path="how-ai-works" element={<HowAIWorks />} />
-        <Route path="agents" element={<AgentsDocs />} />
-        <Route path="security" element={<SecurityDocs />} />
-        <Route path="building" element={<BuildingDocs />} />
-        <Route path="glossary" element={<GlossaryDocs />} />
-        <Route path="athena" element={<AthenaDocs />} />
-        <Route path="thoth" element={<ThothDocs />} />
-        <Route path="homework-buddy" element={<HomeworkBuddyDocs />} />
-        <Route path="agora" element={<AgoraDocs />} />
-      </Routes>
-    </div>
+    <BasePathContext.Provider value={basePath}>
+      <div className="flex-1 overflow-y-auto">
+        <Routes>
+          <Route index element={<DocsLanding />} />
+          <Route path="getting-started" element={<GettingStarted />} />
+          <Route path="how-ai-works" element={<HowAIWorks />} />
+          <Route path="agents" element={<AgentsDocs />} />
+          <Route path="security" element={<SecurityDocs />} />
+          <Route path="building" element={<BuildingDocs />} />
+          <Route path="glossary" element={<GlossaryDocs />} />
+          <Route path="athena" element={<AthenaDocs />} />
+          <Route path="thoth" element={<ThothDocs />} />
+          <Route path="homework-buddy" element={<HomeworkBuddyDocs />} />
+          <Route path="agora" element={<AgoraDocs />} />
+        </Routes>
+      </div>
+    </BasePathContext.Provider>
   );
 }

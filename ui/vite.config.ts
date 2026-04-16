@@ -12,7 +12,12 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
+    // Fixed port — turtleshell-web owns 5173. iris portal owns 5174,
+    // iris turtleshell owns 5175. strictPort: true makes Vite fail loudly
+    // if 5173 is busy instead of silently drifting up and clobbering
+    // a sibling dev server.
     port: 5173,
+    strictPort: true,
     open: true,
     proxy: {
       // Proxy API requests to local Ares gateway.

@@ -102,6 +102,13 @@ export interface VerifyResult {
   expiresIn: number;
   tokenType: string;
   user: OlympusUser;
+  // Populated by Apex `ApiRouteAuth.handleEmailLinkVerify` (line 219) and
+  // `handleAppleSignIn`. Drives post-login routing: true → /app/chat,
+  // false → /onboarding. Previously omitted from this type, forcing
+  // callers to fall back to localStorage, which broke whenever a user
+  // logged out or signed in on a second device.
+  accountStatus?: string;
+  onboardingComplete?: boolean;
 }
 
 export async function verifyCode(

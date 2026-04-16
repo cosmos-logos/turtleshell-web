@@ -86,9 +86,14 @@ function Particles() {
   );
 }
 
-const GUIDE_ENTRIES: { key: GuideKey; style: string; selectedBg: string; selectedBorder: string }[] = [
-  { key: 'cosmos', style: 'text-shell-400', selectedBg: 'bg-shell-500/10', selectedBorder: 'border-shell-500/40' },
-  { key: 'logos', style: 'text-teal-400', selectedBg: 'bg-teal-500/10', selectedBorder: 'border-teal-500/40' },
+// Soft-launch gate: `soon: true` renders a guide grayed-out with a "Soon"
+// badge in place of the selection tick and blocks selection. Athena is the
+// only selectable guide until Cosmos + Logos are ready for go-live. Flip
+// back to false (or delete the key) to restore full selection. iOS mirrors
+// this via Guide.comingSoon in OnboardingView.swift.
+const GUIDE_ENTRIES: { key: GuideKey; style: string; selectedBg: string; selectedBorder: string; soon?: boolean }[] = [
+  { key: 'cosmos', style: 'text-shell-400', selectedBg: 'bg-shell-500/10', selectedBorder: 'border-shell-500/40', soon: true },
+  { key: 'logos', style: 'text-teal-400', selectedBg: 'bg-teal-500/10', selectedBorder: 'border-teal-500/40', soon: true },
   { key: 'athena', style: 'text-purple-400', selectedBg: 'bg-purple-500/10', selectedBorder: 'border-purple-500/40' },
   { key: 'custom', style: 'text-amber-400', selectedBg: 'bg-amber-500/10', selectedBorder: 'border-amber-500/40' },
 ];
@@ -149,13 +154,14 @@ function GuideChooseScreen({ selected, onSelect, onNext, onByok, testBetaEnabled
       <p className="text-sm mb-7 text-text-muted">Who walks with you through the ocean?</p>
 
       <div className="flex flex-col gap-3 w-full max-w-[340px] mb-8">
-        {visibleGuides.map(({ key, style, selectedBg, selectedBorder }) => {
+        {visibleGuides.map(({ key, style, selectedBg, selectedBorder, soon }) => {
           const g = GUIDES[key];
           const sel = selected === key;
           return (
-            <button key={key} onClick={() => onSelect(key)}
-              className={`flex items-center gap-4 p-4 rounded-xl text-left transition-all duration-200 hover:-translate-y-0.5 border ${
-                sel ? `${selectedBg} ${selectedBorder}` : 'bg-surface-1 border-border-muted'
+            <button key={key} onClick={() => { if (!soon) onSelect(key); }} disabled={soon}
+              className={`flex items-center gap-4 p-4 rounded-xl text-left transition-all duration-200 border ${
+                soon ? 'opacity-45 cursor-not-allowed bg-surface-1 border-border-muted'
+                     : `hover:-translate-y-0.5 ${sel ? `${selectedBg} ${selectedBorder}` : 'bg-surface-1 border-border-muted'}`
               }`}>
               <div className={`w-14 h-14 rounded-full flex items-center justify-center text-3xl shrink-0 border transition-all ${
                 sel ? `${selectedBorder} shadow-lg` : 'bg-surface-2 border-border-muted'
@@ -167,9 +173,18 @@ function GuideChooseScreen({ selected, onSelect, onNext, onByok, testBetaEnabled
                 <div className="text-[11px] uppercase tracking-wider text-text-muted mb-1">{g.role}</div>
                 <div className="text-xs text-text-muted leading-relaxed">{g.desc}</div>
               </div>
-              <div className={`w-5 h-5 rounded-full border-[1.5px] flex items-center justify-center text-[10px] shrink-0 ${
-                sel ? 'bg-shell-500 border-shell-500 text-white' : 'border-border-muted'
-              }`}>{sel ? '✓' : ''}</div>
+              {soon ? (
+                // Soft-launch pill — replaces the selection tick for gated
+                // guides so users see what's coming without being able to
+                // pick it. Mirrors the Login "Soon" affordance.
+                <span className="text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 bg-surface-2 border border-border-muted text-text-muted">
+                  Soon
+                </span>
+              ) : (
+                <div className={`w-5 h-5 rounded-full border-[1.5px] flex items-center justify-center text-[10px] shrink-0 ${
+                  sel ? 'bg-shell-500 border-shell-500 text-white' : 'border-border-muted'
+                }`}>{sel ? '✓' : ''}</div>
+              )}
             </button>
           );
         })}
@@ -512,7 +527,10 @@ function FinalScreen({ guide, selectedCause, selectedTier, onComplete }: {
   selectedTier: string | null;
   onComplete: () => void;
 }) {
-  const cause = selectedCause !== null ? CAUSES[selectedCause] : CAUSES[0];
+  // CAUSES is now typed as a readonly array (shape widened when the
+  // catalog moved to lib/causes.ts). Fall back to a default cause
+  // explicitly so downstream `.name` accesses stay non-null.
+  const cause = (selectedCause !== null ? CAUSES[selectedCause] : CAUSES[0]) ?? CAUSES[0]!;
 
   const SIGNUP_BONUS = 1000;
   const tierShells = selectedTier ? TIER_SHELLS_MAP[selectedTier] : 0;
@@ -778,7 +796,7 @@ export function Onboarding() {
   // (handleComplete navigates to /app/chat; handleSubscribe redirects to
   // Stripe Checkout instead).
   const finalizeOnboarding = async () => {
-    const cause = selectedCause !== null ? CAUSES[selectedCause].name : null;
+    const cause = selectedCause !== null ? (CAUSES[selectedCause]?.name ?? null) : null;
     const guideInfo = getGuideInfo();
 
     // Save all onboarding data

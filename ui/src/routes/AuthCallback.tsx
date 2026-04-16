@@ -25,8 +25,10 @@ export function AuthCallback() {
       .then((result) => {
         useServiceStore.getState().setOlympusGridConnected(result.user);
         setState('success');
-        const hasOnboarded = !!localStorage.getItem('turtleshell-onboarding');
-        const dest = hasOnboarded ? '/app/chat' : '/onboarding';
+        // Server-side truth — Apex reads TurtleshellProfile__c and sets
+        // onboardingComplete in the response. localStorage was unreliable
+        // across logout / new-device sign-ins.
+        const dest = result.onboardingComplete ? '/app/chat' : '/onboarding';
         const timer = setTimeout(() => navigate(dest, { replace: true }), 2000);
         return () => clearTimeout(timer);
       })
