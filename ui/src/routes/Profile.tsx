@@ -114,7 +114,19 @@ export function Profile() {
   useEffect(() => {
     async function fetchProfile() {
       try {
-        const username = localStorage.getItem('turtleshell_username');
+        // Fall back to email-derived username when the cached handle is
+        // missing (pre-onboarding-rewrite users, cleared storage, etc.).
+        // Same normalization Sidebar / iOS use — lowercase, alphanumerics
+        // + `_` `-`. Without this fallback Profile silently renders the
+        // empty shell for anyone whose `turtleshell_username` key was
+        // never written.
+        let username = localStorage.getItem('turtleshell_username') || '';
+        if (!username) {
+          const emailRaw = localStorage.getItem('olympus_grid_email') || '';
+          const local = emailRaw.split('@')[0] || '';
+          username = local.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+          if (username) localStorage.setItem('turtleshell_username', username);
+        }
         if (!username) { setLoading(false); return; }
         const data = await ogRequest('GET', `/turtleshell/profile/${username}`) as any;
         setProfile(data);

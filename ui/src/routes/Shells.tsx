@@ -94,7 +94,7 @@ function ShellRain({ tierName, shells, onDismiss }: { tierName: string; shells: 
           Welcome to {tierName}!
         </h2>
         <p className="text-lg text-text-secondary">
-          {shells ? `${formatNumber(shells)} Sea Shells loaded and ready.` : 'Unlimited Sea Shells loaded and ready.'}
+          {shells ? `${formatNumber(shells)} Sea Shells loaded and ready.` : '100,000 Sea Shells loaded and ready.'}
         </p>
         <p className="text-xs text-text-muted mt-4">Click anywhere to continue</p>
       </div>
@@ -133,7 +133,7 @@ function QuotaBar({ quota }: { quota: QuotaResponse }) {
           </span>
         )}
         {isUnlimited && (
-          <span className="text-sm text-text-secondary">Unlimited 🐚</span>
+          <span className="text-sm text-text-secondary">100,000 🐚</span>
         )}
       </div>
 
@@ -317,7 +317,7 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
             </h3>
             <p className="text-sm text-text-secondary mt-1">
               {isUnlimited
-                ? 'Unlimited Sea Shells/month'
+                ? '100,000 Sea Shells/month'
                 : `${formatNumber(shellsLimit as number)} Sea Shells/month`}
             </p>
           </div>
@@ -459,7 +459,7 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
             </p>
             <p className="text-xs text-text-muted mt-1">
               {isUnlimited
-                ? 'Unlimited Sea Shells — no refill needed'
+                ? '100,000 Sea Shells — refills monthly'
                 : `Refills to ${formatNumber(shellsLimit as number)} Sea Shells on renewal`}
             </p>
           </div>
@@ -952,7 +952,7 @@ export function Shells() {
             🎉 You're now on {effectiveTierData?.name ?? effectiveTier} —{' '}
             {effectiveTierData?.shells
               ? `${formatNumber(effectiveTierData.shells)} Sea Shells loaded and ready.`
-              : 'Unlimited Sea Shells loaded and ready.'}
+              : '100,000 Sea Shells loaded and ready.'}
           </p>
           <button
             onClick={() => setShowBanner(false)}
