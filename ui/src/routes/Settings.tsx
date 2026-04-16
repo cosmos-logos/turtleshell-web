@@ -51,6 +51,14 @@ function AgentThemeSelector() {
   );
 }
 
+/**
+ * Settings — minimal MVP surface. Three top-level toggles ordered
+ * Appearance → Memory → Developer. Everything else (beta features,
+ * agent avatars, agent theme, future dev tools) lives *inside* the
+ * Developer section, revealed only when Developer Mode is ON. The
+ * Developer Mode toggle itself stays at the top of that panel so it
+ * never vanishes when the rest expands.
+ */
 export function Settings() {
   const { developerMode, setDeveloperMode, testBetaEnabled, setTestBetaEnabled } = useEnvironmentStore();
 
@@ -68,7 +76,7 @@ export function Settings() {
           </p>
         </div>
 
-        {/* Appearance */}
+        {/* Appearance — Dark Mode toggle only. First visible knob. */}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
             {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />} Appearance
@@ -86,60 +94,7 @@ export function Settings() {
           </div>
         </section>
 
-        {/* Chat Display — agent avatars + theme selector are advanced knobs.
-            Revealed only when Developer Mode is ON so regular signups see a
-            very simple Settings page (Dark / Dev / Beta / Memory only). */}
-        {developerMode && (
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-              💬 Chat
-            </h2>
-            <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-semibold">Agent Avatars</div>
-                  <div className="text-2xs text-text-muted mt-0.5">
-                    Show agent emoji next to messages in chat
-                  </div>
-                </div>
-                <Toggle on={showAgentAvatars} onToggle={() => setShowAgentAvatars(!showAgentAvatars)} />
-              </div>
-              {showAgentAvatars && <AgentThemeSelector />}
-            </div>
-          </section>
-        )}
-
-        {/* Developer Mode + Test Beta Features */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-            <Wrench size={14} /> Developer
-          </h2>
-          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold">Developer Mode</div>
-                <div className="text-2xs text-text-muted mt-0.5">
-                  Debug info and developer tools.
-                </div>
-              </div>
-              <Toggle on={developerMode} onToggle={() => setDeveloperMode(!developerMode)} />
-            </div>
-            {/* Test Beta lives inside Developer Mode — only visible to devs. */}
-            {developerMode && (
-              <div className="flex items-center justify-between gap-3 pt-3 border-t border-border-muted">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold">Test Beta Features</div>
-                  <div className="text-2xs text-text-muted mt-0.5">
-                    Show the full UI.
-                  </div>
-                </div>
-                <Toggle on={testBetaEnabled} onToggle={() => setTestBetaEnabled(!testBetaEnabled)} />
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Memory */}
+        {/* Memory — second top-level knob. */}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
             <Brain size={14} /> Memory
@@ -162,7 +117,61 @@ export function Settings() {
           </div>
         </section>
 
-        {/* About */}
+        {/* Developer — last top-level section. The Developer Mode toggle
+            is the anchor at the top of this panel. When it's ON, every
+            other advanced knob (Test Beta, Agent Avatars, Agent Theme,
+            future dev tools) reveals *below* the toggle, never above. */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+            <Wrench size={14} /> Developer
+          </h2>
+          <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
+            {/* Toggle stays pinned at the top of the panel. */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold">Developer Mode</div>
+                <div className="text-2xs text-text-muted mt-0.5">
+                  Debug info and developer tools.
+                </div>
+              </div>
+              <Toggle on={developerMode} onToggle={() => setDeveloperMode(!developerMode)} />
+            </div>
+
+            {developerMode && (
+              <>
+                {/* Test Beta Features — early-access advanced UI. */}
+                <div className="flex items-center justify-between gap-3 pt-3 border-t border-border-muted">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold">Test Beta Features</div>
+                    <div className="text-2xs text-text-muted mt-0.5">
+                      Show the full UI.
+                    </div>
+                  </div>
+                  <Toggle on={testBetaEnabled} onToggle={() => setTestBetaEnabled(!testBetaEnabled)} />
+                </div>
+
+                {/* Agent Avatars — controls chat + sidebar avatar rendering.
+                    Previously lived in its own "Chat" section; moved here
+                    because it's a power-user knob that only makes sense
+                    once Developer Mode reveals the theme system. */}
+                <div className="pt-3 border-t border-border-muted">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-semibold">Agent Avatars</div>
+                      <div className="text-2xs text-text-muted mt-0.5">
+                        Show agent emoji next to messages in chat
+                      </div>
+                    </div>
+                    <Toggle on={showAgentAvatars} onToggle={() => setShowAgentAvatars(!showAgentAvatars)} />
+                  </div>
+                  {showAgentAvatars && <AgentThemeSelector />}
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+
+        {/* About — version, platform, license inline (never hidden). */}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
             <Info size={14} /> About
