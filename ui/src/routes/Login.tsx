@@ -4,6 +4,7 @@ import { Loader2, Mail, ArrowLeft } from 'lucide-react';
 import { requestMagicLink, verifyCode, signInWithApple } from '@/lib/api/olympus-grid-client';
 import { useServiceStore } from '@/lib/store/service-store';
 import { signInWithApple as appleSDKSignIn, isAppleSignInSupported } from '@/lib/auth/apple-signin';
+import { restoreGuideAgentFromProfile } from '@/lib/apply-guide-agent';
 
 type Step = 'methods' | 'email' | 'waitlist' | 'signin-email' | 'code' | 'success';
 
@@ -67,6 +68,13 @@ export function Login() {
       // logging out or signing in on a new device would clear it and
       // send the user through onboarding a second time.
       const dest = result.onboardingComplete ? '/app/chat' : '/onboarding';
+      // Returning user: restore their saved guide-agent visibility before
+      // navigating. Without this, a new device / cleared browser loses the
+      // zustand-persisted hiddenAgentIds and shows every builtin agent —
+      // including the two the user explicitly didn't choose.
+      if (result.onboardingComplete && result.user?.email) {
+        void restoreGuideAgentFromProfile(result.user.email);
+      }
       setTimeout(() => navigate(dest, { replace: true }), 800);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Verification failed');
@@ -102,6 +110,10 @@ export function Login() {
       }
       setStep('success');
       const dest = result.onboardingComplete ? '/app/chat' : '/onboarding';
+      // Returning user: restore saved guide-agent visibility (see handleVerify).
+      if (result.onboardingComplete && result.user?.email) {
+        void restoreGuideAgentFromProfile(result.user.email);
+      }
       setTimeout(() => navigate(dest, { replace: true }), 600);
     } catch (e) {
       // Common Apple errors: popup_closed_by_user, popup_blocked_by_browser

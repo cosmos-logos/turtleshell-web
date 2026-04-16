@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { verifyCode } from '@/lib/api/olympus-grid-client';
 import { useServiceStore } from '@/lib/store/service-store';
+import { restoreGuideAgentFromProfile } from '@/lib/apply-guide-agent';
 
 type CallbackState = 'processing' | 'success' | 'error';
 
@@ -29,6 +30,11 @@ export function AuthCallback() {
         // onboardingComplete in the response. localStorage was unreliable
         // across logout / new-device sign-ins.
         const dest = result.onboardingComplete ? '/app/chat' : '/onboarding';
+        // Returning user: restore saved guide-agent visibility before
+        // navigating. See lib/apply-guide-agent.ts for rationale.
+        if (result.onboardingComplete && result.user?.email) {
+          void restoreGuideAgentFromProfile(result.user.email);
+        }
         const timer = setTimeout(() => navigate(dest, { replace: true }), 2000);
         return () => clearTimeout(timer);
       })
