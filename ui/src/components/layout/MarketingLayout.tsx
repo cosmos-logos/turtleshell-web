@@ -137,7 +137,8 @@ export function MarketingLayout() {
             <Link to="/terms" onClick={scrollToTop} className={footerLinkClass}>Terms</Link>
             <Link to="/privacy" onClick={scrollToTop} className={footerLinkClass}>Privacy</Link>
             <Link to="/security" onClick={scrollToTop} className={footerLinkClass}>Security</Link>
-            <a href="https://github.com/olympus-616/foundation" target="_blank" rel="noopener noreferrer" className={footerLinkClass}>GitHub</a>
+            <a href="https://github.com/olympus-616/foundation" target="_blank" rel="noopener noreferrer" className={footerLinkClass}>Foundation</a>
+            <a href="https://github.com/cosmos-logos" target="_blank" rel="noopener noreferrer" className={footerLinkClass}>Source</a>
           </div>
         </div>
       </footer>

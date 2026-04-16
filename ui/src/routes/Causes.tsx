@@ -459,6 +459,34 @@ function Transparency() {
           Join the Olympus Foundation Community
         </Link>
       </div>
+
+      {/* Soft, honest footnote: the Foundation governance code and our
+          client surfaces are public repositories. People who want to
+          audit, contribute, or run their own node can follow the threads
+          directly. Intentionally muted — this is transparency as a fact,
+          not a marketing CTA. */}
+      <p className="text-center max-w-[720px] mx-auto mt-10 text-2xs text-text-muted/70 font-light leading-loose">
+        Built in the open. The Foundation&rsquo;s governance source lives at{' '}
+        <a
+          href="https://github.com/olympus-616/foundation"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-shell-400/80 hover:text-shell-400 underline underline-offset-2 decoration-shell-400/30 hover:decoration-shell-400"
+        >
+          github.com/olympus-616/foundation
+        </a>
+        . Learn more about how we&rsquo;re sharing our client solutions —{' '}
+        TurtleShell web, iOS, off-grid — at{' '}
+        <a
+          href="https://github.com/cosmos-logos"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-shell-400/80 hover:text-shell-400 underline underline-offset-2 decoration-shell-400/30 hover:decoration-shell-400"
+        >
+          github.com/cosmos-logos
+        </a>
+        .
+      </p>
     </section>
   );
 }
