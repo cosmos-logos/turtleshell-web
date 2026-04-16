@@ -122,8 +122,43 @@ export function AgentPicker({ compact }: AgentPickerProps) {
     setOpen(false);
   };
 
+  // Soft-launch lock: when only one agent is available (Athena during
+  // soft-launch), there's nothing to pick — render a static pill instead
+  // of a dropdown. No chevron, no click, no portal. Flip automatically
+  // back to the dropdown the moment a second agent becomes visible.
+  const totalAvailable = allBuiltinAgents.length + cosmosAgents.length;
+  const locked = totalAvailable <= 1;
+
   if (compact) {
     const compactColor = activeCosmosAgent?.manifest.display?.color ?? '#6366f1';
+
+    if (locked) {
+      // Locked pill still tappable — clicking it navigates to the chat
+      // route (home). This is how the user exits Settings / any other
+      // non-chat route now that the standalone turtle logo is gone.
+      return (
+        <button
+          onClick={() => navigate('/app/chat')}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-2 hover:bg-surface-3 transition-colors"
+          title="Home"
+        >
+          {activeCosmosAgent ? (
+            <span
+              className="w-5 h-5 rounded flex items-center justify-center text-sm flex-shrink-0"
+              style={{ backgroundColor: `${compactColor}25`, color: compactColor }}
+            >
+              {resolveEmoji(activeCosmosAgent.manifest.identity.codename, agentTheme) || agentDisplayName(activeCosmosAgent).charAt(0)}
+            </span>
+          ) : (
+            <span className="text-base leading-none">{activeAgent.icon}</span>
+          )}
+          <span className="text-sm font-semibold text-text-primary">
+            {activeCosmosAgent ? agentDisplayName(activeCosmosAgent) : activeAgent.name}
+          </span>
+        </button>
+      );
+    }
+
     return (
       <div ref={containerRef} className="relative">
         <button
@@ -210,6 +245,41 @@ export function AgentPicker({ compact }: AgentPickerProps) {
 
   // Desktop: inline in header
   const desktopColor = activeCosmosAgent?.manifest.display?.color ?? '#6366f1';
+
+  if (locked) {
+    // Soft-launch: single-agent pill, no dropdown — but still tappable.
+    // Clicking navigates to the chat route so the pill doubles as the
+    // "home" affordance (replacing the turtle logo that used to do this).
+    return (
+      <button
+        onClick={() => navigate('/app/chat')}
+        className="flex items-center gap-2 hover:bg-surface-2 rounded-lg px-2 py-1.5 transition-colors"
+        title="Home"
+      >
+        {activeCosmosAgent ? (
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
+            style={{ backgroundColor: `${desktopColor}25`, color: desktopColor }}
+          >
+            {resolveEmoji(activeCosmosAgent.manifest.identity.codename, agentTheme) || agentDisplayName(activeCosmosAgent).charAt(0)}
+          </div>
+        ) : (
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-xs flex-shrink-0">
+            {activeAgent.icon}
+          </div>
+        )}
+        <div className="text-left">
+          <div className="text-sm font-semibold leading-tight">
+            {activeCosmosAgent ? agentDisplayName(activeCosmosAgent) : activeAgent.name}
+          </div>
+          <div className="text-2xs text-text-muted">
+            {activeCosmosAgent ? activeCosmosAgent.manifest.identity.purpose : activeAgent.description}
+          </div>
+        </div>
+      </button>
+    );
+  }
+
   return (
     <div ref={containerRef} className="relative">
       <button

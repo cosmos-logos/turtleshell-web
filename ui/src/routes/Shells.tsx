@@ -3,76 +3,31 @@ import { useSearchParams } from 'react-router-dom';
 import { ExternalLink, ShieldCheck, ChevronDown } from 'lucide-react';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
 import { getShellId } from '@/lib/api/olympus-grid-client';
+import { PAID_TIERS } from '@/lib/tiers';
 
-const TIER_PRICES: Record<string, string> = {
-  beachcomber: '$4.99',
-  tide: '$14.99',
-  reef: '$39.99',
-  abyss: '$99.99',
-};
+// Shells.tsx is the authenticated upgrade / plan-change surface.
+// Tiers are the canonical paid set from lib/tiers.ts (the same source
+// consumed by the public Landing pricing grid and iOS onboarding) so
+// copy + shell counts can never drift between surfaces. The local
+// shape here (`TIERS`, `TIER_PRICES`) preserves the names this file
+// has used historically to minimize touch-points — the source is
+// centralized, the render code is unchanged.
 
-const TIERS = [
-  {
-    id: 'beachcomber',
-    name: 'Beachcomber',
-    price: '$4.99',
-    period: '/mo',
-    shells: 500,
-    description: 'For personal use and light exploration.',
-    features: [
-      '500 Sea Shells/month',
-      'Refills monthly',
-      'Buy more anytime',
-      'Basic tool access',
-    ],
-    highlight: false,
-  },
-  {
-    id: 'tide',
-    name: 'Tide',
-    price: '$14.99',
-    period: '/mo',
-    shells: 2000,
-    description: 'For power users who live in the shell.',
-    features: [
-      '2,000 Sea Shells/month',
-      'Refills monthly',
-      'Full tool suite',
-      'Priority response',
-    ],
-    highlight: false,
-  },
-  {
-    id: 'reef',
-    name: 'Reef',
-    price: '$39.99',
-    period: '/mo',
-    shells: 10000,
-    description: 'For professionals and small teams.',
-    features: [
-      '10,000 Sea Shells/month',
-      'Refills monthly',
-      'Workflow automation',
-      'Advanced RAG',
-    ],
-    highlight: true,
-  },
-  {
-    id: 'abyss',
-    name: 'Abyss',
-    price: '$99.99',
-    period: '/mo',
-    shells: null,
-    description: 'Unlimited. For those who go deep.',
-    features: [
-      'Unlimited Sea Shells',
-      'Everything in Reef',
-      'Early access features',
-      'Direct support',
-    ],
-    highlight: false,
-  },
-];
+const TIER_PRICES: Record<string, string> = Object.fromEntries(
+  PAID_TIERS.map((t) => [t.slug, t.priceLabel]),
+);
+
+const TIERS = PAID_TIERS.map((t) => ({
+  id: t.slug,
+  name: t.name,
+  price: t.priceLabel,
+  period: '/mo',
+  /** Monthly allowance. Abyss is no longer "Unlimited" — it's 100,000. */
+  shells: t.monthlyShells,
+  description: t.tagline,
+  features: t.features,
+  highlight: t.badge === 'popular',
+}));
 
 function formatNumber(n: number): string {
   return n.toLocaleString();
@@ -759,11 +714,11 @@ function ShellsFaq() {
                           </tr>
                         </thead>
                         <tbody className="text-text-secondary">
-                          <tr className="border-b border-border-muted/50"><td className="py-2 pr-4">Free</td><td className="py-2 pr-4">500 (one-time)</td><td className="py-2">Free</td></tr>
+                          <tr className="border-b border-border-muted/50"><td className="py-2 pr-4">Free Forever</td><td className="py-2 pr-4">Free, forever</td><td className="py-2">$0</td></tr>
                           <tr className="border-b border-border-muted/50"><td className="py-2 pr-4">Beachcomber</td><td className="py-2 pr-4">500</td><td className="py-2">$4.99/mo</td></tr>
                           <tr className="border-b border-border-muted/50"><td className="py-2 pr-4">Tide</td><td className="py-2 pr-4">2,000</td><td className="py-2">$14.99/mo</td></tr>
                           <tr className="border-b border-border-muted/50"><td className="py-2 pr-4">Reef</td><td className="py-2 pr-4">10,000</td><td className="py-2">$39.99/mo</td></tr>
-                          <tr><td className="py-2 pr-4">Abyss</td><td className="py-2 pr-4">Unlimited</td><td className="py-2">$99.99/mo</td></tr>
+                          <tr><td className="py-2 pr-4">Abyss</td><td className="py-2 pr-4">100,000</td><td className="py-2">$99.99/mo</td></tr>
                         </tbody>
                       </table>
                     </>

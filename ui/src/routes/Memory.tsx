@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { useActiveAgentScope } from '@/lib/agent-scope';
+import { useTestBetaEnabled } from '@/lib/beta';
 
 type MemoryScope = 'tenant' | 'shell' | 'agent' | 'agent-tenant' | 'agent-shell';
 type MemoryCategory = 'identity' | 'preference' | 'project' | 'relationship' | 'knowledge' | 'system';
@@ -66,6 +67,13 @@ export function Memory() {
   const [editValue, setEditValue] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
   const scope = useActiveAgentScope();
+  // Beta-gated "control panel" surfaces — scope filter, category filter,
+  // search, show-inactive toggle, per-row scope/category/confidence
+  // badges, and the dev metadata row. MVP users see a simple "here are
+  // your memories with {agent}" view; edit + forget stay visible in
+  // both modes since they're how a normal user corrects or clears
+  // something they shouldn't have shared.
+  const testBetaEnabled = useTestBetaEnabled();
 
   // Same JWT-from-localStorage pattern as olympus-grid-client.ts. Used by every
   // mutating call so cross-origin requests carry identity without relying on cookies.
@@ -194,8 +202,14 @@ export function Memory() {
   // belongs to the active scope. Server should already filter, but we hedge.
   const scopedMemories = memories.filter((m) => scope.matches(m.agentId));
 
-  // Filter memories
+  // Filter memories. In beta mode the user drives scope/category/search.
+  // In MVP mode we always show active memories scoped to the active
+  // agent, no other knobs.
   const filtered = scopedMemories.filter(m => {
+    if (!testBetaEnabled) {
+      return m.active === true;
+    }
+    if (!showInactive && m.active === false) return false;
     if (scopeFilter !== 'all' && m.scope !== scopeFilter) return false;
     if (categoryFilter !== 'all' && m.category !== categoryFilter) return false;
     if (searchQuery) {
@@ -224,64 +238,72 @@ export function Memory() {
           </div>
         </div>
 
-        {/* Filter bar */}
-        <div className="flex flex-wrap items-center gap-3 mb-6 p-4 bg-surface-1 rounded-xl border border-border-muted">
-          {/* Scope filter */}
-          <div className="flex items-center gap-2">
-            <Filter size={14} className="text-text-muted" />
-            <select
-              value={scopeFilter}
-              onChange={e => setScopeFilter(e.target.value as any)}
-              className="bg-surface-2 border border-border-muted rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-shell-400"
-            >
-              <option value="all">All Scopes</option>
-              {ALL_SCOPES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
+        {/* Filter bar + stats — dev / power-user surface. Beta flag off =
+            MVP mode; users see a clean "here are your memories" view
+            without scope, category, search, or inactive-visibility
+            knobs. Flip beta on in Settings to unlock the full control
+            panel. */}
+        {testBetaEnabled && (
+          <>
+            <div className="flex flex-wrap items-center gap-3 mb-6 p-4 bg-surface-1 rounded-xl border border-border-muted">
+              {/* Scope filter */}
+              <div className="flex items-center gap-2">
+                <Filter size={14} className="text-text-muted" />
+                <select
+                  value={scopeFilter}
+                  onChange={e => setScopeFilter(e.target.value as any)}
+                  className="bg-surface-2 border border-border-muted rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-shell-400"
+                >
+                  <option value="all">All Scopes</option>
+                  {ALL_SCOPES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
 
-          {/* Category filter */}
-          <select
-            value={categoryFilter}
-            onChange={e => setCategoryFilter(e.target.value as any)}
-            className="bg-surface-2 border border-border-muted rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-shell-400"
-          >
-            <option value="all">All Categories</option>
-            {ALL_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+              {/* Category filter */}
+              <select
+                value={categoryFilter}
+                onChange={e => setCategoryFilter(e.target.value as any)}
+                className="bg-surface-2 border border-border-muted rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-shell-400"
+              >
+                <option value="all">All Categories</option>
+                {ALL_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
 
-          {/* Search */}
-          <div className="relative flex-1 min-w-[200px]">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-            <input
-              type="text"
-              placeholder="Search memories..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full bg-surface-2 border border-border-muted rounded-lg pl-9 pr-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-shell-400"
-            />
-          </div>
+              {/* Search */}
+              <div className="relative flex-1 min-w-[200px]">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                <input
+                  type="text"
+                  placeholder="Search memories..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full bg-surface-2 border border-border-muted rounded-lg pl-9 pr-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-shell-400"
+                />
+              </div>
 
-          {/* Show inactive toggle */}
-          <button
-            onClick={() => setShowInactive(!showInactive)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-              showInactive
-                ? 'bg-surface-3 border-shell-400 text-shell-400'
-                : 'bg-surface-2 border-border-muted text-text-muted hover:text-text-primary'
-            }`}
-          >
-            {showInactive ? <Eye size={14} /> : <EyeOff size={14} />}
-            {showInactive ? 'Showing inactive' : 'Active only'}
-          </button>
-        </div>
+              {/* Show inactive toggle */}
+              <button
+                onClick={() => setShowInactive(!showInactive)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                  showInactive
+                    ? 'bg-surface-3 border-shell-400 text-shell-400'
+                    : 'bg-surface-2 border-border-muted text-text-muted hover:text-text-primary'
+                }`}
+              >
+                {showInactive ? <Eye size={14} /> : <EyeOff size={14} />}
+                {showInactive ? 'Showing inactive' : 'Active only'}
+              </button>
+            </div>
 
-        {/* Stats */}
-        <div className="flex items-center gap-4 mb-4 text-sm text-text-muted">
-          <span>{filtered.length} memor{filtered.length === 1 ? 'y' : 'ies'}</span>
-          {filtered.length !== scopedMemories.length && (
-            <span>({scopedMemories.length} total with {scope.displayName})</span>
-          )}
-        </div>
+            {/* Stats */}
+            <div className="flex items-center gap-4 mb-4 text-sm text-text-muted">
+              <span>{filtered.length} memor{filtered.length === 1 ? 'y' : 'ies'}</span>
+              {filtered.length !== scopedMemories.length && (
+                <span>({scopedMemories.length} total with {scope.displayName})</span>
+              )}
+            </div>
+          </>
+        )}
 
         {/* Loading */}
         {loading && (
@@ -331,23 +353,27 @@ export function Memory() {
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    {/* Badges row */}
-                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <span className={`px-2 py-0.5 rounded-full text-2xs font-medium ${SCOPE_COLORS[m.scope]}`}>
-                        {m.scope}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded-full text-2xs font-medium ${CATEGORY_COLORS[m.category]}`}>
-                        {m.category}
-                      </span>
-                      <span className="text-2xs text-text-muted">
-                        {Math.round(m.confidence * 100)}%
-                      </span>
-                      {!m.active && (
-                        <span className="px-2 py-0.5 rounded-full text-2xs font-medium bg-red-500/20 text-red-400">
-                          forgotten
+                    {/* Badges row — beta-only. Normal users don't need to
+                        reason about scope / category / confidence; they
+                        just want to see what the agent remembers. */}
+                    {testBetaEnabled && (
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className={`px-2 py-0.5 rounded-full text-2xs font-medium ${SCOPE_COLORS[m.scope]}`}>
+                          {m.scope}
                         </span>
-                      )}
-                    </div>
+                        <span className={`px-2 py-0.5 rounded-full text-2xs font-medium ${CATEGORY_COLORS[m.category]}`}>
+                          {m.category}
+                        </span>
+                        <span className="text-2xs text-text-muted">
+                          {Math.round(m.confidence * 100)}%
+                        </span>
+                        {!m.active && (
+                          <span className="px-2 py-0.5 rounded-full text-2xs font-medium bg-red-500/20 text-red-400">
+                            forgotten
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Key + Value */}
                     <div className="mb-1">
@@ -387,17 +413,22 @@ export function Memory() {
                       <p className="text-sm text-text-secondary break-words">{m.value}</p>
                     )}
 
-                    {/* Meta row */}
-                    <div className="flex flex-wrap items-center gap-3 mt-2 text-2xs text-text-muted">
-                      {m.agentId && <span>agent: {m.agentId}</span>}
-                      {m.shellId && <span>shell: {m.shellId}</span>}
-                      {m.tenantId && <span>tenant: {m.tenantId}</span>}
-                      {m.source && <span>source: {m.source.substring(0, 8)}...</span>}
-                      <span>{new Date(m.createdAt).toLocaleDateString()}</span>
-                    </div>
+                    {/* Meta row — dev-only. Raw identity / source / date
+                        info is useful for debugging memory routing but
+                        noise for a normal user. */}
+                    {testBetaEnabled && (
+                      <div className="flex flex-wrap items-center gap-3 mt-2 text-2xs text-text-muted">
+                        {m.agentId && <span>agent: {m.agentId}</span>}
+                        {m.shellId && <span>shell: {m.shellId}</span>}
+                        {m.tenantId && <span>tenant: {m.tenantId}</span>}
+                        {m.source && <span>source: {m.source.substring(0, 8)}...</span>}
+                        <span>{new Date(m.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    )}
 
-                    {/* Tags */}
-                    {m.tags && m.tags.length > 0 && (
+                    {/* Tags — beta-only; users haven't opted in to a
+                        tag vocabulary yet. */}
+                    {testBetaEnabled && m.tags && m.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2">
                         {m.tags.map((tag, i) => (
                           <span key={i} className="px-1.5 py-0.5 rounded text-2xs bg-surface-3 text-text-muted">

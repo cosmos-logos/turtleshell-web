@@ -71,9 +71,15 @@
   }
 
   .message-bubble {
-    @apply rounded-lg px-4 py-3 max-w-[85%] animate-fade-in;
+    @apply rounded-lg px-4 py-3 animate-fade-in;
+    /* Width is constrained by the parent column wrapper (w-fit +
+       max-w-[85%]) in Chat.tsx — stacking another `max-w-[85%]` here
+       meant the bubble capped at 85%-of-85% (~72% of the row) and
+       short messages wrapped unnecessarily.
+       overflow-wrap: break-word still breaks truly overflowing tokens
+       (long URLs, giant words) without forcing arbitrary mid-word
+       breaks on normal text. */
     overflow-wrap: break-word;
-    word-break: break-word;
   }
 
   .message-bubble-user {
@@ -135,4 +141,42 @@
 @keyframes ocean-fade-in {
   0% { opacity: 0; transform: translateY(12px); }
   100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Concentric pulse ring for the Olympus-Grid diagram on Landing.
+   Three rings overlap at different delays to feel alive. */
+@keyframes olympus-pulse {
+  0%   { opacity: 1; transform: translate(-50%, -50%) scale(0.8); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* Hero-section fade-up with staggered delays via .landing-fade-*. */
+@keyframes landing-fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.landing-fade { animation: landing-fade-up 0.8s ease-out forwards; opacity: 0; }
+.landing-fade-1 { animation-delay: 0.10s; }
+.landing-fade-2 { animation-delay: 0.30s; }
+.landing-fade-3 { animation-delay: 0.50s; }
+.landing-fade-4 { animation-delay: 0.70s; }
+
+/* Infinite cause-spinner marquee on the landing Tithe section. The
+   cards are rendered twice in the DOM and the strip translates from
+   0% to -50% so the second copy lines up seamlessly with the first.
+   `animation-play-state: paused` on hover so users can read the card
+   that's under their cursor. Respects prefers-reduced-motion. */
+@keyframes cause-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.cause-marquee {
+  animation: cause-scroll 42s linear infinite;
+  width: max-content;
+}
+.cause-marquee-wrap:hover .cause-marquee {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cause-marquee { animation: none; transform: translateX(0); }
 }

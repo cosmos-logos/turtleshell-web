@@ -35,6 +35,11 @@ export function App() {
       <Route element={<MarketingLayout />}>
         <Route path="/" element={<Landing />} />
         <Route path="/offgrid" element={<OffGrid />} />
+        {/* Public Learn — same content as /app/docs but mounted under
+            the marketing layout so unauthenticated visitors can read
+            the full guide. `basePath` prop keeps all internal
+            BackLinks pointed at /learn instead of /app/docs. */}
+        <Route path="/learn/*" element={<Docs basePath="/learn" />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/security" element={<Security />} />

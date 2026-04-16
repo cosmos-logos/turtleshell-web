@@ -44,13 +44,16 @@ export function MarketingLayout() {
             </span>
           </Link>
 
-          {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-8">
-            <a href="/#features" className={navLinkClass}>Features</a>
-            <a href="/#services" className={navLinkClass}>Services</a>
-            <a href="/#pricing" className={navLinkClass}>Pricing</a>
+          {/* Desktop nav — aligned with the new Landing narrative:
+              Mission · Plans · Olympus-Grid · Off-Grid · Learn · Terms
+              · Privacy · Security. Features + Services + Support were
+              folded into the Olympus-Grid and Mission sections. */}
+          <div className="hidden md:flex items-center gap-7">
+            <a href="/#mission" className={navLinkClass}>Mission</a>
+            <a href="/#pricing" className={navLinkClass}>Plans</a>
+            <a href="/#olympus" className={navLinkClass}>Olympus-Grid</a>
             <Link to="/offgrid" onClick={scrollToTop} className={navLinkClass}>Off-Grid</Link>
-            <a href="/#support" className={navLinkClass}>Support</a>
+            <Link to="/learn" onClick={scrollToTop} className={navLinkClass}>Learn</Link>
             <Link to="/terms" onClick={scrollToTop} className={navLinkClass}>Terms</Link>
             <Link to="/privacy" onClick={scrollToTop} className={navLinkClass}>Privacy</Link>
             <Link to="/security" onClick={scrollToTop} className={navLinkClass}>Security</Link>
@@ -98,11 +101,11 @@ export function MarketingLayout() {
         {menuOpen && (
           <div className="md:hidden border-t border-border-muted bg-surface-0/95 backdrop-blur-xl">
             <div className="py-2">
-              <a href="/#features" onClick={closeMenu} className={mobileLinkClass}>Features</a>
-              <a href="/#services" onClick={closeMenu} className={mobileLinkClass}>Services</a>
-              <a href="/#pricing" onClick={closeMenu} className={mobileLinkClass}>Pricing</a>
+              <a href="/#mission" onClick={closeMenu} className={mobileLinkClass}>Mission</a>
+              <a href="/#pricing" onClick={closeMenu} className={mobileLinkClass}>Plans</a>
+              <a href="/#olympus" onClick={closeMenu} className={mobileLinkClass}>Olympus-Grid</a>
               <Link to="/offgrid" onClick={() => { scrollToTop(); closeMenu(); }} className={mobileLinkClass}>Off-Grid</Link>
-              <a href="/#support" onClick={closeMenu} className={mobileLinkClass}>Support</a>
+              <Link to="/learn" onClick={() => { scrollToTop(); closeMenu(); }} className={mobileLinkClass}>Learn</Link>
               <Link to="/terms" onClick={() => { scrollToTop(); closeMenu(); }} className={mobileLinkClass}>Terms</Link>
               <Link to="/privacy" onClick={() => { scrollToTop(); closeMenu(); }} className={mobileLinkClass}>Privacy</Link>
               <Link to="/security" onClick={() => { scrollToTop(); closeMenu(); }} className={mobileLinkClass}>Security</Link>
@@ -123,11 +126,11 @@ export function MarketingLayout() {
             &copy; 2026 CloudPremise LLC. All rights reserved.
           </p>
           <div className="flex flex-wrap justify-center items-center gap-x-6 gap-y-2">
-            <a href="/#features" className={footerLinkClass}>Features</a>
-            <a href="/#services" className={footerLinkClass}>Services</a>
-            <a href="/#pricing" className={footerLinkClass}>Pricing</a>
+            <a href="/#mission" className={footerLinkClass}>Mission</a>
+            <a href="/#pricing" className={footerLinkClass}>Plans</a>
+            <a href="/#olympus" className={footerLinkClass}>Olympus-Grid</a>
             <Link to="/offgrid" onClick={scrollToTop} className={footerLinkClass}>Off-Grid</Link>
-            <a href="/#support" className={footerLinkClass}>Support</a>
+            <Link to="/learn" onClick={scrollToTop} className={footerLinkClass}>Learn</Link>
             <Link to="/terms" onClick={scrollToTop} className={footerLinkClass}>Terms</Link>
             <Link to="/privacy" onClick={scrollToTop} className={footerLinkClass}>Privacy</Link>
             <Link to="/security" onClick={scrollToTop} className={footerLinkClass}>Security</Link>
