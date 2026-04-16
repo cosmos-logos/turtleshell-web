@@ -4,6 +4,7 @@ import { useChatStore } from '@/lib/store/chat-store';
 import { useThemeStore } from '@/lib/store/theme-store';
 import { useAgentThemeStore, type AgentTheme } from '@/lib/store/agent-theme-store';
 import { useChatPreferencesStore } from '@/lib/store/chat-preferences-store';
+import { useAllowDeveloperMode } from '@/lib/hooks/useAllowDeveloperMode';
 
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
@@ -61,6 +62,11 @@ function AgentThemeSelector() {
  */
 export function Settings() {
   const { developerMode, setDeveloperMode, testBetaEnabled, setTestBetaEnabled } = useEnvironmentStore();
+  // Server-gated: when TurtleshellProfile__c.AllowDeveloperMode__c is false,
+  // the entire Developer section is hidden and both local flags
+  // (developerMode, testBetaEnabled) are force-reverted. Null while the
+  // profile GET is in flight — treat as disabled to avoid flashing dev UI.
+  const allowDeveloperMode = useAllowDeveloperMode();
 
   const { theme, setTheme } = useThemeStore();
   const { memoryEnabled, setMemoryEnabled } = useChatStore();
@@ -120,7 +126,11 @@ export function Settings() {
         {/* Developer — last top-level section. The Developer Mode toggle
             is the anchor at the top of this panel. When it's ON, every
             other advanced knob (Test Beta, Agent Avatars, Agent Theme,
-            future dev tools) reveals *below* the toggle, never above. */}
+            future dev tools) reveals *below* the toggle, never above.
+            Entire section is server-gated on AllowDeveloperMode__c — the
+            admin can hide this surface for any user (App Store review
+            default). See useAllowDeveloperMode for the reconcile rules. */}
+        {allowDeveloperMode === true && (
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
             <Wrench size={14} /> Developer
@@ -170,6 +180,7 @@ export function Settings() {
             )}
           </div>
         </section>
+        )}
 
         {/* About — version, platform, license inline (never hidden). */}
         <section className="space-y-3">
