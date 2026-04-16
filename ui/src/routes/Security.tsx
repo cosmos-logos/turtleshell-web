@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+
 export function Security() {
   return (
     <div className="max-w-3xl mx-auto px-6 py-12">
@@ -5,6 +7,33 @@ export function Security() {
         <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-2">Security</h1>
         <p className="text-sm text-text-muted">Last Updated: February 6, 2026</p>
       </div>
+
+      {/* Prominent CTA to the long-form FAQ / white paper. Placed above
+          the summary so CISO / CIO readers who land on /security see the
+          deep-dive link before the high-level bullet points. */}
+      <aside className="mb-10 rounded-xl border border-shell-500/30 bg-shell-500/[0.04] p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-2xs uppercase tracking-[0.25em] text-shell-400 mb-1">
+              Technical Deep-Dive
+            </div>
+            <div className="text-base font-semibold text-text-primary">
+              Security Frequently Asked Questions
+            </div>
+            <p className="text-sm text-text-muted mt-1 leading-relaxed">
+              The full white paper: sovereign-node model, token lifecycle, data retention,
+              off-grid disclaimer, change management, outage &amp; vulnerability response,
+              and compliance posture. Written for CISOs, CIOs, and security architects.
+            </p>
+          </div>
+          <Link
+            to="/security-faq"
+            className="shrink-0 inline-flex items-center justify-center px-5 py-2.5 bg-shell-500 text-surface-0 text-xs font-semibold tracking-[0.08em] uppercase hover:opacity-90 transition-opacity rounded no-underline"
+          >
+            Read the FAQ →
+          </Link>
+        </div>
+      </aside>
 
       <article className="space-y-9">
         <section>
