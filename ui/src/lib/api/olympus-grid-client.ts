@@ -177,6 +177,18 @@ export async function verifyCode(
     localStorage.setItem('olympus_grid_shell_id', verified.user.sub);
   }
 
+  // Seed `turtleshell_username` so Profile + useAllowDeveloperMode can
+  // resolve the current handle without a round-trip. Onboarding / handle
+  // rename are the authoritative writers; this is a best-guess default
+  // derived the same way the server derives it at signup (lowercase
+  // email local-part, alphanumerics + `_` `-`). Only set when unset —
+  // don't clobber a handle a user already renamed to.
+  if (!localStorage.getItem('turtleshell_username')) {
+    const local = (verified.user.email || '').split('@')[0] || '';
+    const derived = local.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (derived) localStorage.setItem('turtleshell_username', derived);
+  }
+
   return verified;
 }
 
@@ -248,6 +260,12 @@ export async function signInWithApple(args: {
   if (verified.user?.email) localStorage.setItem('olympus_grid_email', verified.user.email);
   localStorage.setItem('olympus_grid_service_url', getGridBase());
   if (verified.user?.sub) localStorage.setItem('olympus_grid_shell_id', verified.user.sub);
+
+  if (!localStorage.getItem('turtleshell_username')) {
+    const local = (verified.user?.email || '').split('@')[0] || '';
+    const derived = local.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (derived) localStorage.setItem('turtleshell_username', derived);
+  }
 
   return verified;
 }

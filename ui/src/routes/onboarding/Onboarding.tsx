@@ -512,13 +512,12 @@ function TierScreen({ onSubscribe, onSkip, selectedTier, setSelectedTier, subscr
 
 // ── Screen: Enter the Ocean (final) ──────────────────
 // Tier → monthly shells (matches Plutus TIER_SHELLS — must stay in sync).
-// `null` = Abyss unlimited.
-const TIER_SHELLS_MAP: Record<string, number | null> = {
+const TIER_SHELLS_MAP: Record<string, number> = {
   free: 0,
   beachcomber: 500,
   tide: 2000,
   reef: 10000,
-  abyss: null,
+  abyss: 100000,
 };
 
 const TIER_LABELS: Record<string, string> = {
@@ -542,9 +541,8 @@ function FinalScreen({ guide, selectedCause, selectedTier, onComplete }: {
 
   const SIGNUP_BONUS = 1000;
   const tierShells = selectedTier ? TIER_SHELLS_MAP[selectedTier] : 0;
-  const isUnlimited = selectedTier === 'abyss';
-  const hasPaidTier = !!selectedTier && selectedTier !== 'free' && !isUnlimited;
-  const targetBalance = isUnlimited ? SIGNUP_BONUS : SIGNUP_BONUS + (tierShells ?? 0);
+  const hasPaidTier = !!selectedTier && selectedTier !== 'free';
+  const targetBalance = SIGNUP_BONUS + (tierShells ?? 0);
   const tierLabel = selectedTier ? (TIER_LABELS[selectedTier] ?? selectedTier) : null;
 
   // Three-phase choreography, matches the ShellsScreen → ShellRain patterns
@@ -557,7 +555,7 @@ function FinalScreen({ guide, selectedCause, selectedTier, onComplete }: {
   // For free/skipped path there's no upgrade to claim, so jump straight to
   // 'ready' with count = 1000.
   const [phase, setPhase] = useState<'granted' | 'rolling' | 'ready'>(
-    hasPaidTier || isUnlimited ? 'granted' : 'ready',
+    hasPaidTier ? 'granted' : 'ready',
   );
   const [count, setCount] = useState(SIGNUP_BONUS);
 
@@ -590,7 +588,7 @@ function FinalScreen({ guide, selectedCause, selectedTier, onComplete }: {
     [],
   );
 
-  const claimButtonLabel = isUnlimited
+  const claimButtonLabel = selectedTier === 'abyss'
     ? `Dive into the Abyss`
     : hasPaidTier
       ? `Claim my ${tierLabel} shells`
@@ -656,7 +654,7 @@ function FinalScreen({ guide, selectedCause, selectedTier, onComplete }: {
               : undefined,
         }}
       >
-        {isUnlimited ? '∞' : count.toLocaleString()}
+        {count.toLocaleString()}
       </div>
       <div className="relative z-10 text-xs tracking-[0.28em] uppercase mt-1 mb-2 text-text-muted">
         Sea Shells · {phase === 'granted' ? 'Signup Bonus' : phase === 'rolling' ? 'Loading your tier…' : 'Your Starting Balance'}

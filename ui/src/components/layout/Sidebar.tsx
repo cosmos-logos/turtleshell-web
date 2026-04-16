@@ -210,7 +210,7 @@ function SeaShellBadge({ expanded }: { expanded: boolean }) {
     label = expanded ? (shellsRemaining !== null ? `${shellsRemaining.toLocaleString()} shells` : 'Free tier') : (shellsRemaining !== null ? `${shellsRemaining.toLocaleString()}` : 'Free');
     colorClass = 'text-text-muted bg-surface-2 border-border-muted';
   } else if (isUnlimited) {
-    label = expanded ? 'Unlimited' : '∞';
+    label = expanded ? '100,000 shells' : '100K';
     colorClass = 'text-amber-400 bg-amber-500/10 border-amber-500/30';
   } else {
     label = expanded ? `${shellsRemaining!.toLocaleString()} shells` : `${shellsRemaining!.toLocaleString()}`;

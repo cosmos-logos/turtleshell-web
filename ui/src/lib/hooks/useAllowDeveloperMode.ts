@@ -35,7 +35,19 @@ export function useAllowDeveloperMode(): boolean | null {
         let cancelled = false;
         async function load() {
             try {
-                const username = localStorage.getItem('turtleshell_username');
+                // `turtleshell_username` is set at onboarding + on handle
+                // rename. Users who predate that write path (or cleared
+                // their storage) still need the dev-mode gate to resolve
+                // correctly, so fall back to the email local-part — same
+                // derivation the Sidebar and Profile page use, and the
+                // same one iOS applies before it stores the username
+                // server-side.
+                let username = localStorage.getItem('turtleshell_username') || '';
+                if (!username) {
+                    const email = localStorage.getItem('olympus_grid_email') || '';
+                    const local = email.split('@')[0] || '';
+                    username = local.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+                }
                 if (!username) {
                     if (!cancelled) setAllowed(false);
                     return;
