@@ -1,0 +1,72 @@
+# TurtleShell.ai
+# https://turtleshell.ai
+
+> Free AI to the World. Sovereign. Off-Grid. Powered by the Sun.
+
+TurtleShell.ai is a sovereign AI assistant built on Olympus-Grid (πλέγμα-Όλυμπος™). It is the flagship application proving that a globally-scaled consumer AI product can be built and deployed on sovereign infrastructure in weeks.
+
+## What is TurtleShell.ai?
+
+A multi-surface AI assistant available on iOS, web, and Salesforce. Users chat with Athena (the LLM router), connect enterprise tools via Poseidon (MCP), and maintain sovereign memory via Mnemosyne. Every action is metered, ledgered, and auditable.
+
+## Key Features
+
+- **Multi-LLM Chat**: Athena routes to OpenAI, Anthropic Claude, Google Gemini, xAI Grok, or local Ollama models
+- **MCP Tools**: Poseidon connects Salesforce, Google Calendar, Gmail, Drive, GitHub, HubSpot, and 50+ tools
+- **Agent Memory**: Mnemosyne provides episodic memory that persists across sessions
+- **Sea Shell Economy**: Metered billing via Stripe, Apple IAP, and Google Play
+- **Sovereign Identity**: Apple Sign In, Google, Microsoft, Email magic-link
+- **Off-Grid Ready**: Run the full stack on a Mac Mini in your backyard
+
+## Pricing Tiers
+
+- **Free**: 500 Sea Shells / month
+- **Beachcomber**: 500 Sea Shells / month — $4.99/mo
+- **Tide**: 2,000 Sea Shells / month — $14.99/mo
+- **Reef**: 10,000 Sea Shells / month — $39.99/mo
+- **Abyss**: 100,000 Sea Shells / month — $99.99/mo
+- **Enterprise**: Custom deployment
+
+Every plan tithes 7% to the user's chosen cause via the Olympus Foundation.
+
+## Causes (7 Pillars)
+
+Users choose a cause at signup. 7% of every transaction is donated:
+1. Clean Energy
+2. Clean Water
+3. Education Access
+4. Ocean Health
+5. Sovereign Tech
+6. Food Security
+7. AI for All
+
+## Built On
+
+- **Olympus-Grid**: Enterprise AI infrastructure (πλέγμα-Όλυμπος™)
+- **Olympus-616**: 31-agent sovereign mesh
+- **Cosmos-Logos**: Open agent discovery protocol
+- **Salesforce AppExchange**: Certified managed package
+- **AWS**: Fargate container fleet, CloudFront CDN, ECS
+
+## Surfaces
+
+- **Web**: https://turtleshell.ai (Netlify)
+- **iOS**: TurtleShell.ai on the App Store
+- **Salesforce**: Iris Portal embedded in Experience Cloud
+- **Off-Grid**: TurtleShell Off-Grid appliance (launching July 17, 2026)
+
+## Links
+
+- App: https://turtleshell.ai
+- Olympus-Grid: https://www.olympus-grid.com
+- AppExchange: https://appexchange.salesforce.com/appxListingDetail?listingId=aadbbe80-2d4e-42bc-84bd-348ade18a00a
+- Open Source: https://github.com/cosmos-logos
+- Security: https://www.olympus-grid.com/security
+- Privacy: https://www.olympus-grid.com/privacy
+- Terms: https://www.olympus-grid.com/terms
+
+## Contact
+
+- General: hello@turtleshell.ai
+- Security: security@olympus-grid.com
+- Privacy: privacy@olympus-grid.com

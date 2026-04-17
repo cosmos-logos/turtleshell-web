@@ -1,0 +1,23 @@
+User-agent: *
+Allow: /
+Disallow: /app/
+Disallow: /onboarding
+Disallow: /auth/
+
+Sitemap: https://turtleshell.ai/sitemap.xml
+
+# AI / LLM crawlers
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
