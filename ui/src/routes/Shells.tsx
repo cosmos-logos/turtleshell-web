@@ -382,7 +382,7 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
               </p>
               <button
                 onClick={handleResume}
-                disabled={resumeLoading}
+                disabled={isAppleSubscriber || resumeLoading}
                 className="px-5 py-2.5 rounded-lg text-sm font-semibold bg-shell-400 text-black hover:bg-shell-300 transition-colors disabled:opacity-50 w-full sm:w-auto"
               >
                 {resumeLoading ? 'Resuming...' : `Resume ${quota.tier.charAt(0).toUpperCase() + quota.tier.slice(1)} Subscription`}
@@ -480,7 +480,7 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
           </div>
         ) : null}
 
-        {!isCancelling && (
+        {!isCancelling && !isAppleSubscriber && (
           <button
             onClick={openPortal}
             disabled={portalLoading}
