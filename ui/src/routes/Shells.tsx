@@ -186,6 +186,8 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
   const [resumeLoading, setResumeLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const isAppleSubscriber = quota.payment_provider === 'apple';
+
   const shellsLimit = quota.shells_limit;
   const price = TIER_PRICES[quota.tier] ?? '';
   const isUnlimited = shellsLimit === null;
@@ -309,6 +311,19 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
 
   return (
     <div className="space-y-6">
+      {isAppleSubscriber && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
+          <span className="text-xl shrink-0"></span>
+          <div>
+            <p className="text-sm font-semibold text-text-primary">Subscription managed by the App Store</p>
+            <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
+              Your plan was purchased through Apple. To upgrade, downgrade, or cancel, open
+              TurtleShell.ai on your iPhone and manage your subscription from there — or go
+              to Settings → Subscriptions on your device.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="bg-surface-2 rounded-xl border border-border-muted p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -534,7 +549,7 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
 
                 <button
                   onClick={() => handleChangePlan(tier.id)}
-                  disabled={(isCurrent && !isCancelled) || changingTo !== null}
+                  disabled={isAppleSubscriber || (isCurrent && !isCancelled) || changingTo !== null}
                   className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${
                     isCurrent && !isCancelled
                       ? 'bg-surface-3 text-text-muted cursor-default'

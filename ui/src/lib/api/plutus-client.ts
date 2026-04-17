@@ -12,6 +12,7 @@ export interface QuotaResponse {
   current_period_end?: string;
   shells_remaining: number | null;
   shells_limit: number | null;
+  payment_provider?: 'stripe' | 'apple' | null;
 }
 
 function getBaseUrl(): string {
