@@ -560,17 +560,19 @@ function CurrentPlan({ quota, onPlanChanged }: { quota: QuotaResponse; onPlanCha
                           : 'bg-surface-3 text-text-primary hover:bg-surface-2 border border-border-muted'
                   }`}
                 >
-                  {changingTo === tier.id
-                    ? 'Switching...'
-                    : isCurrent && !isCancelling
-                      ? 'Current Plan'
-                      : isCancelling
-                        ? 'Restart'
-                        : isUpgrade
-                          ? 'Upgrade'
-                          : isDowngrade
-                            ? 'Downgrade'
-                            : 'Switch'}
+                  {isAppleSubscriber && !(isCurrent && !isCancelling)
+                    ? 'Managed by Apple'
+                    : changingTo === tier.id
+                      ? 'Switching...'
+                      : isCurrent && !isCancelling
+                        ? 'Current Plan'
+                        : isCancelling
+                          ? 'Restart'
+                          : isUpgrade
+                            ? 'Upgrade'
+                            : isDowngrade
+                              ? 'Downgrade'
+                              : 'Switch'}
                 </button>
               </div>
             );
