@@ -45,9 +45,13 @@ export function AppShell() {
         const res = (await ogRequest(
           'GET',
           `/turtleshell/profile/${encodeURIComponent(username)}`,
-        )) as { onboardingComplete?: boolean };
+        )) as { onboardingComplete?: boolean; profileData?: { avatar?: string }; username?: string };
         if (cancelled) return;
         setOnboardingComplete(res?.onboardingComplete === true);
+        // Cache avatar + resolved username so Sidebar UserFooter can
+        // display them without a separate profile fetch.
+        if (res?.profileData?.avatar) localStorage.setItem('turtleshell_avatar', res.profileData.avatar);
+        if (res?.username) localStorage.setItem('turtleshell_username', res.username);
       } catch {
         // Profile fetch failure: fail-safe to true so a transient network
         // blip doesn't kick an already-onboarded user back to the flow.

@@ -173,6 +173,7 @@ export function Profile() {
     const nextBlob = { ...prevBlob, avatar: emoji };
     setProfile({ ...profile, profileData: nextBlob });
     setAvatarPickerOpen(false);
+    localStorage.setItem('turtleshell_avatar', emoji);
     setSavingAvatar(true);
     try {
       await ogRequest('PUT', `/turtleshell/profile/${encodeURIComponent(profile.username)}`, {
