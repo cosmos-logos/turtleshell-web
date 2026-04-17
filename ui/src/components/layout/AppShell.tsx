@@ -1,16 +1,116 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApolloStore } from '@/lib/store/apollo-store';
 import * as audioManager from '@/lib/audio/audio-manager';
 import { AudioPlayerBar } from '@/components/audio/AudioPlayerBar';
+import { clearStoredTokens, ogRequest, serverLogout } from '@/lib/api/olympus-grid-client';
+import { useServiceStore } from '@/lib/store/service-store';
 
 export function AppShell() {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
+  // Server-truth onboarding gate. An authed user who abandons the
+  // onboarding flow (closes the tab at the cause/tier/guide step, Stripe
+  // redirect fails, etc.) keeps a valid JWT but has `OnboardingComplete__c`
+  // still false on TurtleshellProfile__c. Without this check they land in
+  // /app/* with broken chat (no guide, no tier, no shell grant) and no
+  // surfaced path back to onboarding. `null` = loading, `true` = full
+  // shell, `false` = render the resume card as the only affordance.
+  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let cancelled = false;
+    async function checkOnboarding() {
+      try {
+        // Same username-fallback logic the dev-mode gate + Profile use —
+        // don't re-bail on a missing `turtleshell_username` cache for
+        // pre-onboarding-rewrite users.
+        let username = localStorage.getItem('turtleshell_username') || '';
+        if (!username) {
+          const email = localStorage.getItem('olympus_grid_email') || '';
+          const local = email.split('@')[0] || '';
+          username = local.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        }
+        if (!username) {
+          // No identity to check against — treat as not-onboarded so the
+          // user is pushed back through the flow rather than trapped in
+          // an app that can't function.
+          if (!cancelled) setOnboardingComplete(false);
+          return;
+        }
+        const res = (await ogRequest(
+          'GET',
+          `/turtleshell/profile/${encodeURIComponent(username)}`,
+        )) as { onboardingComplete?: boolean };
+        if (cancelled) return;
+        setOnboardingComplete(res?.onboardingComplete === true);
+      } catch {
+        // Profile fetch failure: fail-safe to true so a transient network
+        // blip doesn't kick an already-onboarded user back to the flow.
+        // If they genuinely aren't onboarded the next profile-dependent
+        // call inside the shell (quota, shell balance, etc.) will surface
+        // the error.
+        if (!cancelled) setOnboardingComplete(true);
+      }
+    }
+    checkOnboarding();
+    return () => { cancelled = true; };
+  }, []);
+
   const { _isPlaying: isPlaying, _isPaused: isPaused, _isBuffering: isBuffering, _currentTime: currentTime, _duration: duration, _speed: speed } = useApolloStore();
+
+  // Loading gate — hold for the one profile round-trip before we decide
+  // between shell and resume card. Brief splash avoids flashing the shell
+  // to a user who's about to be kicked back to /onboarding.
+  if (onboardingComplete === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface-0">
+        <div className="text-text-muted text-sm tracking-[0.2em] uppercase">Loading…</div>
+      </div>
+    );
+  }
+
+  if (onboardingComplete === false) {
+    const handleLogout = () => {
+      serverLogout().finally(() => {
+        clearStoredTokens();
+        useServiceStore.getState().disconnectOlympusGrid();
+        navigate('/login', { replace: true });
+      });
+    };
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface-0 px-4">
+        <div className="max-w-md w-full text-center space-y-6">
+          <div className="text-6xl">🐚</div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold text-text-primary">Finish your onboarding</h1>
+            <p className="text-sm text-text-muted leading-relaxed">
+              Your account is signed in, but you haven't picked a cause, guide, or tier yet.
+              TurtleShell needs those before the chat can work.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/onboarding')}
+            className="w-full rounded-xl bg-shell-500 hover:bg-shell-400 text-white font-semibold py-3 px-5 transition-colors"
+          >
+            Continue Onboarding
+          </button>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="text-xs text-text-muted hover:text-text-primary underline underline-offset-2"
+          >
+            Or sign out and start over
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
