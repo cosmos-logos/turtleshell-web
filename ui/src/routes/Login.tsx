@@ -146,7 +146,7 @@ export function Login() {
 
       {/* Logo + Wordmark */}
       <div className="text-center mb-10">
-        <div className="text-6xl mb-4">🐢</div>
+        <img src="/assets/turtleshell-logo.png" alt="TurtleShell" className="w-16 h-16 mb-4 mx-auto" />
         <h1 className="text-3xl font-bold tracking-tight text-text-primary">
           TurtleShell<span className="text-shell-400">.ai</span>
         </h1>
@@ -355,7 +355,7 @@ export function Login() {
         {/* STEP: Success */}
         {step === 'success' && (
           <div className="text-center py-8 space-y-4">
-            <div className="text-5xl">🐢</div>
+            <img src="/assets/turtleshell-logo.png" alt="TurtleShell" className="w-14 h-14 mx-auto" />
             <p className="text-lg font-semibold text-shell-400">Welcome to the Ocean</p>
             <p className="text-xs text-text-muted">Entering...</p>
           </div>
