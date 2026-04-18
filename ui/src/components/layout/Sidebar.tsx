@@ -147,7 +147,8 @@ function UserFooter({ expanded }: { expanded: boolean }) {
   const ogUser = useServiceStore((s) => s.olympusGridUser);
   const email = ogUser?.email || localStorage.getItem('olympus_grid_email') || '';
   const username = localStorage.getItem('turtleshell_username') || email.split('@')[0] || '';
-  const avatarEmoji = localStorage.getItem('turtleshell_avatar') || '🐢';
+  const rawAvatar = localStorage.getItem('turtleshell_avatar') || '';
+  const hasCustomAvatar = rawAvatar !== '' && rawAvatar !== '🐢';
 
   const [confirmingLogout, setConfirmingLogout] = useState(false);
 
@@ -168,8 +169,8 @@ function UserFooter({ expanded }: { expanded: boolean }) {
   if (!expanded) {
     return (
       <div className="px-2 py-2 flex flex-col items-center gap-1.5">
-        <Link to="/app/profile" className="w-7 h-7 rounded-full bg-shell-500/10 flex items-center justify-center hover:bg-shell-500/20 transition-colors text-sm" title="View profile">
-          {avatarEmoji}
+        <Link to="/app/profile" className="w-7 h-7 rounded-full bg-shell-500/10 flex items-center justify-center hover:bg-shell-500/20 transition-colors text-sm overflow-hidden" title="View profile">
+          {hasCustomAvatar ? rawAvatar : <img src="/assets/turtleshell-logo.png" alt="" className="w-5 h-5 object-contain" />}
         </Link>
         <button onClick={handleLogoutClick} className={`p-1.5 rounded-md transition-colors ${confirmingLogout ? 'bg-red-500/20 text-red-400' : 'hover:bg-red-500/10 text-text-muted hover:text-red-400'}`} title={confirmingLogout ? 'Click again to confirm' : 'Log out'}>
           <LogOut size={14} />
@@ -181,8 +182,8 @@ function UserFooter({ expanded }: { expanded: boolean }) {
   return (
     <div className="px-3 py-2">
       <div className="flex items-center gap-2">
-        <Link to="/app/profile" className="w-7 h-7 rounded-full bg-shell-500/10 flex items-center justify-center flex-shrink-0 hover:bg-shell-500/20 transition-colors text-sm" title="View profile">
-          {avatarEmoji}
+        <Link to="/app/profile" className="w-7 h-7 rounded-full bg-shell-500/10 flex items-center justify-center flex-shrink-0 hover:bg-shell-500/20 transition-colors text-sm overflow-hidden" title="View profile">
+          {hasCustomAvatar ? rawAvatar : <img src="/assets/turtleshell-logo.png" alt="" className="w-5 h-5 object-contain" />}
         </Link>
         <div className="flex-1 min-w-0">
           <Link to="/app/profile" className="block no-underline">
