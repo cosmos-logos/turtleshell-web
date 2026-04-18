@@ -356,7 +356,7 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
           <Link to="/app/chat" className="flex items-center gap-2.5 no-underline">
             <img src="/assets/turtleshell-logo.png" alt="TurtleShell" className="w-8 h-8 flex-shrink-0" />
             <span className="font-semibold text-sm tracking-tight text-text-primary">
-              TurtleShell<span className="text-shell-400">.ai</span>
+              TurtleShell<span className="text-shell-400">.ai</span><sup className="text-[0.5em] text-shell-400 align-super ml-0.5">™</sup>
             </span>
           </Link>
           <button
@@ -402,7 +402,7 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
           <img src="/assets/turtleshell-logo.png" alt="TurtleShell" className="w-8 h-8 flex-shrink-0" />
           {open && (
             <span className="font-semibold text-sm tracking-tight text-text-primary whitespace-nowrap">
-              TurtleShell<span className="text-shell-400">.ai</span>
+              TurtleShell<span className="text-shell-400">.ai</span><sup className="text-[0.5em] text-shell-400 align-super ml-0.5">™</sup>
             </span>
           )}
         </Link>

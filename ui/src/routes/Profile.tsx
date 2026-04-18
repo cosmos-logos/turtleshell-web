@@ -28,7 +28,6 @@ const GUIDE_MAP: Record<string, { emoji: string; name: string; role: string }> =
 // you add entries here, existing stored avatars still work — unknown
 // emojis just render as the stored glyph.
 const AVATAR_OPTIONS: string[] = ['', '🦈', '🐬', '🧜‍♀️', '🐠', '🦀', '🦞', '🐙'];
-const DEFAULT_AVATAR = '';
 
 // Handle format — lowercase alphanumerics + `.` `_` `-`, 3–24 chars. Mirrors
 // what the Apex PUT path ultimately stores (lowercase + trim); the server
