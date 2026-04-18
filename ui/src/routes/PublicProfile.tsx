@@ -455,7 +455,9 @@ export function PublicProfile() {
             on the internal /app/profile page). */}
         <div className="flex flex-col items-center text-center mb-8">
           <div className="w-24 h-24 rounded-full bg-surface-2 border-2 border-shell-500/30 flex items-center justify-center text-4xl mb-4 shadow-lg shadow-shell-500/10">
-            {profile.profileData?.avatar || '🐢'}
+            {(profile.profileData?.avatar && profile.profileData.avatar !== '🐢')
+              ? profile.profileData.avatar
+              : <img src="/assets/turtleshell-logo.png" alt="" className="w-12 h-12 object-contain" />}
           </div>
 
           {isOwner ? (
