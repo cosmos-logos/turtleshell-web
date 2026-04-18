@@ -27,8 +27,8 @@ const GUIDE_MAP: Record<string, { emoji: string; name: string; role: string }> =
 // the `avatar` key; the FE owns this schema (no dedicated column). If
 // you add entries here, existing stored avatars still work — unknown
 // emojis just render as the stored glyph.
-const AVATAR_OPTIONS: string[] = ['🐢', '🦈', '🐬', '🧜‍♀️', '🐠', '🦀', '🦞', '🐙'];
-const DEFAULT_AVATAR = '🐢';
+const AVATAR_OPTIONS: string[] = ['', '🦈', '🐬', '🧜‍♀️', '🐠', '🦀', '🦞', '🐙'];
+const DEFAULT_AVATAR = '';
 
 // Handle format — lowercase alphanumerics + `.` `_` `-`, 3–24 chars. Mirrors
 // what the Apex PUT path ultimately stores (lowercase + trim); the server
@@ -348,7 +348,9 @@ export function Profile() {
                 hasProfile ? 'hover:border-shell-500/50 cursor-pointer' : 'cursor-default'
               } ${savingAvatar ? 'opacity-60' : ''}`}
             >
-              {profile?.profileData?.avatar || DEFAULT_AVATAR}
+              {(profile?.profileData?.avatar && profile.profileData.avatar !== '🐢')
+                ? profile.profileData.avatar
+                : <img src="/assets/turtleshell-logo.png" alt="" className="w-10 h-10 object-contain" />}
             </button>
             {hasProfile && (
               <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-shell-500 border-2 border-surface-0 flex items-center justify-center text-[9px] font-bold text-white">✓</div>
@@ -358,11 +360,12 @@ export function Profile() {
                 ref={avatarPickerRef}
                 className="absolute top-full left-0 mt-2 z-20 p-2 rounded-xl bg-surface-1 border border-border-muted shadow-lg grid grid-cols-4 gap-1 min-w-[180px]"
               >
-                {AVATAR_OPTIONS.map(emoji => {
-                  const active = (profile?.profileData?.avatar || DEFAULT_AVATAR) === emoji;
+                {AVATAR_OPTIONS.map((emoji) => {
+                  const currentAv = profile?.profileData?.avatar ?? '';
+                  const active = emoji === '' ? (!currentAv || currentAv === '🐢') : currentAv === emoji;
                   return (
                     <button
-                      key={emoji}
+                      key={emoji || 'logo'}
                       type="button"
                       onClick={() => saveAvatar(emoji)}
                       className={`w-10 h-10 rounded-lg flex items-center justify-center text-2xl transition-colors ${
@@ -370,9 +373,9 @@ export function Profile() {
                           ? 'bg-shell-500/20 ring-1 ring-shell-500/40'
                           : 'hover:bg-surface-2'
                       }`}
-                      aria-label={`Set avatar to ${emoji}`}
+                      aria-label={emoji ? `Set avatar to ${emoji}` : 'Set avatar to TurtleShell logo'}
                     >
-                      {emoji}
+                      {emoji || <img src="/assets/turtleshell-logo.png" alt="" className="w-7 h-7 object-contain" />}
                     </button>
                   );
                 })}
