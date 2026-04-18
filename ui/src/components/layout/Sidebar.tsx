@@ -12,7 +12,10 @@ import {
   X,
   Shell,
   LogOut,
+  Sun,
+  Moon,
 } from 'lucide-react';
+import { useThemeStore } from '@/lib/store/theme-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { agentDisplayName } from '@/lib/cosmos-logos/types';
 import { OLYMPUS_AGENTS } from '@/lib/agents/olympus-data';
@@ -121,6 +124,23 @@ function useNavItems(): NavItem[] {
   return items;
 }
 
+
+function ThemeToggle({ expanded }: { expanded: boolean }) {
+  const { theme, setTheme } = useThemeStore();
+  const isDark = theme === 'dark';
+  return (
+    <div className="px-3 py-1">
+      <button
+        onClick={() => setTheme(isDark ? 'light' : 'dark')}
+        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors"
+        title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
+        {isDark ? <Sun size={14} /> : <Moon size={14} />}
+        {expanded && <span className="text-xs">{isDark ? 'Light Mode' : 'Dark Mode'}</span>}
+      </button>
+    </div>
+  );
+}
 
 function UserFooter({ expanded }: { expanded: boolean }) {
   const navigate = useNavigate();
@@ -333,9 +353,7 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
         {/* Header with close button */}
         <div className="flex items-center justify-between px-4 h-14 border-b border-border-muted flex-shrink-0">
           <Link to="/app/chat" className="flex items-center gap-2.5 no-underline">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-sm">
-              🐢
-            </div>
+            <img src="/assets/turtleshell-logo.png" alt="TurtleShell" className="w-8 h-8 flex-shrink-0" />
             <span className="font-semibold text-sm tracking-tight text-text-primary">
               TurtleShell<span className="text-shell-400">.ai</span>
             </span>
@@ -361,6 +379,9 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
         {/* Sea Shell balance badge */}
         <SeaShellBadge expanded />
 
+        {/* Theme toggle */}
+        <ThemeToggle expanded />
+
         {/* User + Logout */}
         <UserFooter expanded />
       </aside>
@@ -377,9 +398,7 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
       {/* Logo */}
       <div className="flex items-center justify-between px-4 h-14 border-b border-border-muted flex-shrink-0">
         <Link to="/app/chat" className="flex items-center gap-2.5 no-underline">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-shell-500 to-shell-400 flex items-center justify-center text-sm flex-shrink-0">
-            🐢
-          </div>
+          <img src="/assets/turtleshell-logo.png" alt="TurtleShell" className="w-8 h-8 flex-shrink-0" />
           {open && (
             <span className="font-semibold text-sm tracking-tight text-text-primary whitespace-nowrap">
               TurtleShell<span className="text-shell-400">.ai</span>
@@ -408,6 +427,9 @@ export function Sidebar({ open, onToggle, onClose, position }: SidebarProps) {
 
       {/* Shell badge */}
       <SeaShellBadge expanded={open} />
+
+      {/* Theme toggle */}
+      <ThemeToggle expanded={open} />
 
       {/* User + Logout (below shells) */}
       <UserFooter expanded={open} />

@@ -24,7 +24,7 @@ export function OffGridDevices() {
       </div>
 
       <div className="flex flex-wrap justify-center gap-5 mb-10">
-        <Device icon="🐢" name="Turtle Cave Kit" desc="Mac Mini DIY kit. Yours to own and operate." />
+        <Device icon="" image="/assets/turtleshell-logo.png" name="Turtle Cave Kit" desc="Mac Mini DIY kit. Yours to own and operate." />
         <Device icon="🥧" name="Turtle Cave Pi" desc="Raspberry Pi 5. Compact sovereign node." />
         <Device icon="🏛" name="Turtle Cave Appliance" desc="Custom ARM. Purpose-built for the grid." />
       </div>
@@ -39,10 +39,12 @@ export function OffGridDevices() {
   );
 }
 
-function Device({ icon, name, desc }: { icon: string; name: string; desc: string }) {
+function Device({ icon, image, name, desc }: { icon: string; image?: string; name: string; desc: string }) {
   return (
     <div className="rounded-lg border border-border-muted bg-surface-1/70 px-6 py-8 min-w-[180px] max-w-[240px] text-center">
-      <div className="text-4xl mb-4 leading-none">{icon}</div>
+      <div className="text-4xl mb-4 leading-none flex justify-center">
+        {image ? <img src={image} alt={name} className="w-10 h-10" /> : icon}
+      </div>
       <div className="text-xs uppercase tracking-[0.15em] text-text-primary font-semibold mb-2">
         {name}
       </div>

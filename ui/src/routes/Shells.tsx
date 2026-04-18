@@ -673,7 +673,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Do my Sea Shells expire?',
-    a: 'Your free 500 shells never expire \u2014 they\u2019re yours until you use them. Paid plan shells reset at the start of each billing cycle. Unused shells from the previous month do not roll over.',
+    a: 'Your free 1,000 shells never expire \u2014 they\u2019re yours until you use them. Paid plan shells reset at the start of each billing cycle. Unused shells from the previous month do not roll over.',
   },
   {
     q: 'What happens when I upgrade or downgrade?',
@@ -681,7 +681,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'What happens if I cancel?',
-    a: 'Your subscription stays active until the end of your current billing period \u2014 you keep every shell you paid for. When the period ends, your account returns to the Free tier (500 shells, one-time). There are no cancellation fees.',
+    a: 'Your subscription stays active until the end of your current billing period \u2014 you keep every shell you paid for. When the period ends, your account returns to the Free tier (1,000 shells, one-time). There are no cancellation fees.',
   },
   {
     q: 'Do add-ons and connectors cost Sea Shells?',
@@ -720,7 +720,7 @@ function ShellsFaq() {
                   {item.a === 'table' ? (
                     <>
                       <p className="mb-3">
-                        New accounts start with 500 Sea Shells, on us — no credit card required. When your free shells run out, you can subscribe to a plan that refills your balance every month automatically.
+                        New accounts start with 1,000 Sea Shells, on us — no credit card required. When your free shells run out, you can subscribe to a plan that refills your balance every month automatically.
                       </p>
                       <table className="w-full text-left text-sm border-collapse">
                         <thead>

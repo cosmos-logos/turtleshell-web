@@ -51,6 +51,16 @@ export function Landing() {
 function Hero() {
   return (
     <section className="relative min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center text-center px-6 pt-16 pb-16">
+      <div className="landing-fade landing-fade-1 flex flex-col items-center mb-8">
+        <img src="/assets/turtleshell-logo.png" alt="TurtleShell" className="w-28 sm:w-36 mb-4" />
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-text-primary">
+          TurtleShell<span className="text-shell-400">.ai</span>
+        </h2>
+        <p className="text-xs tracking-[0.3em] uppercase text-shell-400 mt-2">
+          Sovereign AI
+        </p>
+      </div>
+
       <div className="landing-fade landing-fade-1 text-2xs tracking-[0.3em] uppercase text-shell-400 mb-7 flex items-center gap-4">
         <span className="w-12 h-px bg-shell-400/50" />
         Olympus-616 · Athena-717 · 7/17/2026
