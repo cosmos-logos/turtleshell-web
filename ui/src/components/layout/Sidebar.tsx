@@ -14,6 +14,7 @@ import {
   LogOut,
   Sun,
   Moon,
+  MessageSquare,
 } from 'lucide-react';
 import { useThemeStore } from '@/lib/store/theme-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
@@ -61,6 +62,8 @@ interface NavItem {
   chatAgentId?: string;
   /** built-in agent ID — used for active state when on chat */
   isBuiltinChat?: string;
+  /** Render with shell-green accent + pulsing dot to signal "we really want this." */
+  emphasize?: boolean;
 }
 
 function useNavItems(): NavItem[] {
@@ -120,6 +123,10 @@ function useNavItems(): NavItem[] {
     { to: '/app/docs', icon: BookOpen, label: 'Learn' },
     { to: '/app/shells', icon: Shell, label: 'Sea Shells' },
     { to: '/app/settings', icon: Settings, label: 'Settings' },
+    // Leave Feedback sits under Settings and wears the shell-green accent +
+    // pulsing dot — we WANT users to click it. The entire beta hinges on the
+    // founder hearing directly from early users; this is not a burial spot.
+    { to: '/app/feedback', icon: MessageSquare, label: 'Leave Feedback', emphasize: true },
   );
   return items;
 }
@@ -306,8 +313,18 @@ function AgentSectionHeader({ expanded, onClick }: { expanded: boolean; onClick?
 
 function SidebarNavItem({ item, onClick, expanded = true }: { item: NavItem; onClick?: () => void; expanded?: boolean }) {
   const isActive = useIsNavActive(item);
-  const { to, icon: Icon, label, initial, color } = item;
+  const { to, icon: Icon, label, initial, color, emphasize } = item;
   const isAgentSubItem = !!(item.isBuiltinChat || item.chatAgentId || (item.initial && !item.icon));
+
+  // Emphasized items (e.g. Leave Feedback) wear the shell-green accent so
+  // users feel pulled toward them rather than ignoring them in the list.
+  const stateClasses = emphasize
+    ? isActive
+      ? 'bg-shell-500/15 text-shell-400 border border-shell-500/40'
+      : 'text-shell-400 hover:text-shell-400 hover:bg-shell-500/10 border border-shell-500/30 hover:border-shell-500/50'
+    : isActive
+      ? 'bg-surface-3 text-text-primary'
+      : 'text-text-secondary hover:text-text-primary hover:bg-surface-2';
 
   return (
     <NavLink
@@ -316,13 +333,7 @@ function SidebarNavItem({ item, onClick, expanded = true }: { item: NavItem; onC
       onClick={onClick}
       className={`flex items-center gap-3 rounded-lg font-medium transition-colors ${
         isAgentSubItem && expanded ? 'pl-5 pr-3 py-1.5 text-xs' : 'px-3 py-2.5 text-sm'
-      } ${
-        expanded ? '' : 'justify-center'
-      } ${
-        isActive
-          ? 'bg-surface-3 text-text-primary'
-          : 'text-text-secondary hover:text-text-primary hover:bg-surface-2'
-      }`}
+      } ${expanded ? '' : 'justify-center'} ${stateClasses}`}
       title={expanded ? undefined : label}
     >
       {Icon ? (
@@ -337,7 +348,13 @@ function SidebarNavItem({ item, onClick, expanded = true }: { item: NavItem; onC
           {initial}
         </span>
       )}
-      {expanded && <span className="whitespace-nowrap">{label}</span>}
+      {expanded && <span className="whitespace-nowrap flex-1">{label}</span>}
+      {emphasize && expanded && (
+        <span className="relative flex h-2 w-2 flex-shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-shell-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-shell-500" />
+        </span>
+      )}
     </NavLink>
   );
 }

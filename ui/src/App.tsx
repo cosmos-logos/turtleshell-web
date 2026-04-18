@@ -25,6 +25,7 @@ import { OffGrid } from './routes/OffGrid';
 import { Onboarding } from './routes/onboarding/Onboarding';
 import { PublicProfile } from './routes/PublicProfile';
 import { Profile } from './routes/Profile';
+import { Feedback } from './routes/Feedback';
 import { Login } from './routes/Login';
 import { RequireAuth } from './components/auth/RequireAuth';
 
@@ -77,6 +78,7 @@ export function App() {
         <Route path="shells" element={<Shells />} />
         <Route path="settings" element={<Settings />} />
         <Route path="profile" element={<Profile />} />
+        <Route path="feedback" element={<Feedback />} />
         <Route path="docs/*" element={<Docs />} />
       </Route>
 
