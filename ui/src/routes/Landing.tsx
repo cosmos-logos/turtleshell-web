@@ -54,7 +54,7 @@ function Hero() {
       <div className="landing-fade landing-fade-1 flex flex-col items-center mb-8">
         <img src="/assets/turtleshell-logo.png" alt="TurtleShell" className="w-28 sm:w-36 mb-4" />
         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-text-primary">
-          TurtleShell<span className="text-shell-400">.ai</span><sup className="text-[10px] text-text-muted align-super ml-0.5">™</sup>
+          TurtleShell<span className="text-shell-400">.ai</span><sup className="text-[0.5em] text-shell-400 align-super ml-0.5">™</sup>
         </h2>
         <p className="text-xs tracking-[0.3em] uppercase text-shell-400 mt-2">
           Sovereign AI

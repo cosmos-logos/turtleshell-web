@@ -148,7 +148,7 @@ export function Login() {
       <div className="text-center mb-10">
         <img src="/assets/turtleshell-logo.png" alt="TurtleShell" className="w-16 h-16 mb-4 mx-auto" />
         <h1 className="text-3xl font-bold tracking-tight text-text-primary">
-          TurtleShell<span className="text-shell-400">.ai</span>
+          TurtleShell<span className="text-shell-400">.ai</span><sup className="text-[0.5em] text-shell-400 align-super ml-0.5">™</sup>
         </h1>
         <p className="text-xs tracking-widest uppercase mt-2 text-shell-400">
           Sovereign AI

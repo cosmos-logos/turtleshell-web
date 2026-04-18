@@ -54,7 +54,7 @@ export function MarketingLayout() {
         <div className="max-w-[1120px] mx-auto px-6 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2.5 no-underline">
             <span className="font-semibold text-lg tracking-tight text-text-primary">
-              TurtleShell<span className="text-shell-400">.ai</span>
+              TurtleShell<span className="text-shell-400">.ai</span><sup className="text-[0.5em] text-shell-400 align-super ml-0.5">™</sup>
             </span>
           </Link>
 
