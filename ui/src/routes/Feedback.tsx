@@ -6,6 +6,7 @@ import {
   type FeedbackPlatform,
   type FeedbackOnboardingSuccess,
 } from '@/lib/api/feedback-client';
+import { FeedbackAdminPanel } from './FeedbackAdminPanel';
 
 type Step = 'form' | 'submitting' | 'confirmed';
 
@@ -96,6 +97,8 @@ export function Feedback() {
             the founder, and shapes what we build next. Homer is CC'd on every submission.
           </p>
         </header>
+
+        <FeedbackAdminPanel />
 
         {step === 'confirmed' ? (
           <Confirmation onWriteAnother={() => setStep('form')} />

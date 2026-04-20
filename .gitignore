@@ -1,2 +1,4 @@
 ui/tsconfig.tsbuildinfo
 .DS_Store
+.dev-logs/
+ui/tsconfig.tsbuildinfo
