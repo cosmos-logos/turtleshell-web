@@ -23,6 +23,14 @@ export interface FeedbackRecord {
   respondedAt: string | null;
   submittedFromClient: string | null;
   createdDate: string;
+  /** Responder Identity id + profile (name / username / avatar). Populated
+   *  once the admin replies — we surface these on the user's thread so the
+   *  reply feels personal (Homer's face + name, not "Admin replied"). All
+   *  optional because older pre-identity records won't have them. */
+  respondedByIdentity?: string | null;
+  respondedByName?: string | null;
+  respondedByUsername?: string | null;
+  respondedByAvatarUrl?: string | null;
 }
 
 export interface SubmitFeedbackPayload {
