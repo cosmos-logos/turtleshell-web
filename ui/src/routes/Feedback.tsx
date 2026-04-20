@@ -318,22 +318,73 @@ function FeedbackEntry({ fb }: { fb: FeedbackRecord }) {
       )}
       {fb.adminResponse && (
         <div className="pt-3 border-t border-border-muted space-y-2">
-          <div className="text-2xs uppercase tracking-wider text-shell-400 font-semibold">
-            Reply from TurtleShell
-            {fb.respondedAt && (
-              <span className="text-text-muted ml-2 normal-case tracking-normal">
-                {new Date(fb.respondedAt).toLocaleString(undefined, {
-                  dateStyle: 'medium',
-                  timeStyle: 'short',
-                })}
-              </span>
-            )}
-          </div>
+          <ResponderLine fb={fb} />
           <div className="text-sm text-text-primary whitespace-pre-wrap leading-relaxed bg-shell-500/5 border-l-2 border-shell-500 px-3 py-2 rounded-r">
             {fb.adminResponse}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The avatar + name + timestamp row above an admin reply. When Homer
+ * replies, the user sees Homer's face, his display name, and his @handle
+ * as a link to his public profile — so the reply reads like a personal
+ * note from the founder, not a form-letter ticket response. Falls back
+ * gracefully to a branded pill when the responder data hasn't arrived
+ * yet (older records or server not-yet-updated).
+ */
+function ResponderLine({ fb }: { fb: FeedbackRecord }) {
+  const displayName = fb.respondedByName || 'TurtleShell team';
+  const username = fb.respondedByUsername || null;
+  const avatarUrl = fb.respondedByAvatarUrl || null;
+  const isImageUrl = !!avatarUrl && /^https?:\/\//i.test(avatarUrl);
+  const initials =
+    displayName
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((s) => s[0] || '')
+      .join('')
+      .toUpperCase() || 'T';
+  const timestamp = fb.respondedAt
+    ? new Date(fb.respondedAt).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })
+    : null;
+
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="w-8 h-8 rounded-full bg-shell-500/10 border border-shell-500/40 flex items-center justify-center overflow-hidden flex-shrink-0 text-sm">
+        {isImageUrl ? (
+          <img src={avatarUrl as string} alt={displayName} className="w-full h-full object-cover" />
+        ) : avatarUrl ? (
+          <span>{avatarUrl}</span>
+        ) : (
+          <span className="text-shell-400 font-semibold text-xs">{initials}</span>
+        )}
+      </div>
+      <div className="flex flex-col min-w-0 flex-1">
+        <div className="text-xs font-semibold text-text-primary">
+          {displayName} <span className="text-text-muted font-normal">replied</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-2xs text-text-muted">
+          {username && (
+            <a
+              href={`https://turtleshell.ai/u/${encodeURIComponent(username)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-shell-400 hover:underline no-underline"
+            >
+              @{username}
+            </a>
+          )}
+          {username && timestamp && <span>·</span>}
+          {timestamp && <span>{timestamp}</span>}
+        </div>
+      </div>
     </div>
   );
 }
