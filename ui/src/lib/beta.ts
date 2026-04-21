@@ -59,14 +59,16 @@ export function isBuiltinAgentVisibleInBeta(
   agentId: string,
   testBetaEnabled: boolean,
 ): boolean {
+  // BYOK agents are gated on explicit configuration independently of the
+  // beta flag. A user who set up only Gemini shouldn't see OpenAI/Claude/
+  // Grok in the sidebar just because Developer / Test Beta is on. Check
+  // this BEFORE the `testBetaEnabled` short-circuit so beta doesn't leak
+  // unconfigured providers into the picker.
+  if (BYOK_AGENT_IDS.has(agentId)) {
+    return hasUserApiKey(agentId) && isGuideConfigured(agentId);
+  }
   if (testBetaEnabled) return true;
   if (ALWAYS_VISIBLE_BUILTIN_AGENT_IDS.has(agentId)) return true;
-  // BYOK agents need BOTH a saved key AND an explicit "configured" mark
-  // (onboarding or Settings → Change Guide). hasUserApiKey alone isn't
-  // enough once Change Guide exists — a user who deletes their key in the
-  // Eye-toggle agent-setup UI should see the provider disappear even if a
-  // stale configured flag lingers.
-  if (BYOK_AGENT_IDS.has(agentId) && hasUserApiKey(agentId) && isGuideConfigured(agentId)) return true;
   return false;
 }
 
@@ -75,6 +77,16 @@ export function isCosmosAgentVisibleInBeta(
   codename: string | undefined | null,
   testBetaEnabled: boolean,
 ): boolean {
+  // Guide-family cosmos-logos agents (athena / cosmos / logos) follow the
+  // configured-guide rule regardless of beta. Beta still reveals non-guide
+  // cosmos-logos agents (thoth, poseidon, homework-buddy, etc.) as before.
+  if (codename && (
+    codename === 'athena' || codename.startsWith('athena-') ||
+    codename === 'cosmos' || codename.startsWith('cosmos-') ||
+    codename === 'logos'  || codename.startsWith('logos-')
+  )) {
+    return isCosmosCodenameConfigured(codename);
+  }
   if (testBetaEnabled) return true;
   return isAlwaysVisibleCosmosCodename(codename);
 }

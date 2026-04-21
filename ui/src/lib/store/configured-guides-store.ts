@@ -25,7 +25,6 @@ interface ConfiguredGuidesStore {
 }
 
 const LEGACY_GUIDE_KEY = 'turtleshell-guide';
-const LEGACY_API_KEYS = 'turtleshell-user-api-keys';
 const BYOK_IDS: ReadonlySet<string> = new Set(['openai', 'claude', 'grok', 'gemini']);
 
 function readLegacyGuide(): string | null {
@@ -34,17 +33,6 @@ function readLegacyGuide(): string | null {
     return v && v !== 'null' ? v : null;
   } catch {
     return null;
-  }
-}
-
-function readLegacyBYOKIds(): string[] {
-  try {
-    const raw = localStorage.getItem(LEGACY_API_KEYS);
-    if (!raw) return [];
-    const obj = JSON.parse(raw) as Record<string, string>;
-    return Object.keys(obj).filter((k) => BYOK_IDS.has(k) && !!obj[k]);
-  } catch {
-    return [];
   }
 }
 
@@ -59,13 +47,33 @@ export const useConfiguredGuidesStore = create<ConfiguredGuidesStore>()(
       },
       isConfigured: (guide: string) => get().configured.includes(guide),
       bootstrapFromLegacy: () => {
-        const list = new Set(get().configured);
+        // Only trust the single `turtleshell-guide` pointer from the old
+        // onboarding flow. Do NOT auto-mark every saved BYOK api-key as
+        // configured: a user may have keys saved from prior test sessions
+        // for providers they never actually chose as a guide. Those keys
+        // stay inert until the user walks through Settings → Change Guide.
+        //
+        // Corrective sweep for affected users: if the legacy guide pointer
+        // is a BYOK id (i.e. the user's original onboarding pick WAS a
+        // BYOK), strip any OTHER BYOK ids from `configured` that got
+        // auto-added by an earlier buggy bootstrap. Cosmos/logos/athena
+        // entries are left alone — they're guide-family agents always
+        // connected in the cosmos-logos store and governed by their own
+        // filter.
+        const current = new Set(get().configured);
         const legacyGuide = readLegacyGuide();
-        if (legacyGuide) list.add(legacyGuide);
-        for (const id of readLegacyBYOKIds()) list.add(id);
-        if (list.size !== get().configured.length) {
-          set({ configured: [...list] });
+        if (legacyGuide && BYOK_IDS.has(legacyGuide)) {
+          for (const id of [...current]) {
+            if (BYOK_IDS.has(id) && id !== legacyGuide) {
+              current.delete(id);
+            }
+          }
         }
+        if (legacyGuide) current.add(legacyGuide);
+        const next = [...current];
+        const prev = get().configured;
+        const changed = next.length !== prev.length || next.some((x) => !prev.includes(x));
+        if (changed) set({ configured: next });
       },
     }),
     { name: 'turtleshell-configured-guides' },
