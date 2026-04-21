@@ -11,6 +11,7 @@ import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
 import { useAgentStore, hasUserApiKey } from '@/lib/store/agent-store';
 import { useChatStore } from '@/lib/store/chat-store';
 import { BYOK_GUIDES } from '@/routes/onboarding/OnboardingData';
+import { isCosmosCodenameConfigured } from '@/lib/beta';
 
 const CAUSE_MAP: Record<string, { emoji: string }> = {
   'Save the Oceans': { emoji: '🌊' },
@@ -69,7 +70,16 @@ interface ProfileResponse {
 }
 
 export function Profile() {
-  const connectedAgents = useCosmosLogosStore(s => s.agents);
+  // Raw cosmos-logos store contents includes athena/cosmos/logos (auto-
+  // connected on boot) even when the user never configured them as guides.
+  // Hide guide-family entries that aren't in the user's configured set so
+  // the profile doesn't leak unrelated agents — same rule the sidebar and
+  // picker use. Non-guide cosmos-logos agents (thoth, poseidon, etc.) are
+  // connected via the agent-setup flow and pass through as before.
+  const connectedAgentsRaw = useCosmosLogosStore(s => s.agents);
+  const connectedAgents = connectedAgentsRaw.filter(a =>
+    isCosmosCodenameConfigured(a.manifest.identity.codename),
+  );
   const setActiveChatAgent = useCosmosLogosStore(s => s.setActiveChatAgent);
   const navigate = useNavigate();
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
@@ -651,7 +661,15 @@ export function Profile() {
                   if (a.manifest.display?.app_url) {
                     navigate(`/app/agent/${a.id}`);
                   } else {
+                    // CRITICAL: switch the chat-store thread along with the
+                    // cosmos-logos active agent. Without this, the header
+                    // would render the new agent's identity while the chat
+                    // panel still shows the previous agent's messages —
+                    // breaking the "every agent has its own unbreakable
+                    // consciousness" product promise. Each agent's thread
+                    // is scoped by id in chat-store.threads.
                     setActiveChatAgent(a.id);
+                    useChatStore.getState().switchAgent(a.id);
                     navigate('/app/chat');
                   }
                 }} className="text-xs rounded-full px-3 py-1.5 bg-surface-1 border border-border-muted text-text-secondary hover:text-shell-400 hover:border-shell-500/40 transition-colors cursor-pointer">
