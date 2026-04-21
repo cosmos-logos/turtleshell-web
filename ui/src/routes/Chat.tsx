@@ -12,6 +12,7 @@ import { streamDirect, hasDirectProvider } from '@/lib/providers/direct-chat';
 import { hasUserApiKey } from '@/lib/store/agent-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { useAgentStore } from '@/lib/store/agent-store';
+import { isAthenaFamily } from '@/lib/agent-scope';
 import { useChatPreferencesStore } from '@/lib/store/chat-preferences-store';
 import { useAgentThemeStore } from '@/lib/store/agent-theme-store';
 import { OLYMPUS_AGENTS } from '@/lib/agents/olympus-data';
@@ -277,15 +278,24 @@ export function Chat() {
       let accumulated = '';
       const isDev = useEnvironmentStore.getState().developerMode;
       const { currentConversationId: convId, memoryEnabled: mem, saveConversation: save } = useChatStore.getState();
-      // Inject system_prompt: cosmos agent manifest > built-in agent > none
+      // Inject system_prompt: cosmos agent manifest > built-in agent > none.
+      // Athena is the exception — its server-side v1.7.7 Consciousness soul
+      // is the authoritative identity and is richer than the bare manifest
+      // prompt (memory recall, profile facts, MCP guidance). Skip sending a
+      // client override for athena-family agents so the soul wins. For
+      // Cosmos, Logos, BYOK, and future personas, the manifest system_prompt
+      // IS the identity and is sent as a persona override.
       const activeChatAgentId = useCosmosLogosStore.getState().activeChatAgentId;
       const cosmosAgent = activeChatAgentId
         ? useCosmosLogosStore.getState().agents.find(a => a.id === activeChatAgentId)
         : null;
       const builtinAgent = useAgentStore.getState().activeAgent;
+      const cosmosCodename = cosmosAgent?.manifest?.identity?.codename;
       const cosmosPrompt = cosmosAgent?.manifest?.identity?.system_prompt;
       const builtinPrompt = builtinAgent?.systemPrompt;
-      const systemPrompt = cosmosPrompt || builtinPrompt || undefined;
+      const systemPrompt = isAthenaFamily(cosmosCodename)
+        ? undefined
+        : (cosmosPrompt || builtinPrompt || undefined);
       // Route decision: direct provider call OR Athena proxy
       // If user has their own API key for a provider, call it directly (no Athena)
       const useDirectProvider = !activeChatAgentId

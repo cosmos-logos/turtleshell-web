@@ -885,11 +885,33 @@ export function Onboarding() {
       if (connected) {
         cosmosStore.setActiveChatAgent(connected.id);
         useChatStore.getState().switchAgent(connected.id);
+        // hiddenAgentIds is shared across both stores. Skip hiding any
+        // builtin whose ID collides with a cosmos-logos codename (the
+        // bundled Cosmos/Logos agents derive their id from codename, so
+        // hiding builtin `cosmos` would also hide the cosmos-logos Cosmos
+        // entry the user just picked). The picker/sidebar already dedupe
+        // the builtin at render time when a cosmos-logos cousin exists.
+        const cosmosCodenames = new Set(cosmosStore.agents.map(a => a.manifest.identity.codename));
         const store = useAgentStore.getState();
         for (const a of store.agents) {
+          if (cosmosCodenames.has(a.id)) continue;
           if (!store.hiddenAgentIds.has(a.id)) {
             store.toggleVisibility(a.id);
           }
+        }
+        // Hide non-selected cosmos-logos agents (the other two of
+        // Athena/Cosmos/Logos) so the sidebar shows the chosen guide alone.
+        for (const a of cosmosStore.agents) {
+          if (a.id === connected.id) continue;
+          if (!store.hiddenAgentIds.has(a.id)) {
+            store.toggleVisibility(a.id);
+          }
+        }
+        // Safety net for legacy state: older builds hid builtin cosmos/logos
+        // IDs which also masks the cosmos-logos cousin. Force-unhide the
+        // selected agent's ID.
+        if (store.hiddenAgentIds.has(connected.id)) {
+          store.toggleVisibility(connected.id);
         }
       } else {
         console.warn(`[Onboarding] ${selectedGuide} auto-connect failed — falling back to Logos builtin`);

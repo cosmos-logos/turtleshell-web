@@ -92,12 +92,30 @@ export async function applyGuideAgent(guide: string): Promise<void> {
     cosmosStore.setActiveChatAgent(connected.id);
     useChatStore.getState().switchAgent(connected.id);
 
-    // Hide every builtin catalog agent so the sidebar shows the chosen guide alone.
+    // Hide every other catalog agent so the sidebar shows the chosen guide
+    // alone. hiddenAgentIds is shared across stores, so skip builtin IDs that
+    // collide with a cosmos-logos codename — the picker/sidebar dedupe those
+    // at render time when a cosmos-logos cousin exists.
+    const cosmosCodenames = new Set(cosmosStore.agents.map(a => a.manifest.identity.codename));
     const store = useAgentStore.getState();
     for (const a of store.agents) {
+      if (cosmosCodenames.has(a.id)) continue;
       if (!store.hiddenAgentIds.has(a.id)) {
         store.toggleVisibility(a.id);
       }
+    }
+    for (const a of cosmosStore.agents) {
+      if (a.id === connected.id) continue;
+      if (!store.hiddenAgentIds.has(a.id)) {
+        store.toggleVisibility(a.id);
+      }
+    }
+    // Safety net for legacy state: older onboarding runs hid builtin
+    // cosmos/logos IDs, which also masks the cosmos-logos cousins since
+    // IDs collide. Force-unhide the selected agent's ID so restoration
+    // recovers users coming from the buggy state without a manual reset.
+    if (store.hiddenAgentIds.has(connected.id)) {
+      store.toggleVisibility(connected.id);
     }
     return;
   }

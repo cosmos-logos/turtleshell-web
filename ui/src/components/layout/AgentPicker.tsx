@@ -53,11 +53,14 @@ export function AgentPicker({ compact }: AgentPickerProps) {
   const navigate = useNavigate();
   const agentViewMatch = useMatch('/app/agent/:agentId');
 
-  // Active cosmos agent: either viewing an iframe agent, or a chat-only agent is selected
+  // Active cosmos agent: either viewing an iframe agent, or a chat-only
+  // agent is selected. Look up against the RAW list so the header still
+  // reflects the user's choice even when the active agent happens to be
+  // visibility-hidden (e.g. legacy state from before the dedup fix shipped).
   const activeCosmosAgent = agentViewMatch
-    ? cosmosAgents.find((a) => a.id === agentViewMatch.params.agentId) ?? null
+    ? cosmosAgentsRaw.find((a) => a.id === agentViewMatch.params.agentId) ?? null
     : activeChatAgentId
-      ? cosmosAgents.find((a) => a.id === activeChatAgentId) ?? null
+      ? cosmosAgentsRaw.find((a) => a.id === activeChatAgentId) ?? null
       : null;
 
   const [open, setOpen] = useState(false);
