@@ -151,10 +151,20 @@ export async function verifyCode(
   // selection all belong to the old identity and bleed into the new
   // session ("why is my old Athena chat here?"). Wipe per-identity app
   // state so the new session starts clean.
+  // Fresh-identity detection: wipe per-user state whenever the new sub
+  // doesn't exactly match what we had stored. This covers THREE cases:
+  //   1. Different user signing in → wipe (identity switch).
+  //   2. New sign-up on a browser that still has another user's residual
+  //      localStorage (they didn't log out, or the previous logout predated
+  //      the full-wipe fix) → wipe.
+  //   3. Same user signing in but `olympus_grid_shell_id` was cleared for
+  //      some other reason → wipe (safer than trusting ambiguous state).
+  // Only case we DON'T wipe: the stored sub matches the verified sub, meaning
+  // this is a same-user session continuation. That's the `sameIdentity` flag.
   const previousSub = localStorage.getItem('olympus_grid_shell_id');
-  const identitySwitched = verified.user.sub && previousSub && previousSub !== verified.user.sub;
-  if (identitySwitched) {
-    console.log('[Auth] Identity changed — clearing per-identity app state');
+  const sameIdentity = !!verified.user.sub && previousSub === verified.user.sub;
+  if (!sameIdentity) {
+    console.log('[Auth] Fresh identity (new or different) — clearing per-identity app state');
     // Wipe everything except the tokens we just stored on lines 144-145.
     // `clearAllUserSessionState` includes the auth token keys, so re-persist
     // the fresh tokens after the wipe.
@@ -236,11 +246,12 @@ export async function signInWithApple(args: {
   if (refreshToken) localStorage.setItem('og_refresh_token', refreshToken);
   else if (verified.refreshToken) localStorage.setItem('og_refresh_token', verified.refreshToken);
 
-  // Identity-switch detection — same logic as verifyCode
+  // Fresh-identity detection — same logic as verifyCode above. Wipe unless
+  // the stored sub exactly matches this Apple sign-in's sub.
   const previousSub = localStorage.getItem('olympus_grid_shell_id');
-  const identitySwitched = verified.user?.sub && previousSub && previousSub !== verified.user.sub;
-  if (identitySwitched) {
-    console.log('[Auth] Identity changed (Apple sign-in) — clearing per-identity app state');
+  const sameIdentity = !!verified.user?.sub && previousSub === verified.user.sub;
+  if (!sameIdentity) {
+    console.log('[Auth] Fresh identity (Apple sign-in) — clearing per-identity app state');
     const freshAccess = localStorage.getItem('og_access_token');
     const freshRefresh = localStorage.getItem('og_refresh_token');
     clearAllUserSessionState();
