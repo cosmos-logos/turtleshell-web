@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useApolloStore } from '@/lib/store/apollo-store';
 import * as audioManager from '@/lib/audio/audio-manager';
 import { AudioPlayerBar } from '@/components/audio/AudioPlayerBar';
-import { clearStoredTokens, ogRequest, serverLogout } from '@/lib/api/olympus-grid-client';
+import { clearAllUserSessionState, ogRequest, serverLogout } from '@/lib/api/olympus-grid-client';
 import { useServiceStore } from '@/lib/store/service-store';
 
 export function AppShell() {
@@ -81,7 +81,9 @@ export function AppShell() {
   if (onboardingComplete === false) {
     const handleLogout = () => {
       serverLogout().finally(() => {
-        clearStoredTokens();
+        // Full wipe — same rationale as Sidebar's logout flow. See the
+        // clearAllUserSessionState docblock.
+        clearAllUserSessionState();
         useServiceStore.getState().disconnectOlympusGrid();
         navigate('/login', { replace: true });
       });

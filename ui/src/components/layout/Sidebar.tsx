@@ -39,7 +39,7 @@ function resolveEmoji(codename: string, theme: string): string | null {
   const o = OLYMPUS_AGENTS.find(a => codename.startsWith(a.codename) || a.codename.startsWith(codename));
   return o?.godEmoji ?? null;
 }
-import { clearStoredTokens, serverLogout } from '@/lib/api/olympus-grid-client';
+import { clearAllUserSessionState, serverLogout } from '@/lib/api/olympus-grid-client';
 import { useServiceStore } from '@/lib/store/service-store';
 import { useAgentStore } from '@/lib/store/agent-store';
 import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
@@ -180,7 +180,12 @@ function UserFooter({ expanded }: { expanded: boolean }) {
     if (confirmingLogout) {
       // Second click — actually log out
       serverLogout().then(() => {
-        clearStoredTokens();
+        // Full wipe of every per-user localStorage + sessionStorage key —
+        // chat threads, agent keys, configured guides, everything — so the
+        // next identity to sign in on this device never sees the previous
+        // user's data. Called BEFORE the route change so by the time
+        // /login renders there's nothing to leak.
+        clearAllUserSessionState();
         useServiceStore.getState().disconnectOlympusGrid();
         navigate('/login', { replace: true });
       });

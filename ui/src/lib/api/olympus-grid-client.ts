@@ -155,19 +155,14 @@ export async function verifyCode(
   const identitySwitched = verified.user.sub && previousSub && previousSub !== verified.user.sub;
   if (identitySwitched) {
     console.log('[Auth] Identity changed — clearing per-identity app state');
-    // Chat threads and active agent ids
-    localStorage.removeItem('turtleshell-chat');
-    // Cosmos-logos connected agents + active chat agent id
-    localStorage.removeItem('turtleshell-cosmos-agents');
-    // Onboarding selections
-    localStorage.removeItem('turtleshell-onboarding');
-    localStorage.removeItem('turtleshell-guide');
-    localStorage.removeItem('turtleshell_username');
-    // Custom/hidden agents
-    localStorage.removeItem('turtleshell-hidden-agents');
-    localStorage.removeItem('turtleshell-custom-agents');
-    localStorage.removeItem('turtleshell-athena-disconnected');
-    localStorage.removeItem('selected_agent');
+    // Wipe everything except the tokens we just stored on lines 144-145.
+    // `clearAllUserSessionState` includes the auth token keys, so re-persist
+    // the fresh tokens after the wipe.
+    const freshAccess = localStorage.getItem('og_access_token');
+    const freshRefresh = localStorage.getItem('og_refresh_token');
+    clearAllUserSessionState();
+    if (freshAccess) localStorage.setItem('og_access_token', freshAccess);
+    if (freshRefresh) localStorage.setItem('og_refresh_token', freshRefresh);
   }
 
   localStorage.setItem('olympus_grid_email', verified.user.email);
@@ -246,15 +241,11 @@ export async function signInWithApple(args: {
   const identitySwitched = verified.user?.sub && previousSub && previousSub !== verified.user.sub;
   if (identitySwitched) {
     console.log('[Auth] Identity changed (Apple sign-in) — clearing per-identity app state');
-    localStorage.removeItem('turtleshell-chat');
-    localStorage.removeItem('turtleshell-cosmos-agents');
-    localStorage.removeItem('turtleshell-onboarding');
-    localStorage.removeItem('turtleshell-guide');
-    localStorage.removeItem('turtleshell_username');
-    localStorage.removeItem('turtleshell-hidden-agents');
-    localStorage.removeItem('turtleshell-custom-agents');
-    localStorage.removeItem('turtleshell-athena-disconnected');
-    localStorage.removeItem('selected_agent');
+    const freshAccess = localStorage.getItem('og_access_token');
+    const freshRefresh = localStorage.getItem('og_refresh_token');
+    clearAllUserSessionState();
+    if (freshAccess) localStorage.setItem('og_access_token', freshAccess);
+    if (freshRefresh) localStorage.setItem('og_refresh_token', freshRefresh);
   }
 
   if (verified.user?.email) localStorage.setItem('olympus_grid_email', verified.user.email);
@@ -276,6 +267,56 @@ export function clearStoredTokens() {
   localStorage.removeItem('olympus_grid_shell_id');
   localStorage.removeItem('og_access_token');
   localStorage.removeItem('og_refresh_token');
+}
+
+/**
+ * Wipe every piece of per-user state the browser has cached — chat threads,
+ * memory, API keys, configured guides, cosmos-logos connections, avatars,
+ * onboarding selections, all of it. Called on logout and on 401 (session
+ * expired) so the next login starts from a clean slate and never shows the
+ * previous identity's content.
+ *
+ * Critical: this is a security boundary. `clearStoredTokens` alone is not
+ * enough because it wipes `olympus_grid_shell_id`, which is the reference
+ * used by identity-switch detection in the verify flow. After a logout,
+ * `previousSub` reads as null so the identity-switch branch never fires on
+ * the next sign-in — which means without this explicit wipe, every
+ * per-identity artifact (including live BYOK API keys belonging to the
+ * prior user) bleeds into the new session.
+ */
+export function clearAllUserSessionState() {
+  const KEYS = [
+    // Auth
+    'olympus_grid_email',
+    'olympus_grid_service_url',
+    'olympus_grid_shell_id',
+    'og_access_token',
+    'og_refresh_token',
+    // Chat / memory / agents
+    'turtleshell-chat',
+    'turtleshell-cosmos-agents',
+    'turtleshell-hidden-agents',
+    'turtleshell-custom-agents',
+    'turtleshell-user-api-keys',
+    'turtleshell-configured-guides',
+    // Onboarding + guide selection
+    'turtleshell-onboarding',
+    'turtleshell-guide',
+    'turtleshell_username',
+    'turtleshell_avatar',
+    // Disconnect flags (per-codename)
+    'turtleshell-athena-disconnected',
+    'turtleshell-cosmos-disconnected',
+    'turtleshell-logos-disconnected',
+    // Legacy / misc
+    'selected_agent',
+  ];
+  for (const k of KEYS) {
+    try { localStorage.removeItem(k); } catch {}
+  }
+  // sessionStorage holds sealed cosmos-logos tokens scoped by agent id;
+  // these are per-session but still belong to an identity — clear them.
+  try { sessionStorage.clear(); } catch {}
 }
 
 /** @deprecated Token is no longer stored in localStorage — use checkAuthStatus() instead */

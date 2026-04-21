@@ -5,7 +5,7 @@ import type {
   ServiceCategory,
   OlympusUser,
 } from '@/types/service';
-import { clearStoredTokens, serverLogout } from '@/lib/api/olympus-grid-client';
+import { clearAllUserSessionState, serverLogout } from '@/lib/api/olympus-grid-client';
 import { useAgentStore } from '@/lib/store/agent-store';
 import { disconnectSalesforce as disconnectSfTokens } from '@/lib/api/salesforce-client';
 import { disconnectGitHub as disconnectGhTokens } from '@/lib/api/github-client';
@@ -108,7 +108,13 @@ export const useServiceStore = create<ServiceStore>()(
         }),
 
       disconnectOlympusGrid: () => {
-        clearStoredTokens();
+        // Full per-user wipe — not just auth tokens. Chat threads, cosmos-
+        // logos connections, BYOK API keys, configured guides, custom
+        // agents — all per-identity state must be cleared on logout so the
+        // next sign-in starts clean. See `clearAllUserSessionState` for the
+        // rationale; without it, the next identity on this device sees the
+        // previous user's BYOK keys + chat history, which is a critical leak.
+        clearAllUserSessionState();
         // Fire-and-forget server-side logout to clear httpOnly cookies
         serverLogout();
         useAgentStore.getState().refreshAuth();
