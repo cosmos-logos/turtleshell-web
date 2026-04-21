@@ -42,6 +42,7 @@ function resolveEmoji(codename: string, theme: string): string | null {
 import { clearStoredTokens, serverLogout } from '@/lib/api/olympus-grid-client';
 import { useServiceStore } from '@/lib/store/service-store';
 import { useAgentStore } from '@/lib/store/agent-store';
+import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
 import { getShellId } from '@/lib/api/olympus-grid-client';
 
@@ -73,6 +74,13 @@ function useNavItems(): NavItem[] {
   const hiddenIds = useAgentStore((s) => s.hiddenAgentIds);
   const agentTheme = useAgentThemeStore((s) => s.agentTheme);
   const testBetaEnabled = useTestBetaEnabled();
+  // Subscribe to configuredGuides so the sidebar re-renders the moment
+  // Change Guide marks a new guide configured. The visibility filters
+  // below (`isBuiltinAgentVisibleInBeta`, `isCosmosCodenameConfigured`)
+  // read this store internally, but without an explicit subscription
+  // here the Sidebar would keep rendering the stale snapshot until the
+  // next unrelated state change nudged it.
+  useConfiguredGuidesStore((s) => s.configured);
 
   // Built-in agents (Logos, Cosmos, Claude, OpenAI, Grok, Gemini, custom).
   // When beta is OFF, restrict to the core allowlist (cosmos, logos).

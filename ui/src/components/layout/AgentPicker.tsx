@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, Lock } from 'lucide-react';
 import { useNavigate, useMatch } from 'react-router-dom';
 import { useAgentStore, isAgentAvailable } from '@/lib/store/agent-store';
+import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { agentDisplayName } from '@/lib/cosmos-logos/types';
 import { useChatStore } from '@/lib/store/chat-store';
@@ -36,6 +37,10 @@ interface AgentPickerProps {
 export function AgentPicker({ compact }: AgentPickerProps) {
   const { activeAgent, setActiveAgent, agents: allBuiltinAgentsRaw, hiddenAgentIds } = useAgentStore();
   const testBetaEnabled = useTestBetaEnabled();
+  // Subscribe so picker re-renders when Change Guide marks a new guide
+  // configured — the filter functions below read the store via getState and
+  // would otherwise show a stale list until the next unrelated re-render.
+  useConfiguredGuidesStore((s) => s.configured);
   const cosmosAgentsRaw = useCosmosLogosStore((s) => s.agents);
   const cosmosAgents = cosmosAgentsRaw
     .filter(a => !hiddenAgentIds.has(a.id))
