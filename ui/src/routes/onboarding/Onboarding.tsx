@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CAUSES, TIERS, PERKS, GUIDES, BYOK_GUIDES, CREATURES, type GuideKey, type CauseIndex } from './OnboardingData';
-import { useTestBetaEnabled } from '@/lib/beta';
+import { GuideChooseScreen, ByokScreen } from './GuideScreens';
 import { ogRequest, getShellId } from '@/lib/api/olympus-grid-client';
 import { plutusClient } from '@/lib/api/plutus-client';
-import { useAgentStore, setUserApiKey } from '@/lib/store/agent-store';
+import { useAgentStore } from '@/lib/store/agent-store';
 import { useChatStore } from '@/lib/store/chat-store';
+import { markGuideConfigured, syncConfiguredGuidesToProfile } from '@/lib/store/configured-guides-store';
 
 type Step =
   | 'cause'
@@ -86,18 +87,6 @@ function Particles() {
   );
 }
 
-// Soft-launch gate: `soon: true` renders a guide grayed-out with a "Soon"
-// badge in place of the selection tick and blocks selection. Athena is the
-// only selectable guide until Cosmos + Logos are ready for go-live. Flip
-// back to false (or delete the key) to restore full selection. iOS mirrors
-// this via Guide.comingSoon in OnboardingView.swift.
-const GUIDE_ENTRIES: { key: GuideKey; style: string; selectedBg: string; selectedBorder: string; soon?: boolean }[] = [
-  { key: 'cosmos', style: 'text-shell-400', selectedBg: 'bg-shell-500/10', selectedBorder: 'border-shell-500/40', soon: true },
-  { key: 'logos', style: 'text-teal-400', selectedBg: 'bg-teal-500/10', selectedBorder: 'border-teal-500/40', soon: true },
-  { key: 'athena', style: 'text-purple-400', selectedBg: 'bg-purple-500/10', selectedBorder: 'border-purple-500/40' },
-  { key: 'custom', style: 'text-amber-400', selectedBg: 'bg-amber-500/10', selectedBorder: 'border-amber-500/40' },
-];
-
 // ── Screen: Choose Your Cause ────────────────────────
 function CauseScreen({ onNext, selectedCause, setSelectedCause }: {
   onNext: () => void; selectedCause: CauseIndex | null; setSelectedCause: (c: CauseIndex) => void;
@@ -142,144 +131,6 @@ function CauseScreen({ onNext, selectedCause, setSelectedCause }: {
         Read about the seven causes and the tithe ↗
       </a>
       <Btn onClick={onNext} disabled={selectedCause === null}>This Is My Cause</Btn>
-    </div>
-  );
-}
-
-// ── Screen: Choose Your Guide ──────────────────────
-function GuideChooseScreen({ selected, onSelect, onNext, onByok, testBetaEnabled }: {
-  selected: GuideKey | null; onSelect: (k: GuideKey) => void; onNext: () => void; onByok: () => void;
-  testBetaEnabled: boolean;
-}) {
-  // Beta-off users see only the three core guides (Athena / Cosmos / Logos).
-  // Custom + BYOK are advanced surfaces.
-  const visibleGuides = testBetaEnabled
-    ? GUIDE_ENTRIES
-    : GUIDE_ENTRIES.filter(g => g.key !== 'custom');
-  return (
-    <div className="flex flex-col items-center min-h-[80vh] justify-center pt-16 pb-12 text-center px-4">
-      <h1 className="text-2xl font-bold mb-2 text-text-primary">Choose Your Guide</h1>
-      <p className="text-sm mb-7 text-text-muted">Who walks with you through the ocean?</p>
-
-      <div className="flex flex-col gap-3 w-full max-w-[340px] mb-8">
-        {visibleGuides.map(({ key, style, selectedBg, selectedBorder, soon }) => {
-          const g = GUIDES[key];
-          const sel = selected === key;
-          return (
-            <button key={key} onClick={() => { if (!soon) onSelect(key); }} disabled={soon}
-              className={`flex items-center gap-4 p-4 rounded-xl text-left transition-all duration-200 border ${
-                soon ? 'opacity-45 cursor-not-allowed bg-surface-1 border-border-muted'
-                     : `hover:-translate-y-0.5 ${sel ? `${selectedBg} ${selectedBorder}` : 'bg-surface-1 border-border-muted'}`
-              }`}>
-              <div className={`w-14 h-14 rounded-full flex items-center justify-center text-3xl shrink-0 border transition-all ${
-                sel ? `${selectedBorder} shadow-lg` : 'bg-surface-2 border-border-muted'
-              }`}>
-                {g.emoji}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className={`text-sm font-semibold mb-0.5 ${style}`}>{g.name}</div>
-                <div className="text-[11px] uppercase tracking-wider text-text-muted mb-1">{g.role}</div>
-                <div className="text-xs text-text-muted leading-relaxed">{g.desc}</div>
-              </div>
-              {soon ? (
-                // Soft-launch pill — replaces the selection tick for gated
-                // guides so users see what's coming without being able to
-                // pick it. Mirrors the Login "Soon" affordance.
-                <span className="text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 bg-surface-2 border border-border-muted text-text-muted">
-                  Soon
-                </span>
-              ) : (
-                <div className={`w-5 h-5 rounded-full border-[1.5px] flex items-center justify-center text-[10px] shrink-0 ${
-                  sel ? 'bg-shell-500 border-shell-500 text-white' : 'border-border-muted'
-                }`}>{sel ? '✓' : ''}</div>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      <Btn onClick={onNext} disabled={!selected}>This Is My Guide</Btn>
-
-      {testBetaEnabled && (
-        <button onClick={onByok}
-          className="mt-4 text-xs text-text-muted hover:text-shell-400 transition-colors underline underline-offset-2">
-          Use your own API keys →
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── Screen: BYOK Provider Selection + API Key ─────
-const BYOK_PROVIDERS: { id: string; name: string; icon: string; style: string; selectedBg: string; selectedBorder: string; keyUrl: string; placeholder: string }[] = [
-  { id: 'openai', name: 'OpenAI', icon: '💬', style: 'text-emerald-400', selectedBg: 'bg-emerald-500/10', selectedBorder: 'border-emerald-500/40', keyUrl: 'https://platform.openai.com/api-keys', placeholder: 'sk-...' },
-  { id: 'claude', name: 'Claude', icon: '🤖', style: 'text-orange-400', selectedBg: 'bg-orange-500/10', selectedBorder: 'border-orange-500/40', keyUrl: 'https://console.anthropic.com/settings/keys', placeholder: 'sk-ant-...' },
-  { id: 'grok', name: 'Grok', icon: '🔥', style: 'text-red-400', selectedBg: 'bg-red-500/10', selectedBorder: 'border-red-500/40', keyUrl: 'https://console.x.ai/team/default/api-keys', placeholder: 'xai-...' },
-  { id: 'gemini', name: 'Gemini', icon: '✦', style: 'text-blue-400', selectedBg: 'bg-blue-500/10', selectedBorder: 'border-blue-500/40', keyUrl: 'https://aistudio.google.com/apikey', placeholder: 'AIza...' },
-];
-
-function ByokScreen({ selected, onSelect, onNext, onBack }: {
-  selected: GuideKey | null; onSelect: (k: GuideKey) => void; onNext: () => void; onBack: () => void;
-}) {
-  const [apiKey, setApiKey] = useState('');
-  const provider = BYOK_PROVIDERS.find(p => p.id === selected);
-
-  const handleNext = () => {
-    if (selected && apiKey.trim()) {
-      setUserApiKey(selected as any, apiKey.trim());
-    }
-    onNext();
-  };
-
-  return (
-    <div className="flex flex-col items-center min-h-[80vh] justify-center pt-16 pb-12 text-center px-4">
-      <h1 className="text-2xl font-bold mb-2 text-text-primary">Bring Your Own Key</h1>
-      <p className="text-sm mb-7 text-text-muted">Choose a provider and enter your API key.</p>
-
-      <div className="flex flex-col gap-3 w-full max-w-[340px] mb-6">
-        {BYOK_PROVIDERS.map(({ id, name, icon, style, selectedBg, selectedBorder }) => {
-          const sel = selected === id;
-          return (
-            <button key={id} onClick={() => { onSelect(id as GuideKey); setApiKey(''); }}
-              className={`flex items-center gap-4 p-4 rounded-xl text-left transition-all duration-200 hover:-translate-y-0.5 border ${
-                sel ? `${selectedBg} ${selectedBorder}` : 'bg-surface-1 border-border-muted'
-              }`}>
-              <div className={`w-14 h-14 rounded-full flex items-center justify-center text-3xl shrink-0 border transition-all ${
-                sel ? `${selectedBorder} shadow-lg` : 'bg-surface-2 border-border-muted'
-              }`}>
-                {icon}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className={`text-sm font-semibold ${style}`}>{name}</div>
-                <div className="text-xs text-text-muted">Bring your own API key</div>
-              </div>
-              <div className={`w-5 h-5 rounded-full border-[1.5px] flex items-center justify-center text-[10px] shrink-0 ${
-                sel ? 'bg-shell-500 border-shell-500 text-white' : 'border-border-muted'
-              }`}>{sel ? '✓' : ''}</div>
-            </button>
-          );
-        })}
-      </div>
-
-      {selected && provider && (
-        <div className="w-full max-w-[340px] mb-8 animate-fade-in">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">
-            {provider.name} API Key
-          </label>
-          <input value={apiKey} onChange={e => setApiKey(e.target.value)}
-            type="text"
-            autoComplete="off"
-            placeholder={provider.placeholder}
-            className="w-full px-4 py-3 rounded-xl text-sm bg-surface-1 border border-border-muted text-text-primary placeholder:text-text-muted focus:outline-none focus:border-shell-500/50 font-mono" />
-          <a href={provider.keyUrl} target="_blank" rel="noopener noreferrer"
-            className="inline-block mt-2 text-xs text-shell-400 hover:text-shell-300 transition-colors underline underline-offset-2">
-            Get your {provider.name} API key →
-          </a>
-        </div>
-      )}
-
-      <Btn onClick={handleNext} disabled={!selected || !apiKey.trim()}>This Is My Guide</Btn>
-      <Btn variant="ghost" onClick={onBack} className="mt-3">Back</Btn>
     </div>
   );
 }
@@ -733,7 +584,6 @@ export function Onboarding() {
   const [selectedGuide, setSelectedGuide] = useState<GuideKey | null>(null);
   const [customAgent, setCustomAgent] = useState<{ name: string; personality: string; creature: string } | null>(null);
   const [transitioning, setTransitioning] = useState(false);
-  const testBetaEnabled = useTestBetaEnabled();
 
   const { setActiveAgent, addAgent, agents } = useAgentStore();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -811,6 +661,14 @@ export function Onboarding() {
       completedGuide: true, completedAt: new Date().toISOString(),
     }));
     localStorage.setItem('turtleshell-guide', selectedGuide ?? 'cosmos');
+    // Mark the chosen guide as "configured" so the sidebar/picker filter lets
+    // it render, and so the Settings → Change Guide flow knows not to treat
+    // it as a fresh provider on next visit. Fire-and-forget server sync so
+    // the configured roster survives logout + new-device login.
+    if (selectedGuide) {
+      markGuideConfigured(selectedGuide);
+      void syncConfiguredGuidesToProfile();
+    }
 
     // Create profile. The Apex handler grants the 1000 signup bonus on
     // first completion — must run before Stripe checkout so the webhook's
@@ -861,34 +719,78 @@ export function Onboarding() {
           store.toggleVisibility(a.id);
         }
       }
-    } else if (selectedGuide === 'athena') {
-      // Athena lives in the cosmos-logos store, not the catalog.
-      // Ensure auto-connect runs (clears manual disconnect flag) then activate.
-      const { autoConnectAthena, clearAthenaDisconnectFlag } = await import('@/lib/cosmos-logos/auto-connect');
+    } else if (selectedGuide === 'athena' || selectedGuide === 'cosmos' || selectedGuide === 'logos') {
+      // Athena / Cosmos / Logos all live in the cosmos-logos store. They
+      // share the Athena chat endpoint and differ only in their bundled
+      // manifest (system_prompt + voice). Run the same activate dance:
+      // clear manual-disconnect flag → auto-connect (no-op if already up) →
+      // set active chat agent → hide every builtin catalog agent so the
+      // sidebar shows only the one the user picked.
+      const autoConnect = await import('@/lib/cosmos-logos/auto-connect');
       const { useCosmosLogosStore } = await import('@/lib/cosmos-logos/store');
-      clearAthenaDisconnectFlag();
-      await autoConnectAthena();
+      const matchCodename =
+        selectedGuide === 'athena' ? 'athena-616'
+        : selectedGuide; // 'cosmos' | 'logos'
+
+      if (selectedGuide === 'athena') {
+        autoConnect.clearAthenaDisconnectFlag();
+        await autoConnect.autoConnectAthena();
+      } else if (selectedGuide === 'cosmos') {
+        autoConnect.clearCosmosDisconnectFlag();
+        await autoConnect.autoConnectCosmos();
+      } else {
+        autoConnect.clearLogosDisconnectFlag();
+        await autoConnect.autoConnectLogos();
+      }
+
       const cosmosStore = useCosmosLogosStore.getState();
-      const athena = cosmosStore.agents.find(a => a.manifest.identity.codename === 'athena-616');
-      if (athena) {
-        cosmosStore.setActiveChatAgent(athena.id);
-        useChatStore.getState().switchAgent(athena.id);
-        // Hide every builtin catalog agent (Logos, Cosmos, BYOK) — Athena is
-        // the only agent the user chose, so the sidebar should only show
-        // her. Matches the symmetry of the other guide branches below,
-        // which hide non-selected builtins.
+      const connected = cosmosStore.agents.find(a => a.manifest.identity.codename === matchCodename);
+      if (connected) {
+        cosmosStore.setActiveChatAgent(connected.id);
+        useChatStore.getState().switchAgent(connected.id);
+        // hiddenAgentIds is shared across both stores. Skip hiding any
+        // builtin whose ID collides with a cosmos-logos codename (the
+        // bundled Cosmos/Logos agents derive their id from codename, so
+        // hiding builtin `cosmos` would also hide the cosmos-logos Cosmos
+        // entry the user just picked). The picker/sidebar already dedupe
+        // the builtin at render time when a cosmos-logos cousin exists.
+        const cosmosCodenames = new Set(cosmosStore.agents.map(a => a.manifest.identity.codename));
         const store = useAgentStore.getState();
         for (const a of store.agents) {
+          if (cosmosCodenames.has(a.id)) continue;
           if (!store.hiddenAgentIds.has(a.id)) {
             store.toggleVisibility(a.id);
           }
         }
+        // Hide non-selected cosmos-logos agents (the other two of
+        // Athena/Cosmos/Logos) so the sidebar shows the chosen guide alone.
+        for (const a of cosmosStore.agents) {
+          if (a.id === connected.id) continue;
+          if (!store.hiddenAgentIds.has(a.id)) {
+            store.toggleVisibility(a.id);
+          }
+        }
+        // Safety net for legacy state: older builds hid builtin cosmos/logos
+        // IDs which also masks the cosmos-logos cousin. Force-unhide the
+        // selected agent's ID.
+        if (store.hiddenAgentIds.has(connected.id)) {
+          store.toggleVisibility(connected.id);
+        }
       } else {
-        console.warn('[Onboarding] Athena auto-connect failed — falling back to Logos');
+        console.warn(`[Onboarding] ${selectedGuide} auto-connect failed — falling back to Logos builtin`);
         const logos = agents.find(a => a.id === 'logos');
         if (logos) { setActiveAgent(logos); useChatStore.getState().switchAgent('logos'); }
       }
     } else if (selectedGuide) {
+      // BYOK branch (openai / claude / grok / gemini). Clear any cosmos-logos
+      // active selection — stale state from an earlier test would make the
+      // AgentPicker render the cosmos-logos persona on top of the builtin
+      // BYOK choice. Also hide every cosmos-logos entry so the sidebar
+      // shows only the BYOK agent the user just picked.
+      const { useCosmosLogosStore } = await import('@/lib/cosmos-logos/store');
+      const cosmosStore = useCosmosLogosStore.getState();
+      cosmosStore.setActiveChatAgent(null);
+
       const builtinAgent = agents.find(a => a.id === selectedGuide);
       if (builtinAgent) setActiveAgent(builtinAgent);
       useChatStore.getState().switchAgent(selectedGuide);
@@ -898,9 +800,16 @@ export function Onboarding() {
       if (store.hiddenAgentIds.has(selectedGuide)) {
         store.toggleVisibility(selectedGuide);
       }
-      // Hide all others
+      // Hide all other builtins
       for (const a of store.agents) {
         if (a.id !== selectedGuide && !store.hiddenAgentIds.has(a.id)) {
+          store.toggleVisibility(a.id);
+        }
+      }
+      // Hide every cosmos-logos entry (Athena, Cosmos, Logos) so the sidebar
+      // reflects the user's single-agent choice.
+      for (const a of cosmosStore.agents) {
+        if (!store.hiddenAgentIds.has(a.id)) {
           store.toggleVisibility(a.id);
         }
       }
@@ -969,8 +878,7 @@ export function Onboarding() {
         {step === 'guide-choose' && (
           <GuideChooseScreen selected={selectedGuide} onSelect={setSelectedGuide}
             onNext={() => goTo(selectedGuide === 'custom' ? 'guide-custom' : 'guide-dive')}
-            onByok={() => goTo('guide-byok')}
-            testBetaEnabled={testBetaEnabled} />
+            onByok={() => goTo('guide-byok')} />
         )}
         {step === 'guide-byok' && (
           <ByokScreen selected={selectedGuide} onSelect={setSelectedGuide}

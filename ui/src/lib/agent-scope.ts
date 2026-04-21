@@ -71,6 +71,18 @@ export function isAthenaFamily(codename: string | null | undefined): boolean {
     return codename === 'athena' || codename.startsWith('athena-');
 }
 
+/** Is a codename part of the Cosmos family? Exact or `cosmos-*` prefix. */
+export function isCosmosFamily(codename: string | null | undefined): boolean {
+    if (!codename) return false;
+    return codename === 'cosmos' || codename.startsWith('cosmos-');
+}
+
+/** Is a codename part of the Logos family? Exact or `logos-*` prefix. */
+export function isLogosFamily(codename: string | null | undefined): boolean {
+    if (!codename) return false;
+    return codename === 'logos' || codename.startsWith('logos-');
+}
+
 /**
  * Hook — returns the scope derived from the current UI state:
  *   - If a cosmos-logos agent is selected (activeChatAgentId), that wins.
@@ -115,6 +127,49 @@ export function useActiveAgentScope(): AgentScope {
                         return p;
                     },
                     kind: 'athena',
+                };
+            }
+            // Cosmos and Logos run on Athena's backend with bundled manifests.
+            // Chat requests carry `agentId='cosmos'` / `agentId='logos'` so
+            // Athena's AGENTS router picks the OpenAI provider AND stamps
+            // memory/history/Plutus records with the persona codename.
+            // This scope query reads those records back for the Memory +
+            // History pages; prefix-matching mirrors the athena family in
+            // case cosmos-616/logos-616 deployments emerge later.
+            if (isCosmosFamily(cosmosCodename)) {
+                return {
+                    key: 'cosmos',
+                    displayName: 'Cosmos',
+                    avatar: '🐟',
+                    color: cosmosColor ?? '#20c8a0',
+                    greeting: COSMOS_GREETING,
+                    cta: COSMOS_CTA,
+                    matches: (id) => !!id && isCosmosFamily(id),
+                    toQueryParams: () => {
+                        const p = new URLSearchParams();
+                        p.set('agentIds', 'cosmos');
+                        p.set('agentIdPrefix', 'cosmos-');
+                        return p;
+                    },
+                    kind: 'cosmos',
+                };
+            }
+            if (isLogosFamily(cosmosCodename)) {
+                return {
+                    key: 'logos',
+                    displayName: 'Logos',
+                    avatar: '🐢',
+                    color: cosmosColor ?? '#40d0c0',
+                    greeting: LOGOS_GREETING,
+                    cta: LOGOS_CTA,
+                    matches: (id) => !!id && isLogosFamily(id),
+                    toQueryParams: () => {
+                        const p = new URLSearchParams();
+                        p.set('agentIds', 'logos');
+                        p.set('agentIdPrefix', 'logos-');
+                        return p;
+                    },
+                    kind: 'cosmos',
                 };
             }
             // Other cosmos agents (poseidon, thoth, etc.) — exact match on cosmos id

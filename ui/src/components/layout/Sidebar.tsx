@@ -25,6 +25,7 @@ import {
   useTestBetaEnabled,
   isBuiltinAgentVisibleInBeta,
   isCosmosAgentVisibleInBeta,
+  isCosmosCodenameConfigured,
 } from '@/lib/beta';
 
 const OCEAN_EMOJIS: Record<string, string> = {
@@ -38,9 +39,10 @@ function resolveEmoji(codename: string, theme: string): string | null {
   const o = OLYMPUS_AGENTS.find(a => codename.startsWith(a.codename) || a.codename.startsWith(codename));
   return o?.godEmoji ?? null;
 }
-import { clearStoredTokens, serverLogout } from '@/lib/api/olympus-grid-client';
+import { clearAllUserSessionState, serverLogout } from '@/lib/api/olympus-grid-client';
 import { useServiceStore } from '@/lib/store/service-store';
 import { useAgentStore } from '@/lib/store/agent-store';
+import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
 import { getShellId } from '@/lib/api/olympus-grid-client';
 
@@ -72,12 +74,24 @@ function useNavItems(): NavItem[] {
   const hiddenIds = useAgentStore((s) => s.hiddenAgentIds);
   const agentTheme = useAgentThemeStore((s) => s.agentTheme);
   const testBetaEnabled = useTestBetaEnabled();
+  // Subscribe to configuredGuides so the sidebar re-renders the moment
+  // Change Guide marks a new guide configured. The visibility filters
+  // below (`isBuiltinAgentVisibleInBeta`, `isCosmosCodenameConfigured`)
+  // read this store internally, but without an explicit subscription
+  // here the Sidebar would keep rendering the stale snapshot until the
+  // next unrelated state change nudged it.
+  useConfiguredGuidesStore((s) => s.configured);
 
   // Built-in agents (Logos, Cosmos, Claude, OpenAI, Grok, Gemini, custom).
   // When beta is OFF, restrict to the core allowlist (cosmos, logos).
+  // Cosmos/Logos also live as bundled cosmos-logos manifests — hide the
+  // builtin dupe when the cosmos-logos store holds a matching codename so
+  // the sidebar shows a single row per agent.
+  const cosmosCodenames = new Set(cosmosAgents.map(a => a.manifest.identity.codename));
   const builtinItems: NavItem[] = builtinAgents
     .filter(a => !hiddenIds.has(a.id))
     .filter(a => isBuiltinAgentVisibleInBeta(a.id, testBetaEnabled))
+    .filter(a => !cosmosCodenames.has(a.id))
     .map((a) => ({
       to: `/app/chat?agent_builtin=${a.id}`,
       label: a.name,
@@ -92,6 +106,9 @@ function useNavItems(): NavItem[] {
   const cosmosItems: NavItem[] = cosmosAgents
     .filter(a => !hiddenIds.has(a.id))
     .filter(a => isCosmosAgentVisibleInBeta(a.manifest.identity.codename, testBetaEnabled))
+    // Configured-guide gate — athena/cosmos/logos only appear after the user
+    // has set them up in onboarding or Settings → Change Guide.
+    .filter(a => isCosmosCodenameConfigured(a.manifest.identity.codename))
     .map((a) => {
       const name = agentDisplayName(a);
       const codename = a.manifest.identity.codename;
@@ -163,7 +180,12 @@ function UserFooter({ expanded }: { expanded: boolean }) {
     if (confirmingLogout) {
       // Second click — actually log out
       serverLogout().then(() => {
-        clearStoredTokens();
+        // Full wipe of every per-user localStorage + sessionStorage key —
+        // chat threads, agent keys, configured guides, everything — so the
+        // next identity to sign in on this device never sees the previous
+        // user's data. Called BEFORE the route change so by the time
+        // /login renders there's nothing to leak.
+        clearAllUserSessionState();
         useServiceStore.getState().disconnectOlympusGrid();
         navigate('/login', { replace: true });
       });

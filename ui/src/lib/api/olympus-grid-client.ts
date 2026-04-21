@@ -151,38 +151,62 @@ export async function verifyCode(
   // selection all belong to the old identity and bleed into the new
   // session ("why is my old Athena chat here?"). Wipe per-identity app
   // state so the new session starts clean.
+  // Fresh-identity detection: wipe per-user state whenever the new sub
+  // doesn't exactly match what we had stored. This covers THREE cases:
+  //   1. Different user signing in → wipe (identity switch).
+  //   2. New sign-up on a browser that still has another user's residual
+  //      localStorage (they didn't log out, or the previous logout predated
+  //      the full-wipe fix) → wipe.
+  //   3. Same user signing in but `olympus_grid_shell_id` was cleared for
+  //      some other reason → wipe (safer than trusting ambiguous state).
+  // Only case we DON'T wipe: the stored sub matches the verified sub, meaning
+  // this is a same-user session continuation. That's the `sameIdentity` flag.
   const previousSub = localStorage.getItem('olympus_grid_shell_id');
-  const identitySwitched = verified.user.sub && previousSub && previousSub !== verified.user.sub;
-  if (identitySwitched) {
-    console.log('[Auth] Identity changed — clearing per-identity app state');
-    // Chat threads and active agent ids
-    localStorage.removeItem('turtleshell-chat');
-    // Cosmos-logos connected agents + active chat agent id
-    localStorage.removeItem('turtleshell-cosmos-agents');
-    // Onboarding selections
-    localStorage.removeItem('turtleshell-onboarding');
-    localStorage.removeItem('turtleshell-guide');
-    localStorage.removeItem('turtleshell_username');
-    // Custom/hidden agents
-    localStorage.removeItem('turtleshell-hidden-agents');
-    localStorage.removeItem('turtleshell-custom-agents');
-    localStorage.removeItem('turtleshell-athena-disconnected');
-    localStorage.removeItem('selected_agent');
+  const sameIdentity = !!verified.user.sub && previousSub === verified.user.sub;
+  if (!sameIdentity) {
+    console.log('[Auth] Fresh identity (new or different) — full session reset');
+    // Wipe everything (localStorage + sessionStorage), then re-persist the
+    // identity essentials. A localStorage wipe ALONE is not enough because
+    // zustand persist-middleware stores (chat-store, cosmos-logos, configured-
+    // guides, etc.) read localStorage ONCE at app init and hold their
+    // hydrated snapshot in memory. Wiping storage mid-session doesn't touch
+    // that snapshot — React keeps re-rendering the previous user's threads.
+    // Force a full page load below to restart zustand from the now-empty
+    // storage.
+    const freshAccess = localStorage.getItem('og_access_token');
+    const freshRefresh = localStorage.getItem('og_refresh_token');
+    clearAllUserSessionState();
+    if (freshAccess) localStorage.setItem('og_access_token', freshAccess);
+    if (freshRefresh) localStorage.setItem('og_refresh_token', freshRefresh);
+    // Re-persist the identity fields AppShell/useStartupRefresh need on boot.
+    localStorage.setItem('olympus_grid_email', verified.user.email);
+    localStorage.setItem('olympus_grid_service_url', getGridBase());
+    if (verified.user.sub) {
+      localStorage.setItem('olympus_grid_shell_id', verified.user.sub);
+    }
+    if (!localStorage.getItem('turtleshell_username')) {
+      const local = (verified.user.email || '').split('@')[0] || '';
+      const derived = local.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (derived) localStorage.setItem('turtleshell_username', derived);
+    }
+
+    // Hard navigate so every persisted zustand store re-hydrates from empty
+    // localStorage. Target is derived from the server's onboardingComplete
+    // so the new user lands where they should: onboarding for first-timers,
+    // chat for returning users. The caller's awaited Promise never resolves
+    // — the navigation interrupts — which means the Login page's setTimeout
+    // navigate is skipped and no stale render ever happens.
+    const dest = verified.onboardingComplete ? '/app/chat' : '/onboarding';
+    window.location.assign(dest);
+    return new Promise<VerifyResult>(() => { /* never resolves — reload wins */ });
   }
 
+  // Same-identity continuation — normal token refresh, keep existing state.
   localStorage.setItem('olympus_grid_email', verified.user.email);
   localStorage.setItem('olympus_grid_service_url', getGridBase());
-
   if (verified.user.sub) {
     localStorage.setItem('olympus_grid_shell_id', verified.user.sub);
   }
-
-  // Seed `turtleshell_username` so Profile + useAllowDeveloperMode can
-  // resolve the current handle without a round-trip. Onboarding / handle
-  // rename are the authoritative writers; this is a best-guess default
-  // derived the same way the server derives it at signup (lowercase
-  // email local-part, alphanumerics + `_` `-`). Only set when unset —
-  // don't clobber a handle a user already renamed to.
   if (!localStorage.getItem('turtleshell_username')) {
     const local = (verified.user.email || '').split('@')[0] || '';
     const derived = local.toLowerCase().replace(/[^a-z0-9_-]/g, '');
@@ -241,22 +265,32 @@ export async function signInWithApple(args: {
   if (refreshToken) localStorage.setItem('og_refresh_token', refreshToken);
   else if (verified.refreshToken) localStorage.setItem('og_refresh_token', verified.refreshToken);
 
-  // Identity-switch detection — same logic as verifyCode
+  // Fresh-identity detection — same full-reset-and-reload dance as verifyCode.
+  // Must hard-navigate so zustand persist stores re-initialize from the
+  // wiped localStorage. See verifyCode for the full rationale.
   const previousSub = localStorage.getItem('olympus_grid_shell_id');
-  const identitySwitched = verified.user?.sub && previousSub && previousSub !== verified.user.sub;
-  if (identitySwitched) {
-    console.log('[Auth] Identity changed (Apple sign-in) — clearing per-identity app state');
-    localStorage.removeItem('turtleshell-chat');
-    localStorage.removeItem('turtleshell-cosmos-agents');
-    localStorage.removeItem('turtleshell-onboarding');
-    localStorage.removeItem('turtleshell-guide');
-    localStorage.removeItem('turtleshell_username');
-    localStorage.removeItem('turtleshell-hidden-agents');
-    localStorage.removeItem('turtleshell-custom-agents');
-    localStorage.removeItem('turtleshell-athena-disconnected');
-    localStorage.removeItem('selected_agent');
+  const sameIdentity = !!verified.user?.sub && previousSub === verified.user.sub;
+  if (!sameIdentity) {
+    console.log('[Auth] Fresh identity (Apple sign-in) — full session reset');
+    const freshAccess = localStorage.getItem('og_access_token');
+    const freshRefresh = localStorage.getItem('og_refresh_token');
+    clearAllUserSessionState();
+    if (freshAccess) localStorage.setItem('og_access_token', freshAccess);
+    if (freshRefresh) localStorage.setItem('og_refresh_token', freshRefresh);
+    if (verified.user?.email) localStorage.setItem('olympus_grid_email', verified.user.email);
+    localStorage.setItem('olympus_grid_service_url', getGridBase());
+    if (verified.user?.sub) localStorage.setItem('olympus_grid_shell_id', verified.user.sub);
+    if (!localStorage.getItem('turtleshell_username')) {
+      const local = (verified.user?.email || '').split('@')[0] || '';
+      const derived = local.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (derived) localStorage.setItem('turtleshell_username', derived);
+    }
+    const dest = verified.onboardingComplete ? '/app/chat' : '/onboarding';
+    window.location.assign(dest);
+    return new Promise<VerifyResult & { accountStatus?: string; onboardingComplete?: boolean }>(() => { /* never resolves */ });
   }
 
+  // Same-identity continuation
   if (verified.user?.email) localStorage.setItem('olympus_grid_email', verified.user.email);
   localStorage.setItem('olympus_grid_service_url', getGridBase());
   if (verified.user?.sub) localStorage.setItem('olympus_grid_shell_id', verified.user.sub);
@@ -276,6 +310,56 @@ export function clearStoredTokens() {
   localStorage.removeItem('olympus_grid_shell_id');
   localStorage.removeItem('og_access_token');
   localStorage.removeItem('og_refresh_token');
+}
+
+/**
+ * Wipe every piece of per-user state the browser has cached — chat threads,
+ * memory, API keys, configured guides, cosmos-logos connections, avatars,
+ * onboarding selections, all of it. Called on logout and on 401 (session
+ * expired) so the next login starts from a clean slate and never shows the
+ * previous identity's content.
+ *
+ * Critical: this is a security boundary. `clearStoredTokens` alone is not
+ * enough because it wipes `olympus_grid_shell_id`, which is the reference
+ * used by identity-switch detection in the verify flow. After a logout,
+ * `previousSub` reads as null so the identity-switch branch never fires on
+ * the next sign-in — which means without this explicit wipe, every
+ * per-identity artifact (including live BYOK API keys belonging to the
+ * prior user) bleeds into the new session.
+ */
+export function clearAllUserSessionState() {
+  const KEYS = [
+    // Auth
+    'olympus_grid_email',
+    'olympus_grid_service_url',
+    'olympus_grid_shell_id',
+    'og_access_token',
+    'og_refresh_token',
+    // Chat / memory / agents
+    'turtleshell-chat',
+    'turtleshell-cosmos-agents',
+    'turtleshell-hidden-agents',
+    'turtleshell-custom-agents',
+    'turtleshell-user-api-keys',
+    'turtleshell-configured-guides',
+    // Onboarding + guide selection
+    'turtleshell-onboarding',
+    'turtleshell-guide',
+    'turtleshell_username',
+    'turtleshell_avatar',
+    // Disconnect flags (per-codename)
+    'turtleshell-athena-disconnected',
+    'turtleshell-cosmos-disconnected',
+    'turtleshell-logos-disconnected',
+    // Legacy / misc
+    'selected_agent',
+  ];
+  for (const k of KEYS) {
+    try { localStorage.removeItem(k); } catch {}
+  }
+  // sessionStorage holds sealed cosmos-logos tokens scoped by agent id;
+  // these are per-session but still belong to an identity — clear them.
+  try { sessionStorage.clear(); } catch {}
 }
 
 /** @deprecated Token is no longer stored in localStorage — use checkAuthStatus() instead */

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, Lock } from 'lucide-react';
 import { useNavigate, useMatch } from 'react-router-dom';
 import { useAgentStore, isAgentAvailable } from '@/lib/store/agent-store';
+import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { agentDisplayName } from '@/lib/cosmos-logos/types';
 import { useChatStore } from '@/lib/store/chat-store';
@@ -12,6 +13,7 @@ import {
   useTestBetaEnabled,
   isBuiltinAgentVisibleInBeta,
   isCosmosAgentVisibleInBeta,
+  isCosmosCodenameConfigured,
 } from '@/lib/beta';
 import type { Agent } from '@/types/agent';
 
@@ -35,24 +37,40 @@ interface AgentPickerProps {
 export function AgentPicker({ compact }: AgentPickerProps) {
   const { activeAgent, setActiveAgent, agents: allBuiltinAgentsRaw, hiddenAgentIds } = useAgentStore();
   const testBetaEnabled = useTestBetaEnabled();
-  const allBuiltinAgents = allBuiltinAgentsRaw
-    .filter(a => !hiddenAgentIds.has(a.id))
-    .filter(a => isBuiltinAgentVisibleInBeta(a.id, testBetaEnabled));
+  // Subscribe so picker re-renders when Change Guide marks a new guide
+  // configured — the filter functions below read the store via getState and
+  // would otherwise show a stale list until the next unrelated re-render.
+  useConfiguredGuidesStore((s) => s.configured);
   const cosmosAgentsRaw = useCosmosLogosStore((s) => s.agents);
   const cosmosAgents = cosmosAgentsRaw
     .filter(a => !hiddenAgentIds.has(a.id))
-    .filter(a => isCosmosAgentVisibleInBeta(a.manifest.identity.codename, testBetaEnabled));
+    .filter(a => isCosmosAgentVisibleInBeta(a.manifest.identity.codename, testBetaEnabled))
+    // Gate guide-family (athena/cosmos/logos) codenames on configured state
+    // so newly signed-up users don't see all three just because autoConnect
+    // populated the cosmos-logos store on boot.
+    .filter(a => isCosmosCodenameConfigured(a.manifest.identity.codename));
+  // Cosmos and Logos ship as both builtin fallbacks AND bundled cosmos-logos
+  // manifests; when the cosmos-logos store holds a matching codename, hide
+  // the builtin dupe so the picker shows a single row per agent.
+  const cosmosCodenames = new Set(cosmosAgentsRaw.map(a => a.manifest.identity.codename));
+  const allBuiltinAgents = allBuiltinAgentsRaw
+    .filter(a => !hiddenAgentIds.has(a.id))
+    .filter(a => isBuiltinAgentVisibleInBeta(a.id, testBetaEnabled))
+    .filter(a => !cosmosCodenames.has(a.id));
   const agentTheme = useAgentThemeStore((s) => s.agentTheme);
   const activeChatAgentId = useCosmosLogosStore((s) => s.activeChatAgentId);
   const setActiveChatAgent = useCosmosLogosStore((s) => s.setActiveChatAgent);
   const navigate = useNavigate();
   const agentViewMatch = useMatch('/app/agent/:agentId');
 
-  // Active cosmos agent: either viewing an iframe agent, or a chat-only agent is selected
+  // Active cosmos agent: either viewing an iframe agent, or a chat-only
+  // agent is selected. Look up against the RAW list so the header still
+  // reflects the user's choice even when the active agent happens to be
+  // visibility-hidden (e.g. legacy state from before the dedup fix shipped).
   const activeCosmosAgent = agentViewMatch
-    ? cosmosAgents.find((a) => a.id === agentViewMatch.params.agentId) ?? null
+    ? cosmosAgentsRaw.find((a) => a.id === agentViewMatch.params.agentId) ?? null
     : activeChatAgentId
-      ? cosmosAgents.find((a) => a.id === activeChatAgentId) ?? null
+      ? cosmosAgentsRaw.find((a) => a.id === activeChatAgentId) ?? null
       : null;
 
   const [open, setOpen] = useState(false);

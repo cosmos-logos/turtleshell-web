@@ -1,5 +1,6 @@
 import { useCosmosLogosStore } from './store';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
+import { BUNDLED_MANIFESTS, type BundledManifestKey } from '@/manifests';
 
 /**
  * Auto-connect the Athena cosmos-logos agent on app boot.
@@ -22,11 +23,14 @@ import { useEnvironmentStore } from '@/lib/store/environment-store';
  */
 
 const ATHENA_CODENAME = 'athena-616';
-const DISCONNECT_FLAG = 'turtleshell-athena-disconnected';
+const COSMOS_CODENAME = 'cosmos';
+const LOGOS_CODENAME = 'logos';
+
+const disconnectFlag = (codename: string) => `turtleshell-${codename.split('-')[0]}-disconnected`;
 
 export async function autoConnectAthena(): Promise<void> {
   // Respect manual disconnect
-  if (localStorage.getItem(DISCONNECT_FLAG) === '1') {
+  if (localStorage.getItem(disconnectFlag(ATHENA_CODENAME)) === '1') {
     console.log('[Athena] Auto-connect skipped — user previously disconnected');
     return;
   }
@@ -71,10 +75,75 @@ export async function autoConnectAthena(): Promise<void> {
 
 /** Mark Athena as manually disconnected so we don't auto-reconnect on next boot. */
 export function markAthenaDisconnected(): void {
-  localStorage.setItem(DISCONNECT_FLAG, '1');
+  localStorage.setItem(disconnectFlag(ATHENA_CODENAME), '1');
 }
 
 /** Clear the manual-disconnect flag (e.g. when user explicitly reconnects). */
 export function clearAthenaDisconnectFlag(): void {
-  localStorage.removeItem(DISCONNECT_FLAG);
+  localStorage.removeItem(disconnectFlag(ATHENA_CODENAME));
+}
+
+/**
+ * Auto-connect a bundled cosmos-logos agent (Cosmos, Logos).
+ *
+ * Unlike Athena, these agents do not have their own backend endpoint —
+ * they ride on Athena's chat API. The only thing that differs is the
+ * cosmos-logos manifest (identity, system_prompt, voice), which ships
+ * bundled with the web app under `src/manifests/`. Chat.tsx reads the
+ * active cosmos agent's `manifest.identity.system_prompt` and sends it
+ * as `body.system_prompt`; Athena applies it on top of its default
+ * OpenAI provider. Net effect: Cosmos/Logos run "on the ChatGPT connector"
+ * with their own voice, per the onboarding flow contract.
+ *
+ * @param manifestKey  which bundled manifest to use ('cosmos' | 'logos')
+ * @param displayName  user-facing label stored on the connected agent record
+ */
+async function autoConnectBundledAgent(
+  manifestKey: BundledManifestKey,
+  displayName: string,
+): Promise<void> {
+  const manifest = BUNDLED_MANIFESTS[manifestKey];
+  const codename = manifest.identity.codename;
+
+  if (localStorage.getItem(disconnectFlag(codename)) === '1') {
+    console.log(`[${displayName}] Auto-connect skipped — user previously disconnected`);
+    return;
+  }
+
+  const store = useCosmosLogosStore.getState();
+  if (store.agents.some(a => a.manifest.identity.codename === codename)) {
+    console.log(`[${displayName}] Already connected — skipping auto-connect`);
+    return;
+  }
+
+  const env = useEnvironmentStore.getState();
+  const athenaBase = env.getAthenaUrl();
+  if (!athenaBase) {
+    console.warn(`[${displayName}] Auto-connect skipped — no Athena URL configured`);
+    return;
+  }
+
+  store.addAgent(athenaBase, manifest, displayName, env.current);
+  console.log(`[${displayName}] Auto-connected via`, env.current, '→', athenaBase);
+}
+
+export async function autoConnectCosmos(): Promise<void> {
+  return autoConnectBundledAgent('cosmos', 'Cosmos');
+}
+
+export async function autoConnectLogos(): Promise<void> {
+  return autoConnectBundledAgent('logos', 'Logos');
+}
+
+export function markCosmosDisconnected(): void {
+  localStorage.setItem(disconnectFlag(COSMOS_CODENAME), '1');
+}
+export function clearCosmosDisconnectFlag(): void {
+  localStorage.removeItem(disconnectFlag(COSMOS_CODENAME));
+}
+export function markLogosDisconnected(): void {
+  localStorage.setItem(disconnectFlag(LOGOS_CODENAME), '1');
+}
+export function clearLogosDisconnectFlag(): void {
+  localStorage.removeItem(disconnectFlag(LOGOS_CODENAME));
 }

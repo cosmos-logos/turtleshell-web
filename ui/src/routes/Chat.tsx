@@ -9,9 +9,11 @@ import { useApolloStore } from '@/lib/store/apollo-store';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { streamChat } from '@/lib/athena/chat-client';
 import { streamDirect, hasDirectProvider } from '@/lib/providers/direct-chat';
+import * as webMnemosyne from '@/lib/mnemosyne/web-client';
 import { hasUserApiKey } from '@/lib/store/agent-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { useAgentStore } from '@/lib/store/agent-store';
+import { isAthenaFamily } from '@/lib/agent-scope';
 import { useChatPreferencesStore } from '@/lib/store/chat-preferences-store';
 import { useAgentThemeStore } from '@/lib/store/agent-theme-store';
 import { OLYMPUS_AGENTS } from '@/lib/agents/olympus-data';
@@ -277,23 +279,37 @@ export function Chat() {
       let accumulated = '';
       const isDev = useEnvironmentStore.getState().developerMode;
       const { currentConversationId: convId, memoryEnabled: mem, saveConversation: save } = useChatStore.getState();
-      // Inject system_prompt: cosmos agent manifest > built-in agent > none
+      // Inject system_prompt: cosmos agent manifest > built-in agent > none.
+      // Athena is the exception — its server-side v1.7.7 Consciousness soul
+      // is the authoritative identity and is richer than the bare manifest
+      // prompt (memory recall, profile facts, MCP guidance). Skip sending a
+      // client override for athena-family agents so the soul wins. For
+      // Cosmos, Logos, BYOK, and future personas, the manifest system_prompt
+      // IS the identity and is sent as a persona override.
       const activeChatAgentId = useCosmosLogosStore.getState().activeChatAgentId;
       const cosmosAgent = activeChatAgentId
         ? useCosmosLogosStore.getState().agents.find(a => a.id === activeChatAgentId)
         : null;
       const builtinAgent = useAgentStore.getState().activeAgent;
+      const cosmosCodename = cosmosAgent?.manifest?.identity?.codename;
       const cosmosPrompt = cosmosAgent?.manifest?.identity?.system_prompt;
       const builtinPrompt = builtinAgent?.systemPrompt;
-      const systemPrompt = cosmosPrompt || builtinPrompt || undefined;
+      const systemPrompt = isAthenaFamily(cosmosCodename)
+        ? undefined
+        : (cosmosPrompt || builtinPrompt || undefined);
       // Route decision: direct provider call OR Athena proxy
       // If user has their own API key for a provider, call it directly (no Athena)
       const useDirectProvider = !activeChatAgentId
         && hasDirectProvider(builtinAgent.id)
         && hasUserApiKey(builtinAgent.id);
 
+      // For cosmos-logos store agents, send the codename so Athena's
+      // resolveProvider (AGENTS table) picks the right entry and stamps
+      // memory/history/Plutus records under that persona. Athena-family
+      // codenames collapse to the bare 'athena' key since AGENTS['athena-616']
+      // doesn't exist — only 'athena' does, and it routes to OpenAI.
       const llmAgentId = activeChatAgentId
-        ? 'athena'
+        ? (isAthenaFamily(cosmosCodename) ? 'athena' : (cosmosCodename || 'athena'))
         : (['claude', 'openai', 'grok', 'gemini'].includes(builtinAgent.id) ? builtinAgent.id : 'athena');
 
       // Cosmos-logos agent URL takes precedence over builtin endpoint
@@ -303,9 +319,30 @@ export function Chat() {
         agentEndpoint ? `endpoint: ${agentEndpoint}` : '',
         'systemPrompt:', systemPrompt ? systemPrompt.substring(0, 50) + '...' : '(none)');
 
+      // For the direct-to-vendor BYOK path, do the memory-recall +
+      // conversation-history stitching here (Athena does this server-side
+      // for the non-direct path). Recall facts scoped to this BYOK agentId
+      // and prepend them to the system prompt; pull prior turns off the
+      // chat-store so the model has within-session context too.
+      let directSystemPrompt = systemPrompt;
+      let directHistory: { role: string; content: string }[] | undefined;
+      if (useDirectProvider && mem) {
+        const memories = await webMnemosyne.recallMemories(prompt, builtinAgent.id, 20);
+        if (memories.length > 0) {
+          const block = memories.map(m => `- ${m.key}: ${m.value}`).join('\n');
+          directSystemPrompt = `${directSystemPrompt ?? ''}\n\nWhat I remember about this user:\n${block}`.trim();
+        }
+        // Current user turn + empty assistant placeholder are already in the
+        // store — slice them off. Keep only completed prior pairs.
+        const priorMsgs = useChatStore.getState().messages.slice(0, -2);
+        directHistory = priorMsgs
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({ role: m.role, content: m.content }));
+      }
+
       // Choose streaming source
       const tokenStream = useDirectProvider
-        ? streamDirect(builtinAgent.id, prompt, controller.signal, { systemPrompt })
+        ? streamDirect(builtinAgent.id, prompt, controller.signal, { systemPrompt: directSystemPrompt, conversationHistory: directHistory })
         : streamChat(prompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save, systemPrompt, agentId: llmAgentId, endpointOverride: agentEndpoint });
 
       for await (const token of tokenStream) {
@@ -326,6 +363,36 @@ export function Chat() {
             .join('\n')
             .replace(/^\n+/, '');
           updateLastAssistantMessage(filtered);
+        }
+      }
+
+      // Persist BYOK turn to Mnemosyne so History + Memory pages work
+      // (stamped with the BYOK agentId so scope filters correctly). streamChat
+      // has its own Mnemosyne save path server-side via Athena; we only do it
+      // here for the direct-to-vendor path that bypasses Athena entirely.
+      if (useDirectProvider && mem && accumulated.trim()) {
+        let cid = convId;
+        if (!cid) {
+          cid = await webMnemosyne.createConversation();
+          if (cid) setConversationId(cid);
+        }
+        if (cid) {
+          void webMnemosyne.appendTurns(
+            cid,
+            [
+              { role: 'user', content: prompt },
+              { role: 'assistant', content: accumulated.trim() },
+            ],
+            builtinAgent.id,
+            save,
+          );
+          // Simple fact extraction — mirrors Athena's server-side regex so
+          // "my name is Greg" yields the same `name: Greg` memory whether the
+          // user is chatting with Cosmos or OpenAI BYOK.
+          const fact = webMnemosyne.extractFactFromPrompt(prompt);
+          if (fact) {
+            void webMnemosyne.saveMemory(fact.key, fact.value, builtinAgent.id);
+          }
         }
       }
 

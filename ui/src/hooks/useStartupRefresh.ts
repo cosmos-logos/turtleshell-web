@@ -4,7 +4,8 @@ import { isOlympusGridTokenPresent, refreshOlympusGridToken } from '@/lib/api/ol
 import { isGitHubConnected, validateGitHubToken } from '@/lib/api/github-client';
 import { isGoogleConnected, isGoogleTokenExpired, refreshGoogleToken } from '@/lib/api/google-client';
 import { isHubSpotConnected, validateHubSpotToken } from '@/lib/api/hubspot-client';
-import { autoConnectAthena } from '@/lib/cosmos-logos/auto-connect';
+import { autoConnectAthena, autoConnectCosmos, autoConnectLogos } from '@/lib/cosmos-logos/auto-connect';
+import { restoreGuideAgentFromProfile } from '@/lib/apply-guide-agent';
 // Workday deprecated — coming_soon until httpOnly cookie migration
 // import { isWorkdayConnected, validateWorkdayConnection } from '@/lib/api/workday-client';
 export function useStartupRefresh(): { refreshing: boolean } {
@@ -17,8 +18,13 @@ export function useStartupRefresh(): { refreshing: boolean } {
 
     const tasks: Promise<void>[] = [];
 
-    // Auto-connect cloud Athena cosmos-logos agent — runs unconditionally
+    // Auto-connect the three core cosmos-logos agents. All three share the
+    // Athena chat endpoint — the only runtime difference is which bundled
+    // manifest (system_prompt + voice) is active. See
+    // `lib/cosmos-logos/auto-connect.ts` for the bundled-agent contract.
     tasks.push(autoConnectAthena());
+    tasks.push(autoConnectCosmos());
+    tasks.push(autoConnectLogos());
 
     if (isSalesforceConnected()) {
       tasks.push(
@@ -35,6 +41,18 @@ export function useStartupRefresh(): { refreshing: boolean } {
           .then(() => console.log('[OG] Token refreshed on startup'))
           .catch((err) => console.warn('[OG] Startup refresh failed — session may require re-auth', err)),
       );
+      // Re-apply the server-side guideAgent choice on every boot. This is
+      // the authoritative source for "which of Athena/Cosmos/Logos is mine"
+      // and also heals legacy local state (e.g., pre-fix onboarding that
+      // hid the wrong builtin IDs, leaving cosmos-logos cousins masked).
+      // Fire-and-forget; failure degrades to the default local state.
+      const email = localStorage.getItem('olympus_grid_email') || '';
+      if (email) {
+        tasks.push(
+          restoreGuideAgentFromProfile(email)
+            .catch((err) => console.warn('[guide-agent] Restore on startup failed', err)),
+        );
+      }
     }
 
     if (isGitHubConnected()) {

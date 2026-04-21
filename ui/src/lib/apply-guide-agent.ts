@@ -22,6 +22,7 @@
 import { ogRequest } from './api/olympus-grid-client';
 import { useAgentStore } from './store/agent-store';
 import { useChatStore } from './store/chat-store';
+import { markGuideConfigured, useConfiguredGuidesStore } from './store/configured-guides-store';
 
 /**
  * Fetch the user's profile by username (derived from email) and apply their
@@ -40,7 +41,20 @@ export async function restoreGuideAgentFromProfile(email: string): Promise<void>
   try {
     const profile = await ogRequest('GET', `/turtleshell/profile/${encodeURIComponent(username)}`) as {
       guideAgent?: string | null;
+      profileData?: { configuredGuides?: unknown };
     };
+
+    // Seed the configured-guides store from the server-side roster BEFORE
+    // running applyGuideAgent so the sidebar/picker re-render with every
+    // guide the user has ever set up — not just the single server-side
+    // `guideAgent`. The server's configuredGuides is the source of truth
+    // for multi-guide persistence across logout / new-device sign-in.
+    const serverConfigured = profile?.profileData?.configuredGuides;
+    if (Array.isArray(serverConfigured) && serverConfigured.length > 0) {
+      const clean = serverConfigured.filter((g): g is string => typeof g === 'string');
+      useConfiguredGuidesStore.getState().seedFromServer(clean);
+    }
+
     const guide = profile?.guideAgent;
     if (!guide) return;
     await applyGuideAgent(guide);
@@ -61,36 +75,80 @@ export async function restoreGuideAgentFromProfile(email: string): Promise<void>
  * Settings → Agent Theme.
  */
 export async function applyGuideAgent(guide: string): Promise<void> {
-  if (guide === 'athena') {
-    // Athena is sourced from the cosmos-logos sealed-envelope catalog, not
-    // the builtin agent catalog. Re-run the same auto-connect + activate
-    // dance Onboarding uses.
-    const { autoConnectAthena, clearAthenaDisconnectFlag } = await import('./cosmos-logos/auto-connect');
+  // Fresh-device restore: the server-side profile only knows one `guideAgent`.
+  // Also backfill the local configured-guides set from any legacy localStorage
+  // so users coming from pre-Change-Guide builds don't lose their roster.
+  useConfiguredGuidesStore.getState().bootstrapFromLegacy();
+  markGuideConfigured(guide);
+
+  if (guide === 'athena' || guide === 'cosmos' || guide === 'logos') {
+    // Athena / Cosmos / Logos live in the cosmos-logos sealed-envelope
+    // catalog, not the builtin agent catalog. They all run on Athena's
+    // chat endpoint with different bundled manifests (system_prompt +
+    // voice). Re-run the same auto-connect + activate dance Onboarding
+    // uses, keyed on the guide the user picked.
+    const autoConnect = await import('./cosmos-logos/auto-connect');
     const { useCosmosLogosStore } = await import('./cosmos-logos/store');
-    clearAthenaDisconnectFlag();
-    await autoConnectAthena();
+
+    const matchCodename = guide === 'athena' ? 'athena-616' : guide;
+
+    if (guide === 'athena') {
+      autoConnect.clearAthenaDisconnectFlag();
+      await autoConnect.autoConnectAthena();
+    } else if (guide === 'cosmos') {
+      autoConnect.clearCosmosDisconnectFlag();
+      await autoConnect.autoConnectCosmos();
+    } else {
+      autoConnect.clearLogosDisconnectFlag();
+      await autoConnect.autoConnectLogos();
+    }
 
     const cosmosStore = useCosmosLogosStore.getState();
-    const athena = cosmosStore.agents.find(a => a.manifest.identity.codename === 'athena-616');
-    if (!athena) {
-      console.warn('[guide-agent] Athena auto-connect failed — leaving stores untouched');
+    const connected = cosmosStore.agents.find(a => a.manifest.identity.codename === matchCodename);
+    if (!connected) {
+      console.warn(`[guide-agent] ${guide} auto-connect failed — leaving stores untouched`);
       return;
     }
-    cosmosStore.setActiveChatAgent(athena.id);
-    useChatStore.getState().switchAgent(athena.id);
+    cosmosStore.setActiveChatAgent(connected.id);
+    useChatStore.getState().switchAgent(connected.id);
 
-    // Hide every builtin catalog agent so the sidebar shows Athena alone.
+    // Hide every other catalog agent so the sidebar shows the chosen guide
+    // alone. hiddenAgentIds is shared across stores, so skip builtin IDs that
+    // collide with a cosmos-logos codename — the picker/sidebar dedupe those
+    // at render time when a cosmos-logos cousin exists.
+    const cosmosCodenames = new Set(cosmosStore.agents.map(a => a.manifest.identity.codename));
     const store = useAgentStore.getState();
     for (const a of store.agents) {
+      if (cosmosCodenames.has(a.id)) continue;
       if (!store.hiddenAgentIds.has(a.id)) {
         store.toggleVisibility(a.id);
       }
     }
+    for (const a of cosmosStore.agents) {
+      if (a.id === connected.id) continue;
+      if (!store.hiddenAgentIds.has(a.id)) {
+        store.toggleVisibility(a.id);
+      }
+    }
+    // Safety net for legacy state: older onboarding runs hid builtin
+    // cosmos/logos IDs, which also masks the cosmos-logos cousins since
+    // IDs collide. Force-unhide the selected agent's ID so restoration
+    // recovers users coming from the buggy state without a manual reset.
+    if (store.hiddenAgentIds.has(connected.id)) {
+      store.toggleVisibility(connected.id);
+    }
     return;
   }
 
-  // Builtin catalog guide (logos, cosmos, BYOK id). Unhide the chosen one
-  // (BYOK agents are hidden by default) and hide every other builtin.
+  // Builtin catalog guide — BYOK (openai/claude/grok/gemini). Clear any
+  // cosmos-logos active selection first so the picker/header don't render
+  // a stale cosmos-logos persona on top of the BYOK choice. Then unhide the
+  // selected BYOK agent, hide every other builtin, and hide all cosmos-logos
+  // entries (Athena/Cosmos/Logos) so the sidebar shows a single-agent UI.
+  const { useCosmosLogosStore } = await import('./cosmos-logos/store');
+  const cosmosStore = useCosmosLogosStore.getState();
+  cosmosStore.setActiveChatAgent(null);
+
   const store = useAgentStore.getState();
   const builtin = store.agents.find(a => a.id === guide);
   if (!builtin) return;
@@ -102,6 +160,11 @@ export async function applyGuideAgent(guide: string): Promise<void> {
   }
   for (const a of store.agents) {
     if (a.id !== guide && !store.hiddenAgentIds.has(a.id)) {
+      store.toggleVisibility(a.id);
+    }
+  }
+  for (const a of cosmosStore.agents) {
+    if (!store.hiddenAgentIds.has(a.id)) {
       store.toggleVisibility(a.id);
     }
   }
