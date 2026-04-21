@@ -108,8 +108,14 @@ export function ChangeGuide() {
     void activate(selected);
   };
 
+  // AppShell gives us a fixed-height main pane; ChangeGuide content runs long
+  // (intro + picker + confirm screens all stack vertically on the same route),
+  // so wrap in the same `flex-1 overflow-y-auto` scroll container the Settings
+  // and Profile routes use. Without this the picker scrolls off the bottom
+  // and the primary button can't be reached.
   return (
-    <div className="max-w-2xl mx-auto pt-12 pb-24 px-4">
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-2xl mx-auto pt-12 pb-24 px-4">
       <button
         onClick={() => navigate(-1)}
         className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-text-primary transition-colors mb-4"
@@ -155,6 +161,7 @@ export function ChangeGuide() {
           primaryLabel="That's my key"
         />
       )}
+      </div>
     </div>
   );
 }
