@@ -130,20 +130,12 @@ export function useActiveAgentScope(): AgentScope {
                 };
             }
             // Cosmos and Logos run on Athena's backend with bundled manifests.
-            // Give them distinct scopes so Memory/History can filter to the
-            // agent the user actually picked in onboarding.
-            //
-            // Backend limitation (as of this commit): the chat request is
-            // stamped `agentId='athena'` for all three because Athena's
-            // `AGENTS` routing table only knows 'athena'/'thoth'/'mars'/
-            // 'gemini'/'turtle' — sending 'cosmos' or 'logos' would fall
-            // through to thoth (Claude), which breaks the "run on the
-            // ChatGPT connector" contract. Until Athena's AGENTS adds
-            // cosmos/logos entries that route to OpenAI, the server-side
-            // memory pool is shared across the three, and cosmos/logos
-            // Memory pages will appear empty. Client-side filtering is
-            // already correct and will light up the moment the backend
-            // stamps records with the real codename.
+            // Chat requests carry `agentId='cosmos'` / `agentId='logos'` so
+            // Athena's AGENTS router picks the OpenAI provider AND stamps
+            // memory/history/Plutus records with the persona codename.
+            // This scope query reads those records back for the Memory +
+            // History pages; prefix-matching mirrors the athena family in
+            // case cosmos-616/logos-616 deployments emerge later.
             if (isCosmosFamily(cosmosCodename)) {
                 return {
                     key: 'cosmos',

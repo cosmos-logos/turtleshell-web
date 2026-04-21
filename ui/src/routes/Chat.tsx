@@ -302,8 +302,13 @@ export function Chat() {
         && hasDirectProvider(builtinAgent.id)
         && hasUserApiKey(builtinAgent.id);
 
+      // For cosmos-logos store agents, send the codename so Athena's
+      // resolveProvider (AGENTS table) picks the right entry and stamps
+      // memory/history/Plutus records under that persona. Athena-family
+      // codenames collapse to the bare 'athena' key since AGENTS['athena-616']
+      // doesn't exist — only 'athena' does, and it routes to OpenAI.
       const llmAgentId = activeChatAgentId
-        ? 'athena'
+        ? (isAthenaFamily(cosmosCodename) ? 'athena' : (cosmosCodename || 'athena'))
         : (['claude', 'openai', 'grok', 'gemini'].includes(builtinAgent.id) ? builtinAgent.id : 'athena');
 
       // Cosmos-logos agent URL takes precedence over builtin endpoint
