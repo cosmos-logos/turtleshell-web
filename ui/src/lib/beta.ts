@@ -18,7 +18,6 @@
 //     at least one athena instance.
 
 import { useEnvironmentStore } from '@/lib/store/environment-store';
-import { hasUserApiKey } from '@/lib/store/agent-store';
 import { isGuideConfigured } from '@/lib/store/configured-guides-store';
 
 /** Built-in agent IDs that are always visible, regardless of beta state. */
@@ -59,13 +58,18 @@ export function isBuiltinAgentVisibleInBeta(
   agentId: string,
   testBetaEnabled: boolean,
 ): boolean {
-  // BYOK agents are gated on explicit configuration independently of the
-  // beta flag. A user who set up only Gemini shouldn't see OpenAI/Claude/
-  // Grok in the sidebar just because Developer / Test Beta is on. Check
-  // this BEFORE the `testBetaEnabled` short-circuit so beta doesn't leak
-  // unconfigured providers into the picker.
+  // BYOK agents are gated on explicit guide configuration only. A saved
+  // API key is NOT required for visibility: a user who configured Gemini
+  // in onboarding but then had keys wiped on logout (security flow) still
+  // has an opinion about which guide is theirs — they can use it via the
+  // server-proxied Athena path and re-enter their key in Change Guide any
+  // time. Conversely, a stale key in localStorage for a provider the user
+  // never picked stays invisible.
+  //
+  // The check runs BEFORE `testBetaEnabled` so beta can't leak unconfigured
+  // providers into the picker.
   if (BYOK_AGENT_IDS.has(agentId)) {
-    return hasUserApiKey(agentId) && isGuideConfigured(agentId);
+    return isGuideConfigured(agentId);
   }
   if (testBetaEnabled) return true;
   if (ALWAYS_VISIBLE_BUILTIN_AGENT_IDS.has(agentId)) return true;
