@@ -15,6 +15,7 @@ import {
   Sun,
   Moon,
   MessageSquare,
+  Sparkles,
 } from 'lucide-react';
 import { useThemeStore } from '@/lib/store/theme-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
@@ -43,6 +44,8 @@ import { clearAllUserSessionState, serverLogout } from '@/lib/api/olympus-grid-c
 import { useServiceStore } from '@/lib/store/service-store';
 import { useAgentStore } from '@/lib/store/agent-store';
 import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
+import { latestReleaseDateMs } from '@/data/whats-new';
+import { hasUnreadWhatsNew } from '@/lib/whats-new-state';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
 import { getShellId } from '@/lib/api/olympus-grid-client';
 
@@ -66,6 +69,10 @@ interface NavItem {
   isBuiltinChat?: string;
   /** Render with shell-green accent + pulsing dot to signal "we really want this." */
   emphasize?: boolean;
+  /** Render as a lifted, gently-breathing row with a "New" pill — announces
+   *  there's unread content behind the link. Clears back to a normal row
+   *  once the user visits the page. */
+  highlight?: boolean;
 }
 
 function useNavItems(): NavItem[] {
@@ -81,6 +88,21 @@ function useNavItems(): NavItem[] {
   // here the Sidebar would keep rendering the stale snapshot until the
   // next unrelated state change nudged it.
   useConfiguredGuidesStore((s) => s.configured);
+
+  // "What's new" unread state — recompute on mount + whenever the page
+  // fires `whats-new:seen` (see routes/WhatsNew.tsx useEffect). Drives the
+  // lifted/glowing nav item row for the release-notes surface.
+  const latestReleaseMs = latestReleaseDateMs();
+  const [whatsNewUnread, setWhatsNewUnread] = useState<boolean>(() => hasUnreadWhatsNew(latestReleaseMs));
+  useEffect(() => {
+    const refresh = () => setWhatsNewUnread(hasUnreadWhatsNew(latestReleaseMs));
+    window.addEventListener('whats-new:seen', refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener('whats-new:seen', refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, [latestReleaseMs]);
 
   // Built-in agents (Logos, Cosmos, Claude, OpenAI, Grok, Gemini, custom).
   // When beta is OFF, restrict to the core allowlist (cosmos, logos).
@@ -140,6 +162,12 @@ function useNavItems(): NavItem[] {
     { to: '/app/docs', icon: BookOpen, label: 'Learn' },
     { to: '/app/shells', icon: Shell, label: 'Sea Shells' },
     { to: '/app/settings', icon: Settings, label: 'Settings' },
+    // "What's New" sits between Settings and Leave Feedback. When there's a
+    // release note newer than the user's last visit, the row lifts, glows,
+    // and wears a "New" pill — we want the user to notice there's something
+    // here for them. Once they visit /app/whats-new, the pulse quiets to a
+    // regular row and the Sparkles icon goes from motion to still.
+    { to: '/app/whats-new', icon: Sparkles, label: "What's new", highlight: whatsNewUnread },
     // Leave Feedback sits under Settings and wears the shell-green accent +
     // pulsing dot — we WANT users to click it. The entire beta hinges on the
     // founder hearing directly from early users; this is not a burial spot.
@@ -335,31 +363,54 @@ function AgentSectionHeader({ expanded, onClick }: { expanded: boolean; onClick?
 
 function SidebarNavItem({ item, onClick, expanded = true }: { item: NavItem; onClick?: () => void; expanded?: boolean }) {
   const isActive = useIsNavActive(item);
-  const { to, icon: Icon, label, initial, color, emphasize } = item;
+  const { to, icon: Icon, label, initial, color, emphasize, highlight } = item;
   const isAgentSubItem = !!(item.isBuiltinChat || item.chatAgentId || (item.initial && !item.icon));
 
-  // Emphasized items (e.g. Leave Feedback) wear the shell-green accent so
-  // users feel pulled toward them rather than ignoring them in the list.
-  const stateClasses = emphasize
+  // Three visual tiers, active state handled inside each:
+  //   - `highlight` ("What's new" unread): lifted, gently breathing, shell-
+  //     green accent + "New" pill. Strongest pull — we want users to notice
+  //     release notes they haven't seen yet. Breathes via a scale+shadow
+  //     animation; in collapsed mode the icon itself gets a dot overlay.
+  //   - `emphasize` (Leave Feedback): shell-green text + border + pulsing
+  //     dot. Persistent — we always want feedback coming in.
+  //   - Neither: normal nav styling.
+  const stateClasses = highlight
     ? isActive
-      ? 'bg-shell-500/15 text-shell-400 border border-shell-500/40'
-      : 'text-shell-400 hover:text-shell-400 hover:bg-shell-500/10 border border-shell-500/30 hover:border-shell-500/50'
-    : isActive
-      ? 'bg-surface-3 text-text-primary'
-      : 'text-text-secondary hover:text-text-primary hover:bg-surface-2';
+      ? 'bg-shell-500/15 text-shell-400 border border-shell-500/50 shadow-md shadow-shell-500/20'
+      : 'text-shell-400 hover:text-shell-300 bg-shell-500/[0.06] hover:bg-shell-500/[0.12] border border-shell-500/40 hover:border-shell-500/60 shadow-md shadow-shell-500/15 hover:-translate-y-px'
+    : emphasize
+      ? isActive
+        ? 'bg-shell-500/15 text-shell-400 border border-shell-500/40'
+        : 'text-shell-400 hover:text-shell-400 hover:bg-shell-500/10 border border-shell-500/30 hover:border-shell-500/50'
+      : isActive
+        ? 'bg-surface-3 text-text-primary'
+        : 'text-text-secondary hover:text-text-primary hover:bg-surface-2';
 
   return (
     <NavLink
       key={to}
       to={to!}
       onClick={onClick}
-      className={`flex items-center gap-3 rounded-lg font-medium transition-colors ${
+      className={`flex items-center gap-3 rounded-lg font-medium transition-all ${
         isAgentSubItem && expanded ? 'pl-5 pr-3 py-1.5 text-xs' : 'px-3 py-2.5 text-sm'
-      } ${expanded ? '' : 'justify-center'} ${stateClasses}`}
+      } ${expanded ? '' : 'justify-center'} ${stateClasses} ${highlight ? 'animate-whats-new-breathe' : ''}`}
       title={expanded ? undefined : label}
     >
       {Icon ? (
-        <Icon size={isAgentSubItem ? 14 : 18} className="flex-shrink-0" />
+        <span className="relative flex-shrink-0">
+          <Icon
+            size={isAgentSubItem ? 14 : 18}
+            className={highlight ? 'animate-pulse' : ''}
+          />
+          {/* Collapsed-mode overlay dot — without this, collapsed sidebar
+              can't signal unread content because the label + pill are hidden. */}
+          {highlight && !expanded && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-shell-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-shell-500" />
+            </span>
+          )}
+        </span>
       ) : (
         <span
           className={`rounded flex items-center justify-center font-bold flex-shrink-0 ${
@@ -371,7 +422,12 @@ function SidebarNavItem({ item, onClick, expanded = true }: { item: NavItem; onC
         </span>
       )}
       {expanded && <span className="whitespace-nowrap flex-1">{label}</span>}
-      {emphasize && expanded && (
+      {highlight && expanded && (
+        <span className="text-[9px] font-bold uppercase tracking-[0.12em] px-1.5 py-0.5 rounded-full bg-shell-500 text-white shadow-sm shadow-shell-500/30 shrink-0">
+          New
+        </span>
+      )}
+      {emphasize && !highlight && expanded && (
         <span className="relative flex h-2 w-2 flex-shrink-0">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-shell-400 opacity-75" />
           <span className="relative inline-flex rounded-full h-2 w-2 bg-shell-500" />

@@ -13,6 +13,7 @@ import { Services } from './routes/Services';
 import { Agents } from './routes/Agents';
 import { Settings } from './routes/Settings';
 import { ChangeGuide } from './routes/settings/ChangeGuide';
+import { WhatsNew } from './routes/WhatsNew';
 import { Docs } from './routes/Docs';
 import { OAuthCallback } from './routes/OAuthCallback';
 import { AuthCallback } from './routes/AuthCallback';
@@ -79,6 +80,7 @@ export function App() {
         <Route path="shells" element={<Shells />} />
         <Route path="settings" element={<Settings />} />
         <Route path="settings/change-guide" element={<ChangeGuide />} />
+        <Route path="whats-new" element={<WhatsNew />} />
         <Route path="profile" element={<Profile />} />
         <Route path="feedback" element={<Feedback />} />
         <Route path="docs/*" element={<Docs />} />
