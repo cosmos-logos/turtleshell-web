@@ -164,30 +164,49 @@ export async function verifyCode(
   const previousSub = localStorage.getItem('olympus_grid_shell_id');
   const sameIdentity = !!verified.user.sub && previousSub === verified.user.sub;
   if (!sameIdentity) {
-    console.log('[Auth] Fresh identity (new or different) — clearing per-identity app state');
-    // Wipe everything except the tokens we just stored on lines 144-145.
-    // `clearAllUserSessionState` includes the auth token keys, so re-persist
-    // the fresh tokens after the wipe.
+    console.log('[Auth] Fresh identity (new or different) — full session reset');
+    // Wipe everything (localStorage + sessionStorage), then re-persist the
+    // identity essentials. A localStorage wipe ALONE is not enough because
+    // zustand persist-middleware stores (chat-store, cosmos-logos, configured-
+    // guides, etc.) read localStorage ONCE at app init and hold their
+    // hydrated snapshot in memory. Wiping storage mid-session doesn't touch
+    // that snapshot — React keeps re-rendering the previous user's threads.
+    // Force a full page load below to restart zustand from the now-empty
+    // storage.
     const freshAccess = localStorage.getItem('og_access_token');
     const freshRefresh = localStorage.getItem('og_refresh_token');
     clearAllUserSessionState();
     if (freshAccess) localStorage.setItem('og_access_token', freshAccess);
     if (freshRefresh) localStorage.setItem('og_refresh_token', freshRefresh);
+    // Re-persist the identity fields AppShell/useStartupRefresh need on boot.
+    localStorage.setItem('olympus_grid_email', verified.user.email);
+    localStorage.setItem('olympus_grid_service_url', getGridBase());
+    if (verified.user.sub) {
+      localStorage.setItem('olympus_grid_shell_id', verified.user.sub);
+    }
+    if (!localStorage.getItem('turtleshell_username')) {
+      const local = (verified.user.email || '').split('@')[0] || '';
+      const derived = local.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (derived) localStorage.setItem('turtleshell_username', derived);
+    }
+
+    // Hard navigate so every persisted zustand store re-hydrates from empty
+    // localStorage. Target is derived from the server's onboardingComplete
+    // so the new user lands where they should: onboarding for first-timers,
+    // chat for returning users. The caller's awaited Promise never resolves
+    // — the navigation interrupts — which means the Login page's setTimeout
+    // navigate is skipped and no stale render ever happens.
+    const dest = verified.onboardingComplete ? '/app/chat' : '/onboarding';
+    window.location.assign(dest);
+    return new Promise<VerifyResult>(() => { /* never resolves — reload wins */ });
   }
 
+  // Same-identity continuation — normal token refresh, keep existing state.
   localStorage.setItem('olympus_grid_email', verified.user.email);
   localStorage.setItem('olympus_grid_service_url', getGridBase());
-
   if (verified.user.sub) {
     localStorage.setItem('olympus_grid_shell_id', verified.user.sub);
   }
-
-  // Seed `turtleshell_username` so Profile + useAllowDeveloperMode can
-  // resolve the current handle without a round-trip. Onboarding / handle
-  // rename are the authoritative writers; this is a best-guess default
-  // derived the same way the server derives it at signup (lowercase
-  // email local-part, alphanumerics + `_` `-`). Only set when unset —
-  // don't clobber a handle a user already renamed to.
   if (!localStorage.getItem('turtleshell_username')) {
     const local = (verified.user.email || '').split('@')[0] || '';
     const derived = local.toLowerCase().replace(/[^a-z0-9_-]/g, '');
@@ -246,19 +265,32 @@ export async function signInWithApple(args: {
   if (refreshToken) localStorage.setItem('og_refresh_token', refreshToken);
   else if (verified.refreshToken) localStorage.setItem('og_refresh_token', verified.refreshToken);
 
-  // Fresh-identity detection — same logic as verifyCode above. Wipe unless
-  // the stored sub exactly matches this Apple sign-in's sub.
+  // Fresh-identity detection — same full-reset-and-reload dance as verifyCode.
+  // Must hard-navigate so zustand persist stores re-initialize from the
+  // wiped localStorage. See verifyCode for the full rationale.
   const previousSub = localStorage.getItem('olympus_grid_shell_id');
   const sameIdentity = !!verified.user?.sub && previousSub === verified.user.sub;
   if (!sameIdentity) {
-    console.log('[Auth] Fresh identity (Apple sign-in) — clearing per-identity app state');
+    console.log('[Auth] Fresh identity (Apple sign-in) — full session reset');
     const freshAccess = localStorage.getItem('og_access_token');
     const freshRefresh = localStorage.getItem('og_refresh_token');
     clearAllUserSessionState();
     if (freshAccess) localStorage.setItem('og_access_token', freshAccess);
     if (freshRefresh) localStorage.setItem('og_refresh_token', freshRefresh);
+    if (verified.user?.email) localStorage.setItem('olympus_grid_email', verified.user.email);
+    localStorage.setItem('olympus_grid_service_url', getGridBase());
+    if (verified.user?.sub) localStorage.setItem('olympus_grid_shell_id', verified.user.sub);
+    if (!localStorage.getItem('turtleshell_username')) {
+      const local = (verified.user?.email || '').split('@')[0] || '';
+      const derived = local.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (derived) localStorage.setItem('turtleshell_username', derived);
+    }
+    const dest = verified.onboardingComplete ? '/app/chat' : '/onboarding';
+    window.location.assign(dest);
+    return new Promise<VerifyResult & { accountStatus?: string; onboardingComplete?: boolean }>(() => { /* never resolves */ });
   }
 
+  // Same-identity continuation
   if (verified.user?.email) localStorage.setItem('olympus_grid_email', verified.user.email);
   localStorage.setItem('olympus_grid_service_url', getGridBase());
   if (verified.user?.sub) localStorage.setItem('olympus_grid_shell_id', verified.user.sub);
