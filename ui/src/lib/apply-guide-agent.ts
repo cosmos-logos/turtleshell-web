@@ -120,8 +120,15 @@ export async function applyGuideAgent(guide: string): Promise<void> {
     return;
   }
 
-  // Builtin catalog guide (logos, cosmos, BYOK id). Unhide the chosen one
-  // (BYOK agents are hidden by default) and hide every other builtin.
+  // Builtin catalog guide — BYOK (openai/claude/grok/gemini). Clear any
+  // cosmos-logos active selection first so the picker/header don't render
+  // a stale cosmos-logos persona on top of the BYOK choice. Then unhide the
+  // selected BYOK agent, hide every other builtin, and hide all cosmos-logos
+  // entries (Athena/Cosmos/Logos) so the sidebar shows a single-agent UI.
+  const { useCosmosLogosStore } = await import('./cosmos-logos/store');
+  const cosmosStore = useCosmosLogosStore.getState();
+  cosmosStore.setActiveChatAgent(null);
+
   const store = useAgentStore.getState();
   const builtin = store.agents.find(a => a.id === guide);
   if (!builtin) return;
@@ -133,6 +140,11 @@ export async function applyGuideAgent(guide: string): Promise<void> {
   }
   for (const a of store.agents) {
     if (a.id !== guide && !store.hiddenAgentIds.has(a.id)) {
+      store.toggleVisibility(a.id);
+    }
+  }
+  for (const a of cosmosStore.agents) {
+    if (!store.hiddenAgentIds.has(a.id)) {
       store.toggleVisibility(a.id);
     }
   }

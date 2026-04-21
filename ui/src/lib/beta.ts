@@ -18,12 +18,16 @@
 //     at least one athena instance.
 
 import { useEnvironmentStore } from '@/lib/store/environment-store';
+import { hasUserApiKey } from '@/lib/store/agent-store';
 
 /** Built-in agent IDs that are always visible, regardless of beta state. */
 export const ALWAYS_VISIBLE_BUILTIN_AGENT_IDS: ReadonlySet<string> = new Set([
   'cosmos',
   'logos',
 ]);
+
+/** BYOK agent IDs — their visibility follows whether the user entered a key. */
+const BYOK_AGENT_IDS: ReadonlySet<string> = new Set(['openai', 'claude', 'grok', 'gemini']);
 
 /**
  * Is this cosmos-logos connected agent always visible?
@@ -45,14 +49,19 @@ export function useTestBetaEnabled(): boolean {
 
 /**
  * Should this built-in agent be visible right now?
- * Combines beta state with the always-visible allowlist.
+ * Combines beta state with the always-visible allowlist, plus a BYOK
+ * carve-out: once the user enters an API key for a provider, that provider's
+ * agent becomes visible regardless of beta — picking it in onboarding is an
+ * explicit opt-in to see it in the sidebar/picker.
  */
 export function isBuiltinAgentVisibleInBeta(
   agentId: string,
   testBetaEnabled: boolean,
 ): boolean {
   if (testBetaEnabled) return true;
-  return ALWAYS_VISIBLE_BUILTIN_AGENT_IDS.has(agentId);
+  if (ALWAYS_VISIBLE_BUILTIN_AGENT_IDS.has(agentId)) return true;
+  if (BYOK_AGENT_IDS.has(agentId) && hasUserApiKey(agentId)) return true;
+  return false;
 }
 
 /** Should this cosmos-logos agent be visible right now? */

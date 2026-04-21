@@ -919,6 +919,15 @@ export function Onboarding() {
         if (logos) { setActiveAgent(logos); useChatStore.getState().switchAgent('logos'); }
       }
     } else if (selectedGuide) {
+      // BYOK branch (openai / claude / grok / gemini). Clear any cosmos-logos
+      // active selection — stale state from an earlier test would make the
+      // AgentPicker render the cosmos-logos persona on top of the builtin
+      // BYOK choice. Also hide every cosmos-logos entry so the sidebar
+      // shows only the BYOK agent the user just picked.
+      const { useCosmosLogosStore } = await import('@/lib/cosmos-logos/store');
+      const cosmosStore = useCosmosLogosStore.getState();
+      cosmosStore.setActiveChatAgent(null);
+
       const builtinAgent = agents.find(a => a.id === selectedGuide);
       if (builtinAgent) setActiveAgent(builtinAgent);
       useChatStore.getState().switchAgent(selectedGuide);
@@ -928,9 +937,16 @@ export function Onboarding() {
       if (store.hiddenAgentIds.has(selectedGuide)) {
         store.toggleVisibility(selectedGuide);
       }
-      // Hide all others
+      // Hide all other builtins
       for (const a of store.agents) {
         if (a.id !== selectedGuide && !store.hiddenAgentIds.has(a.id)) {
+          store.toggleVisibility(a.id);
+        }
+      }
+      // Hide every cosmos-logos entry (Athena, Cosmos, Logos) so the sidebar
+      // reflects the user's single-agent choice.
+      for (const a of cosmosStore.agents) {
+        if (!store.hiddenAgentIds.has(a.id)) {
           store.toggleVisibility(a.id);
         }
       }
