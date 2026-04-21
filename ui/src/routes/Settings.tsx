@@ -1,5 +1,5 @@
-import { Info, Sun, Moon, Brain, Wrench, Compass, ChevronRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Info, Sun, Moon, Brain, Wrench, Compass, Plus } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useThemeStore } from '@/lib/store/theme-store';
@@ -7,9 +7,9 @@ import { useAgentThemeStore, type AgentTheme } from '@/lib/store/agent-theme-sto
 import { useChatPreferencesStore } from '@/lib/store/chat-preferences-store';
 import { useAllowDeveloperMode } from '@/lib/hooks/useAllowDeveloperMode';
 import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
-import { useAgentStore } from '@/lib/store/agent-store';
+import { useAgentStore, hasUserApiKey } from '@/lib/store/agent-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
-import { GUIDES, BYOK_GUIDES, type GuideKey } from '@/routes/onboarding/OnboardingData';
+import { GUIDES, BYOK_GUIDES } from '@/routes/onboarding/OnboardingData';
 
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
@@ -26,72 +26,154 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   );
 }
 
-// ── Your Guide section ─────────────────────────────────
-// Shows the currently-active guide + every configured guide, with a "Change
-// Guide" link into the dedicated flow. Change-guide is additive — picking a
-// new one adds it to the sidebar, it never replaces the existing set.
+// ── Your Guides section ────────────────────────────────
+// Every configured guide renders as its own equal card. No hero/subordinate
+// hierarchy — the user's guides are independent relationships, each with
+// their own memory and voice. The currently-active one has a pulsing dot;
+// the rest are quiet until clicked. Clicking a card activates that guide
+// (both cosmos-logos active-agent and chat-store thread) and drops into
+// /app/chat so the user resumes with that guide's last conversation.
+//
+// A dedicated "Add another guide" row sits at the bottom, leading into the
+// warm Change Guide flow (Settings → /app/settings/change-guide).
 function GuideSection() {
+  const navigate = useNavigate();
   const configuredList = useConfiguredGuidesStore((s) => s.configured);
   const activeChatAgentId = useCosmosLogosStore((s) => s.activeChatAgentId);
   const cosmosAgents = useCosmosLogosStore((s) => s.agents);
+  const setActiveChatAgent = useCosmosLogosStore((s) => s.setActiveChatAgent);
+  const builtinAgents = useAgentStore((s) => s.agents);
+  const setActiveAgent = useAgentStore((s) => s.setActiveAgent);
   const builtinActive = useAgentStore((s) => s.activeAgent);
+  const switchAgent = useChatStore((s) => s.switchAgent);
 
-  // Resolve the currently-active guide's display label. For cosmos-logos
-  // agents the manifest codename drives it; for builtin BYOK we read the
-  // agent-store id. Falls back to "none" when neither is set yet.
-  let activeLabel = 'None picked yet';
-  let activeEmoji = '✨';
-  if (activeChatAgentId) {
-    const active = cosmosAgents.find((a) => a.id === activeChatAgentId);
-    const codename = active?.manifest.identity.codename ?? '';
-    if (codename.startsWith('athena')) { activeLabel = GUIDES.athena.name; activeEmoji = GUIDES.athena.emoji; }
-    else if (codename === 'cosmos') { activeLabel = GUIDES.cosmos.name; activeEmoji = GUIDES.cosmos.emoji; }
-    else if (codename === 'logos')  { activeLabel = GUIDES.logos.name;  activeEmoji = GUIDES.logos.emoji;  }
-  } else if (['openai', 'claude', 'grok', 'gemini'].includes(builtinActive.id)) {
-    const g = BYOK_GUIDES[builtinActive.id];
-    if (g) { activeLabel = g.name; activeEmoji = g.emoji; }
-  }
+  type GuideCard = {
+    key: string;
+    emoji: string;
+    name: string;
+    role: string;
+    isActive: boolean;
+    onClick: () => void;
+  };
+
+  const cards: GuideCard[] = configuredList
+    .map((key): GuideCard | null => {
+      if (key === 'athena' || key === 'cosmos' || key === 'logos') {
+        const info = GUIDES[key];
+        const matchCodename = key === 'athena' ? 'athena-616' : key;
+        const cosmos = cosmosAgents.find((a) => a.manifest.identity.codename === matchCodename);
+        const activeCodename = activeChatAgentId
+          ? cosmosAgents.find((a) => a.id === activeChatAgentId)?.manifest.identity.codename
+          : null;
+        const isActive = !!activeCodename && (
+          key === 'athena'
+            ? activeCodename.startsWith('athena')
+            : activeCodename === key
+        );
+        return {
+          key,
+          emoji: info.emoji,
+          name: info.name,
+          role: info.role,
+          isActive,
+          onClick: () => {
+            if (cosmos) {
+              setActiveChatAgent(cosmos.id);
+              switchAgent(cosmos.id);
+              navigate('/app/chat');
+            }
+          },
+        };
+      }
+      if (['openai', 'claude', 'grok', 'gemini'].includes(key)) {
+        const info = BYOK_GUIDES[key];
+        if (!info || !hasUserApiKey(key)) return null;
+        const builtin = builtinAgents.find((a) => a.id === key);
+        const isActive = !activeChatAgentId && builtinActive.id === key;
+        return {
+          key,
+          emoji: info.emoji,
+          name: info.name,
+          role: info.role,
+          isActive,
+          onClick: () => {
+            setActiveChatAgent(null);
+            if (builtin) setActiveAgent(builtin);
+            switchAgent(key);
+            navigate('/app/chat');
+          },
+        };
+      }
+      return null;
+    })
+    .filter((x): x is GuideCard => x !== null);
 
   return (
     <section className="space-y-3">
       <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-        <Compass size={14} /> Your Guide
+        <Compass size={14} /> Your Guides
       </h2>
-      <Link
-        to="/app/settings/change-guide"
-        className="block p-4 bg-surface-1 border border-border-muted rounded-xl hover:border-shell-500/40 transition-colors group"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-surface-2 border border-border-muted flex items-center justify-center text-xl shrink-0">
-            {activeEmoji}
+
+      {cards.length === 0 && (
+        <Link
+          to="/app/settings/change-guide"
+          className="block p-4 bg-surface-1 border border-border-muted rounded-xl hover:border-shell-500/40 transition-colors text-center"
+        >
+          <div className="text-sm font-semibold text-text-primary">Pick your first guide</div>
+          <div className="text-2xs text-text-muted mt-1">
+            Choose a voice to walk with you through the ocean.
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold">{activeLabel}</div>
-            <div className="text-2xs text-text-muted mt-0.5">
-              {configuredList.length > 0
-                ? `${configuredList.length} configured · Change or add another`
-                : 'Pick a guide to get started'}
+        </Link>
+      )}
+
+      {cards.length > 0 && (
+        <div className="space-y-2">
+          {cards.map((it) => (
+            <button
+              key={it.key}
+              type="button"
+              onClick={it.onClick}
+              className={`w-full flex items-center gap-3 p-4 rounded-xl text-left bg-surface-1 border transition-all ${
+                it.isActive
+                  ? 'border-shell-500/40 bg-shell-500/5'
+                  : 'border-border-muted hover:border-shell-500/30'
+              }`}
+            >
+              <div className="w-10 h-10 rounded-full bg-surface-2 border border-border-muted flex items-center justify-center text-xl shrink-0">
+                {it.emoji}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={`text-sm font-semibold ${it.isActive ? 'text-shell-400' : 'text-text-primary'}`}>
+                  {it.name}
+                </div>
+                <div className="text-[11px] uppercase tracking-wider text-text-muted">{it.role}</div>
+              </div>
+              {it.isActive ? (
+                <div className="flex items-center gap-1.5 text-xs text-shell-400 shrink-0">
+                  <div className="w-1.5 h-1.5 rounded-full bg-shell-400 animate-pulse" />Active
+                </div>
+              ) : (
+                <div className="text-xs text-text-muted shrink-0">Switch →</div>
+              )}
+            </button>
+          ))}
+
+          <Link
+            to="/app/settings/change-guide"
+            className="flex items-center gap-3 p-4 rounded-xl bg-surface-1 border border-dashed border-border-muted text-text-muted hover:border-shell-500/40 hover:text-shell-400 transition-colors"
+          >
+            <div className="w-10 h-10 rounded-full bg-surface-2 border border-dashed border-border-muted flex items-center justify-center shrink-0">
+              <Plus size={18} />
             </div>
-          </div>
-          <ChevronRight size={16} className="text-text-muted group-hover:text-shell-400 transition-colors" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold">Add another guide</div>
+              <div className="text-2xs mt-0.5">
+                Each has their own voice and their own memory.
+              </div>
+            </div>
+          </Link>
         </div>
-        {configuredList.length > 1 && (
-          <div className="mt-3 pt-3 border-t border-border-muted flex flex-wrap gap-1.5">
-            {configuredList.map((g) => {
-              const info = (GUIDES as Record<string, { emoji: string; name: string }>)[g]
-                ?? BYOK_GUIDES[g as GuideKey]
-                ?? null;
-              if (!info) return null;
-              return (
-                <span key={g} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-surface-2 border border-border-muted text-text-muted">
-                  <span>{info.emoji}</span>
-                  <span>{info.name}</span>
-                </span>
-              );
-            })}
-          </div>
-        )}
-      </Link>
+      )}
     </section>
   );
 }
