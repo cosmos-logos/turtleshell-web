@@ -319,9 +319,30 @@ export function Chat() {
         agentEndpoint ? `endpoint: ${agentEndpoint}` : '',
         'systemPrompt:', systemPrompt ? systemPrompt.substring(0, 50) + '...' : '(none)');
 
+      // For the direct-to-vendor BYOK path, do the memory-recall +
+      // conversation-history stitching here (Athena does this server-side
+      // for the non-direct path). Recall facts scoped to this BYOK agentId
+      // and prepend them to the system prompt; pull prior turns off the
+      // chat-store so the model has within-session context too.
+      let directSystemPrompt = systemPrompt;
+      let directHistory: { role: string; content: string }[] | undefined;
+      if (useDirectProvider && mem) {
+        const memories = await webMnemosyne.recallMemories(prompt, builtinAgent.id, 20);
+        if (memories.length > 0) {
+          const block = memories.map(m => `- ${m.key}: ${m.value}`).join('\n');
+          directSystemPrompt = `${directSystemPrompt ?? ''}\n\nWhat I remember about this user:\n${block}`.trim();
+        }
+        // Current user turn + empty assistant placeholder are already in the
+        // store — slice them off. Keep only completed prior pairs.
+        const priorMsgs = useChatStore.getState().messages.slice(0, -2);
+        directHistory = priorMsgs
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({ role: m.role, content: m.content }));
+      }
+
       // Choose streaming source
       const tokenStream = useDirectProvider
-        ? streamDirect(builtinAgent.id, prompt, controller.signal, { systemPrompt })
+        ? streamDirect(builtinAgent.id, prompt, controller.signal, { systemPrompt: directSystemPrompt, conversationHistory: directHistory })
         : streamChat(prompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save, systemPrompt, agentId: llmAgentId, endpointOverride: agentEndpoint });
 
       for await (const token of tokenStream) {

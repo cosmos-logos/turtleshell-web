@@ -93,6 +93,39 @@ export async function saveMemory(
 }
 
 /**
+ * Recall semantic memories scoped to an agentId. Returns an array of
+ * {key, value} pairs suitable for injecting into the system prompt. Failures
+ * return empty — memory must never block a turn.
+ */
+export async function recallMemories(
+  query: string,
+  agentId: string,
+  limit: number = 20,
+): Promise<Array<{ key: string; value: string }>> {
+  try {
+    const resp = await fetch(`${getMnemosyneBase()}/memory/recall`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        query,
+        agentId,
+        tenantId: 'tenant-default',
+        limit,
+      }),
+    });
+    if (!resp.ok) return [];
+    const data = await resp.json().catch(() => null);
+    const memories = data?.memories ?? data?.result?.memories ?? [];
+    return Array.isArray(memories)
+      ? memories.map((m: { key: string; value: string }) => ({ key: m.key, value: m.value }))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Same first-fact regex Athena uses server-side (`\bmy\s+([a-z…])\s+(?:is|are)\s+…`).
  * Keeping the pattern identical means a user's "my name is Greg" memory surfaces
  * whether they chatted via Athena, Cosmos, Logos, or any BYOK provider.
