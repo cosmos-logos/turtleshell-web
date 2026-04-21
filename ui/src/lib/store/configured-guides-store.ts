@@ -13,6 +13,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { ogRequest } from '@/lib/api/olympus-grid-client';
 
 export type GuideKey = 'athena' | 'cosmos' | 'logos' | 'openai' | 'claude' | 'grok' | 'gemini' | 'custom';
 
@@ -20,6 +21,8 @@ interface ConfiguredGuidesStore {
   configured: string[]; // persisted as array; exposed helpers keep semantics set-like
   markConfigured: (guide: string) => void;
   isConfigured: (guide: string) => boolean;
+  /** Seed from an authoritative server list (TurtleshellProfile.ProfileData.configuredGuides). Union with local. */
+  seedFromServer: (server: string[]) => void;
   /** Back-fill configured set from legacy localStorage keys. Idempotent. */
   bootstrapFromLegacy: () => void;
 }
@@ -46,6 +49,18 @@ export const useConfiguredGuidesStore = create<ConfiguredGuidesStore>()(
         set({ configured: [...list, guide] });
       },
       isConfigured: (guide: string) => get().configured.includes(guide),
+      seedFromServer: (server) => {
+        // Union local + server, preserving local order first, then any
+        // server entries we didn't already have. This keeps the user's
+        // current-device "last-added" ordering while restoring entries they
+        // configured on another device.
+        const prev = get().configured;
+        const merged = [...prev];
+        for (const g of server) {
+          if (typeof g === 'string' && !merged.includes(g)) merged.push(g);
+        }
+        if (merged.length !== prev.length) set({ configured: merged });
+      },
       bootstrapFromLegacy: () => {
         // Only trust the single `turtleshell-guide` pointer from the old
         // onboarding flow. Do NOT auto-mark every saved BYOK api-key as
@@ -88,4 +103,36 @@ export function isGuideConfigured(guide: string | null | undefined): boolean {
 
 export function markGuideConfigured(guide: string): void {
   useConfiguredGuidesStore.getState().markConfigured(guide);
+}
+
+/**
+ * Persist the local `configuredGuides` array to TurtleshellProfile.ProfileData
+ * so the roster survives logout / new-device sign-in. Fire-and-forget —
+ * the local state is the truth for the current session; server sync is a
+ * convenience for next login.
+ *
+ * Read-modify-write: fetch the current profileData blob, union our new
+ * `configuredGuides` key, PUT it back. Done this way because the Apex PUT
+ * handler overwrites ProfileData__c wholesale when `profileData` is in the
+ * body, so we have to preserve the other FE-owned keys (avatar, guidePublic,
+ * guideEndpoint, links, etc.) explicitly.
+ */
+export async function syncConfiguredGuidesToProfile(): Promise<void> {
+  try {
+    const username = localStorage.getItem('turtleshell_username') || '';
+    if (!username) return;
+    const profile = (await ogRequest('GET', `/turtleshell/profile/${encodeURIComponent(username)}`)) as {
+      profileData?: Record<string, unknown>;
+    } | null;
+    const prev = (profile?.profileData && typeof profile.profileData === 'object')
+      ? profile.profileData
+      : {};
+    const configured = useConfiguredGuidesStore.getState().configured;
+    const nextProfileData: Record<string, unknown> = { ...prev, configuredGuides: configured };
+    await ogRequest('PUT', `/turtleshell/profile/${encodeURIComponent(username)}`, {
+      profileData: nextProfileData,
+    });
+  } catch (err) {
+    console.warn('[configuredGuides] server sync failed', err);
+  }
 }

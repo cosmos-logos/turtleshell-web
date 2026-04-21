@@ -6,7 +6,7 @@ import { ogRequest, getShellId } from '@/lib/api/olympus-grid-client';
 import { plutusClient } from '@/lib/api/plutus-client';
 import { useAgentStore } from '@/lib/store/agent-store';
 import { useChatStore } from '@/lib/store/chat-store';
-import { markGuideConfigured } from '@/lib/store/configured-guides-store';
+import { markGuideConfigured, syncConfiguredGuidesToProfile } from '@/lib/store/configured-guides-store';
 
 type Step =
   | 'cause'
@@ -663,8 +663,12 @@ export function Onboarding() {
     localStorage.setItem('turtleshell-guide', selectedGuide ?? 'cosmos');
     // Mark the chosen guide as "configured" so the sidebar/picker filter lets
     // it render, and so the Settings → Change Guide flow knows not to treat
-    // it as a fresh provider on next visit.
-    if (selectedGuide) markGuideConfigured(selectedGuide);
+    // it as a fresh provider on next visit. Fire-and-forget server sync so
+    // the configured roster survives logout + new-device login.
+    if (selectedGuide) {
+      markGuideConfigured(selectedGuide);
+      void syncConfiguredGuidesToProfile();
+    }
 
     // Create profile. The Apex handler grants the 1000 signup bonus on
     // first completion — must run before Stripe checkout so the webhook's

@@ -21,6 +21,7 @@ import { useChatStore } from '@/lib/store/chat-store';
 import {
   useConfiguredGuidesStore,
   markGuideConfigured,
+  syncConfiguredGuidesToProfile,
 } from '@/lib/store/configured-guides-store';
 
 type Step = 'choose' | 'confirm' | 'byok';
@@ -43,6 +44,10 @@ export function ChangeGuide() {
   const activate = async (guide: GuideKey) => {
     if (guide === 'custom') return;
     markGuideConfigured(guide);
+    // Push the updated roster to TurtleshellProfile.ProfileData.configuredGuides
+    // so the guide survives logout + new-device sign-in. Fire-and-forget —
+    // local state already reflects the addition.
+    void syncConfiguredGuidesToProfile();
 
     const agentStore = useAgentStore.getState();
     if (agentStore.hiddenAgentIds.has(guide)) {

@@ -41,7 +41,20 @@ export async function restoreGuideAgentFromProfile(email: string): Promise<void>
   try {
     const profile = await ogRequest('GET', `/turtleshell/profile/${encodeURIComponent(username)}`) as {
       guideAgent?: string | null;
+      profileData?: { configuredGuides?: unknown };
     };
+
+    // Seed the configured-guides store from the server-side roster BEFORE
+    // running applyGuideAgent so the sidebar/picker re-render with every
+    // guide the user has ever set up — not just the single server-side
+    // `guideAgent`. The server's configuredGuides is the source of truth
+    // for multi-guide persistence across logout / new-device sign-in.
+    const serverConfigured = profile?.profileData?.configuredGuides;
+    if (Array.isArray(serverConfigured) && serverConfigured.length > 0) {
+      const clean = serverConfigured.filter((g): g is string => typeof g === 'string');
+      useConfiguredGuidesStore.getState().seedFromServer(clean);
+    }
+
     const guide = profile?.guideAgent;
     if (!guide) return;
     await applyGuideAgent(guide);
