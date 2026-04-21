@@ -25,6 +25,7 @@ import {
   useTestBetaEnabled,
   isBuiltinAgentVisibleInBeta,
   isCosmosAgentVisibleInBeta,
+  isCosmosCodenameConfigured,
 } from '@/lib/beta';
 
 const OCEAN_EMOJIS: Record<string, string> = {
@@ -97,6 +98,9 @@ function useNavItems(): NavItem[] {
   const cosmosItems: NavItem[] = cosmosAgents
     .filter(a => !hiddenIds.has(a.id))
     .filter(a => isCosmosAgentVisibleInBeta(a.manifest.identity.codename, testBetaEnabled))
+    // Configured-guide gate — athena/cosmos/logos only appear after the user
+    // has set them up in onboarding or Settings → Change Guide.
+    .filter(a => isCosmosCodenameConfigured(a.manifest.identity.codename))
     .map((a) => {
       const name = agentDisplayName(a);
       const codename = a.manifest.identity.codename;

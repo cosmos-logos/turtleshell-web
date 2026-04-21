@@ -22,6 +22,7 @@
 import { ogRequest } from './api/olympus-grid-client';
 import { useAgentStore } from './store/agent-store';
 import { useChatStore } from './store/chat-store';
+import { markGuideConfigured, useConfiguredGuidesStore } from './store/configured-guides-store';
 
 /**
  * Fetch the user's profile by username (derived from email) and apply their
@@ -61,6 +62,12 @@ export async function restoreGuideAgentFromProfile(email: string): Promise<void>
  * Settings → Agent Theme.
  */
 export async function applyGuideAgent(guide: string): Promise<void> {
+  // Fresh-device restore: the server-side profile only knows one `guideAgent`.
+  // Also backfill the local configured-guides set from any legacy localStorage
+  // so users coming from pre-Change-Guide builds don't lose their roster.
+  useConfiguredGuidesStore.getState().bootstrapFromLegacy();
+  markGuideConfigured(guide);
+
   if (guide === 'athena' || guide === 'cosmos' || guide === 'logos') {
     // Athena / Cosmos / Logos live in the cosmos-logos sealed-envelope
     // catalog, not the builtin agent catalog. They all run on Athena's

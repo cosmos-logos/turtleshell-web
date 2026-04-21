@@ -12,6 +12,7 @@ import {
   useTestBetaEnabled,
   isBuiltinAgentVisibleInBeta,
   isCosmosAgentVisibleInBeta,
+  isCosmosCodenameConfigured,
 } from '@/lib/beta';
 import type { Agent } from '@/types/agent';
 
@@ -38,7 +39,11 @@ export function AgentPicker({ compact }: AgentPickerProps) {
   const cosmosAgentsRaw = useCosmosLogosStore((s) => s.agents);
   const cosmosAgents = cosmosAgentsRaw
     .filter(a => !hiddenAgentIds.has(a.id))
-    .filter(a => isCosmosAgentVisibleInBeta(a.manifest.identity.codename, testBetaEnabled));
+    .filter(a => isCosmosAgentVisibleInBeta(a.manifest.identity.codename, testBetaEnabled))
+    // Gate guide-family (athena/cosmos/logos) codenames on configured state
+    // so newly signed-up users don't see all three just because autoConnect
+    // populated the cosmos-logos store on boot.
+    .filter(a => isCosmosCodenameConfigured(a.manifest.identity.codename));
   // Cosmos and Logos ship as both builtin fallbacks AND bundled cosmos-logos
   // manifests; when the cosmos-logos store holds a matching codename, hide
   // the builtin dupe so the picker shows a single row per agent.

@@ -7,6 +7,10 @@ import { ogRequest, getShellId } from '@/lib/api/olympus-grid-client';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { useTestBetaEnabled } from '@/lib/beta';
+import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
+import { useAgentStore, hasUserApiKey } from '@/lib/store/agent-store';
+import { useChatStore } from '@/lib/store/chat-store';
+import { BYOK_GUIDES } from '@/routes/onboarding/OnboardingData';
 
 const CAUSE_MAP: Record<string, { emoji: string }> = {
   'Save the Oceans': { emoji: '🌊' },
@@ -299,7 +303,9 @@ export function Profile() {
 
   const hasProfile = !!profile?.username;
   const cause = profile?.cause ? CAUSE_MAP[profile.cause] : null;
-  const guide = profile?.guideAgent ? GUIDE_MAP[profile.guideAgent] : null;
+  // `profile.guideAgent` is still the server-side single-guide source of
+  // truth (drives the Athena public toggle below); the Active Agents
+  // section uses the client-side configuredGuides set.
   const email = localStorage.getItem('olympus_grid_email') || '';
   const displayName = profile?.displayName || localStorage.getItem('turtleshell_username') || email.split('@')[0] || '';
   const username = profile?.username || localStorage.getItem('turtleshell_username') || '';
@@ -553,40 +559,19 @@ export function Profile() {
           </div>
         )}
 
-        {/* Guide */}
-        {guide && (
-          <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">My Guide</h3>
-            <div className="flex items-center gap-3 rounded-xl p-4 bg-surface-1 border border-border-muted">
-              <div className="w-10 h-10 rounded-full bg-surface-2 border border-border-muted flex items-center justify-center text-xl shrink-0">
-                {guide.emoji}
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="text-sm font-semibold text-shell-400">{guide.name}</div>
-                  {/* Athena visibility badge — mirrors the guidePublic
-                      toggle state. Gives the user a single at-a-glance
-                      read of whether their guide is exposed on /u/:username. */}
-                  {isAthenaGuide && (
-                    guidePublic ? (
-                      <span className="text-2xs uppercase tracking-[0.12em] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded px-1.5 py-0.5 font-semibold">
-                        Public
-                      </span>
-                    ) : (
-                      <span className="text-2xs uppercase tracking-[0.12em] text-text-muted/70 bg-surface-2 border border-border-muted rounded px-1.5 py-0.5 font-semibold">
-                        Private
-                      </span>
-                    )
-                  )}
-                </div>
-                <div className="text-[11px] uppercase tracking-wider text-text-muted">{guide.role}</div>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-shell-400">
-                <div className="w-1.5 h-1.5 rounded-full bg-shell-400 animate-pulse" />Active
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Active Agents — every guide the user has configured via onboarding
+            or Settings → Change Guide. Clicking a card activates that agent
+            and drops the user into its chat (chat-store preserves each
+            agent's last conversationId + message thread, so it resumes
+            rather than starting fresh). The currently-active one shows the
+            pulsing dot; Athena retains its Public/Private badge since the
+            public-profile flow is Athena-specific. */}
+        <ActiveAgents
+          currentGuideKey={profile?.guideAgent ?? null}
+          isAthenaGuide={isAthenaGuide}
+          guidePublic={guidePublic}
+          onSelect={() => { /* navigation handled inside */ }}
+        />
 
         {/* Make Athena Public — gated on Athena being the selected guide
             (only Athena is wired end-to-end for the Ask-on-public-page
@@ -715,23 +700,155 @@ export function Profile() {
           </div>
         )}
 
-        {/* Actions — Change Guide is disabled ("Soon") because the
-            guide switch flow has known bugs under a signed-in profile;
-            ship it after we validate the onboarding-preservation path.
-            Redo Onboarding and Settings removed (no user story). */}
+        {/* Actions — Change Guide flow lives at /app/settings/change-guide
+            and is additive: picking a new guide adds to the sidebar without
+            hiding the previously configured ones. The Active Agents section
+            above reflects every guide the user has set up so far. */}
         <div className="flex flex-col gap-2 pt-2">
-          <button
-            type="button"
-            disabled
-            aria-disabled="true"
-            className="block w-full text-center py-2.5 rounded-lg text-sm font-medium bg-surface-1 border border-border-muted text-text-muted/60 cursor-not-allowed flex items-center justify-center gap-2"
+          <Link
+            to="/app/settings/change-guide"
+            className="block w-full text-center py-2.5 rounded-lg text-sm font-medium bg-shell-500/10 border border-shell-500/30 text-shell-400 hover:bg-shell-500/15 transition-colors"
           >
-            <span>Change Guide</span>
-            <span className="text-2xs uppercase tracking-[0.15em] text-amber-400/80 bg-amber-500/10 border border-amber-500/20 rounded px-1.5 py-0.5 font-semibold">
-              Soon
-            </span>
-          </button>
+            Change or Add a Guide
+          </Link>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Active Agents section ────────────────────────────
+// Lists every guide the user has configured. Clicking a card activates it
+// and navigates to chat; the chat-store's per-agent thread state means the
+// user lands on that agent's most-recent conversation (or a blank canvas if
+// they haven't chatted with it yet).
+function ActiveAgents({
+  currentGuideKey,
+  isAthenaGuide,
+  guidePublic,
+}: {
+  currentGuideKey: string | null;
+  isAthenaGuide: boolean;
+  guidePublic: boolean;
+  onSelect: () => void;
+}) {
+  const navigate = useNavigate();
+  const configuredList = useConfiguredGuidesStore((s) => s.configured);
+  const cosmosAgents = useCosmosLogosStore((s) => s.agents);
+  const builtinAgents = useAgentStore((s) => s.agents);
+  const setActiveChatAgent = useCosmosLogosStore((s) => s.setActiveChatAgent);
+  const setActiveAgent = useAgentStore((s) => s.setActiveAgent);
+  const switchAgent = useChatStore((s) => s.switchAgent);
+  const activeChatAgentId = useCosmosLogosStore((s) => s.activeChatAgentId);
+  const builtinActive = useAgentStore((s) => s.activeAgent);
+
+  if (configuredList.length === 0) return null;
+
+  // Build the display list — preserves the order the user configured them.
+  const items = configuredList.map((key) => {
+    // Cosmos-logos bundled personas
+    if (key === 'athena' || key === 'cosmos' || key === 'logos') {
+      const info = (GUIDE_MAP as Record<string, { emoji: string; name: string; role: string }>)[key];
+      if (!info) return null;
+      const matchCodename = key === 'athena' ? 'athena-616' : key;
+      const cosmos = cosmosAgents.find((a) => a.manifest.identity.codename === matchCodename);
+      const activeCosmosCodename = activeChatAgentId
+        ? cosmosAgents.find((a) => a.id === activeChatAgentId)?.manifest.identity.codename
+        : null;
+      const isActiveHere = !!activeCosmosCodename && (
+        key === 'athena'
+          ? activeCosmosCodename.startsWith('athena')
+          : activeCosmosCodename === key
+      );
+      return {
+        key,
+        ...info,
+        isActive: isActiveHere,
+        onClick: () => {
+          if (cosmos) {
+            setActiveChatAgent(cosmos.id);
+            switchAgent(cosmos.id);
+            navigate('/app/chat');
+          }
+        },
+      };
+    }
+    // BYOK — lives as builtin with a user-supplied key
+    if (['openai', 'claude', 'grok', 'gemini'].includes(key)) {
+      const info = BYOK_GUIDES[key as keyof typeof BYOK_GUIDES];
+      if (!info || !hasUserApiKey(key)) return null;
+      const builtin = builtinAgents.find((a) => a.id === key);
+      const isActiveHere = !activeChatAgentId && builtinActive.id === key;
+      return {
+        key,
+        emoji: info.emoji,
+        name: info.name,
+        role: info.role,
+        isActive: isActiveHere,
+        onClick: () => {
+          setActiveChatAgent(null);
+          if (builtin) setActiveAgent(builtin);
+          switchAgent(key);
+          navigate('/app/chat');
+        },
+      };
+    }
+    return null;
+  }).filter((x): x is NonNullable<typeof x> => x !== null);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div>
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">
+        Active Agents
+      </h3>
+      <div className="flex flex-col gap-2">
+        {items.map((it) => {
+          const showPublicBadge = it.key === 'athena' && currentGuideKey === 'athena' && isAthenaGuide;
+          return (
+            <button
+              key={it.key}
+              type="button"
+              onClick={it.onClick}
+              className={`flex items-center gap-3 rounded-xl p-4 bg-surface-1 border transition-all text-left w-full ${
+                it.isActive
+                  ? 'border-shell-500/40 bg-shell-500/5'
+                  : 'border-border-muted hover:border-shell-500/30'
+              }`}
+            >
+              <div className="w-10 h-10 rounded-full bg-surface-2 border border-border-muted flex items-center justify-center text-xl shrink-0">
+                {it.emoji}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className={`text-sm font-semibold ${it.isActive ? 'text-shell-400' : 'text-text-primary'}`}>
+                    {it.name}
+                  </div>
+                  {showPublicBadge && (
+                    guidePublic ? (
+                      <span className="text-2xs uppercase tracking-[0.12em] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded px-1.5 py-0.5 font-semibold">
+                        Public
+                      </span>
+                    ) : (
+                      <span className="text-2xs uppercase tracking-[0.12em] text-text-muted/70 bg-surface-2 border border-border-muted rounded px-1.5 py-0.5 font-semibold">
+                        Private
+                      </span>
+                    )
+                  )}
+                </div>
+                <div className="text-[11px] uppercase tracking-wider text-text-muted">{it.role}</div>
+              </div>
+              {it.isActive ? (
+                <div className="flex items-center gap-1.5 text-xs text-shell-400 shrink-0">
+                  <div className="w-1.5 h-1.5 rounded-full bg-shell-400 animate-pulse" />Active
+                </div>
+              ) : (
+                <div className="text-xs text-text-muted shrink-0">Switch →</div>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

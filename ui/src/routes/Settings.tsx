@@ -1,10 +1,15 @@
-import { Info, Sun, Moon, Brain, Wrench } from 'lucide-react';
+import { Info, Sun, Moon, Brain, Wrench, Compass, ChevronRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useThemeStore } from '@/lib/store/theme-store';
 import { useAgentThemeStore, type AgentTheme } from '@/lib/store/agent-theme-store';
 import { useChatPreferencesStore } from '@/lib/store/chat-preferences-store';
 import { useAllowDeveloperMode } from '@/lib/hooks/useAllowDeveloperMode';
+import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
+import { useAgentStore } from '@/lib/store/agent-store';
+import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
+import { GUIDES, BYOK_GUIDES, type GuideKey } from '@/routes/onboarding/OnboardingData';
 
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
@@ -18,6 +23,76 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
         }`}
       />
     </button>
+  );
+}
+
+// ── Your Guide section ─────────────────────────────────
+// Shows the currently-active guide + every configured guide, with a "Change
+// Guide" link into the dedicated flow. Change-guide is additive — picking a
+// new one adds it to the sidebar, it never replaces the existing set.
+function GuideSection() {
+  const configuredList = useConfiguredGuidesStore((s) => s.configured);
+  const activeChatAgentId = useCosmosLogosStore((s) => s.activeChatAgentId);
+  const cosmosAgents = useCosmosLogosStore((s) => s.agents);
+  const builtinActive = useAgentStore((s) => s.activeAgent);
+
+  // Resolve the currently-active guide's display label. For cosmos-logos
+  // agents the manifest codename drives it; for builtin BYOK we read the
+  // agent-store id. Falls back to "none" when neither is set yet.
+  let activeLabel = 'None picked yet';
+  let activeEmoji = '✨';
+  if (activeChatAgentId) {
+    const active = cosmosAgents.find((a) => a.id === activeChatAgentId);
+    const codename = active?.manifest.identity.codename ?? '';
+    if (codename.startsWith('athena')) { activeLabel = GUIDES.athena.name; activeEmoji = GUIDES.athena.emoji; }
+    else if (codename === 'cosmos') { activeLabel = GUIDES.cosmos.name; activeEmoji = GUIDES.cosmos.emoji; }
+    else if (codename === 'logos')  { activeLabel = GUIDES.logos.name;  activeEmoji = GUIDES.logos.emoji;  }
+  } else if (['openai', 'claude', 'grok', 'gemini'].includes(builtinActive.id)) {
+    const g = BYOK_GUIDES[builtinActive.id];
+    if (g) { activeLabel = g.name; activeEmoji = g.emoji; }
+  }
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+        <Compass size={14} /> Your Guide
+      </h2>
+      <Link
+        to="/app/settings/change-guide"
+        className="block p-4 bg-surface-1 border border-border-muted rounded-xl hover:border-shell-500/40 transition-colors group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-surface-2 border border-border-muted flex items-center justify-center text-xl shrink-0">
+            {activeEmoji}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold">{activeLabel}</div>
+            <div className="text-2xs text-text-muted mt-0.5">
+              {configuredList.length > 0
+                ? `${configuredList.length} configured · Change or add another`
+                : 'Pick a guide to get started'}
+            </div>
+          </div>
+          <ChevronRight size={16} className="text-text-muted group-hover:text-shell-400 transition-colors" />
+        </div>
+        {configuredList.length > 1 && (
+          <div className="mt-3 pt-3 border-t border-border-muted flex flex-wrap gap-1.5">
+            {configuredList.map((g) => {
+              const info = (GUIDES as Record<string, { emoji: string; name: string }>)[g]
+                ?? BYOK_GUIDES[g as GuideKey]
+                ?? null;
+              if (!info) return null;
+              return (
+                <span key={g} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-surface-2 border border-border-muted text-text-muted">
+                  <span>{info.emoji}</span>
+                  <span>{info.name}</span>
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </Link>
+    </section>
   );
 }
 
@@ -81,6 +156,8 @@ export function Settings() {
             Configure your TurtleShell.ai experience.
           </p>
         </div>
+
+        <GuideSection />
 
         {/* Appearance — Dark Mode toggle only. First visible knob. */}
         <section className="space-y-3">

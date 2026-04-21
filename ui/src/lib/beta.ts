@@ -19,6 +19,7 @@
 
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { hasUserApiKey } from '@/lib/store/agent-store';
+import { isGuideConfigured } from '@/lib/store/configured-guides-store';
 
 /** Built-in agent IDs that are always visible, regardless of beta state. */
 export const ALWAYS_VISIBLE_BUILTIN_AGENT_IDS: ReadonlySet<string> = new Set([
@@ -60,7 +61,12 @@ export function isBuiltinAgentVisibleInBeta(
 ): boolean {
   if (testBetaEnabled) return true;
   if (ALWAYS_VISIBLE_BUILTIN_AGENT_IDS.has(agentId)) return true;
-  if (BYOK_AGENT_IDS.has(agentId) && hasUserApiKey(agentId)) return true;
+  // BYOK agents need BOTH a saved key AND an explicit "configured" mark
+  // (onboarding or Settings → Change Guide). hasUserApiKey alone isn't
+  // enough once Change Guide exists — a user who deletes their key in the
+  // Eye-toggle agent-setup UI should see the provider disappear even if a
+  // stale configured flag lingers.
+  if (BYOK_AGENT_IDS.has(agentId) && hasUserApiKey(agentId) && isGuideConfigured(agentId)) return true;
   return false;
 }
 
@@ -71,6 +77,22 @@ export function isCosmosAgentVisibleInBeta(
 ): boolean {
   if (testBetaEnabled) return true;
   return isAlwaysVisibleCosmosCodename(codename);
+}
+
+/**
+ * Is a cosmos-logos agent's codename bound to a configured guide?
+ * Maps athena/cosmos/logos family codenames to their guide keys so a user
+ * who only set up Athena sees Athena in the sidebar but not Cosmos/Logos,
+ * even though all three are auto-connected in the cosmos-logos store on
+ * boot. Non-guide cosmos-logos codenames (thoth, poseidon, etc.) pass
+ * through — their visibility is governed by the user's eye-toggle instead.
+ */
+export function isCosmosCodenameConfigured(codename: string | undefined | null): boolean {
+  if (!codename) return true;
+  if (codename === 'athena' || codename.startsWith('athena-')) return isGuideConfigured('athena');
+  if (codename === 'cosmos' || codename.startsWith('cosmos-')) return isGuideConfigured('cosmos');
+  if (codename === 'logos' || codename.startsWith('logos-')) return isGuideConfigured('logos');
+  return true;
 }
 
 /**
