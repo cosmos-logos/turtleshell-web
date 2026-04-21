@@ -49,10 +49,22 @@ export function ChangeGuide() {
     // local state already reflects the addition.
     void syncConfiguredGuidesToProfile();
 
-    const agentStore = useAgentStore.getState();
-    if (agentStore.hiddenAgentIds.has(guide)) {
-      agentStore.toggleVisibility(guide);
-    }
+    // Idempotent "unhide" helper — ALWAYS re-fetches zustand state so we
+    // don't operate on a stale snapshot. Critical subtlety:
+    // `useAgentStore.getState()` returns a frozen reference, and its
+    // `.hiddenAgentIds` Set is a fixed snapshot. toggleVisibility installs
+    // a brand new Set in the store internally; the captured reference
+    // still points at the old one. A second `.has()` check against the
+    // captured reference reports the pre-toggle state, which caused a
+    // double-toggle that re-hid what the first call had just unhid.
+    // (That was the "Cosmos doesn't appear in the sidebar after Change
+    // Guide" bug.) Always re-read via a fresh getState().
+    const ensureVisible = (id: string) => {
+      const store = useAgentStore.getState();
+      if (store.hiddenAgentIds.has(id)) store.toggleVisibility(id);
+    };
+
+    ensureVisible(guide);
 
     if (guide === 'athena' || guide === 'cosmos' || guide === 'logos') {
       const autoConnect = await import('@/lib/cosmos-logos/auto-connect');
@@ -73,9 +85,11 @@ export function ChangeGuide() {
       const cosmosStore = useCosmosLogosStore.getState();
       const connected = cosmosStore.agents.find((a) => a.manifest.identity.codename === matchCodename);
       if (connected) {
-        if (agentStore.hiddenAgentIds.has(connected.id)) {
-          agentStore.toggleVisibility(connected.id);
-        }
+        // For cosmos/logos the bundled agent id equals the codename, so
+        // ensureVisible(guide) above has already handled it (idempotent).
+        // For athena-family the id ('athena-616') differs from guide
+        // ('athena'), so this call does the real unhide work.
+        ensureVisible(connected.id);
         cosmosStore.setActiveChatAgent(connected.id);
         useChatStore.getState().switchAgent(connected.id);
       }
@@ -83,8 +97,8 @@ export function ChangeGuide() {
       const { useCosmosLogosStore } = await import('@/lib/cosmos-logos/store');
       useCosmosLogosStore.getState().setActiveChatAgent(null);
 
-      const builtin = agentStore.agents.find((a) => a.id === guide);
-      if (builtin) agentStore.setActiveAgent(builtin);
+      const builtin = useAgentStore.getState().agents.find((a) => a.id === guide);
+      if (builtin) useAgentStore.getState().setActiveAgent(builtin);
       useChatStore.getState().switchAgent(guide);
     }
 
