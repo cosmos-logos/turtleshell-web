@@ -9,6 +9,7 @@ import { useApolloStore } from '@/lib/store/apollo-store';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { streamChat } from '@/lib/athena/chat-client';
 import { streamDirect, hasDirectProvider } from '@/lib/providers/direct-chat';
+import * as webMnemosyne from '@/lib/mnemosyne/web-client';
 import { hasUserApiKey } from '@/lib/store/agent-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { useAgentStore } from '@/lib/store/agent-store';
@@ -341,6 +342,36 @@ export function Chat() {
             .join('\n')
             .replace(/^\n+/, '');
           updateLastAssistantMessage(filtered);
+        }
+      }
+
+      // Persist BYOK turn to Mnemosyne so History + Memory pages work
+      // (stamped with the BYOK agentId so scope filters correctly). streamChat
+      // has its own Mnemosyne save path server-side via Athena; we only do it
+      // here for the direct-to-vendor path that bypasses Athena entirely.
+      if (useDirectProvider && mem && accumulated.trim()) {
+        let cid = convId;
+        if (!cid) {
+          cid = await webMnemosyne.createConversation();
+          if (cid) setConversationId(cid);
+        }
+        if (cid) {
+          void webMnemosyne.appendTurns(
+            cid,
+            [
+              { role: 'user', content: prompt },
+              { role: 'assistant', content: accumulated.trim() },
+            ],
+            builtinAgent.id,
+            save,
+          );
+          // Simple fact extraction — mirrors Athena's server-side regex so
+          // "my name is Greg" yields the same `name: Greg` memory whether the
+          // user is chatting with Cosmos or OpenAI BYOK.
+          const fact = webMnemosyne.extractFactFromPrompt(prompt);
+          if (fact) {
+            void webMnemosyne.saveMemory(fact.key, fact.value, builtinAgent.id);
+          }
         }
       }
 
