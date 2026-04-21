@@ -180,3 +180,24 @@
 @media (prefers-reduced-motion: reduce) {
   .cause-marquee { animation: none; transform: translateX(0); }
 }
+
+/* "What's new" sidebar row — gentle breath when there's unread release
+   notes. Scale nudge + shell-green shadow pulse make the row feel alive
+   without shouting. Applied by Sidebar.tsx via `animate-whats-new-breathe`
+   on NavLink when `highlight` is true. Respects reduced-motion. */
+@keyframes whats-new-breathe {
+  0%, 100% {
+    transform: translateY(0);
+    box-shadow: 0 4px 14px -6px rgba(34, 197, 94, 0.25);
+  }
+  50% {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px -6px rgba(34, 197, 94, 0.45);
+  }
+}
+.animate-whats-new-breathe {
+  animation: whats-new-breathe 3.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-whats-new-breathe { animation: none; }
+}
