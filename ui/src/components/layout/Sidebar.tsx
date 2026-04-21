@@ -75,9 +75,14 @@ function useNavItems(): NavItem[] {
 
   // Built-in agents (Logos, Cosmos, Claude, OpenAI, Grok, Gemini, custom).
   // When beta is OFF, restrict to the core allowlist (cosmos, logos).
+  // Cosmos/Logos also live as bundled cosmos-logos manifests — hide the
+  // builtin dupe when the cosmos-logos store holds a matching codename so
+  // the sidebar shows a single row per agent.
+  const cosmosCodenames = new Set(cosmosAgents.map(a => a.manifest.identity.codename));
   const builtinItems: NavItem[] = builtinAgents
     .filter(a => !hiddenIds.has(a.id))
     .filter(a => isBuiltinAgentVisibleInBeta(a.id, testBetaEnabled))
+    .filter(a => !cosmosCodenames.has(a.id))
     .map((a) => ({
       to: `/app/chat?agent_builtin=${a.id}`,
       label: a.name,

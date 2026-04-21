@@ -61,25 +61,38 @@ export async function restoreGuideAgentFromProfile(email: string): Promise<void>
  * Settings → Agent Theme.
  */
 export async function applyGuideAgent(guide: string): Promise<void> {
-  if (guide === 'athena') {
-    // Athena is sourced from the cosmos-logos sealed-envelope catalog, not
-    // the builtin agent catalog. Re-run the same auto-connect + activate
-    // dance Onboarding uses.
-    const { autoConnectAthena, clearAthenaDisconnectFlag } = await import('./cosmos-logos/auto-connect');
+  if (guide === 'athena' || guide === 'cosmos' || guide === 'logos') {
+    // Athena / Cosmos / Logos live in the cosmos-logos sealed-envelope
+    // catalog, not the builtin agent catalog. They all run on Athena's
+    // chat endpoint with different bundled manifests (system_prompt +
+    // voice). Re-run the same auto-connect + activate dance Onboarding
+    // uses, keyed on the guide the user picked.
+    const autoConnect = await import('./cosmos-logos/auto-connect');
     const { useCosmosLogosStore } = await import('./cosmos-logos/store');
-    clearAthenaDisconnectFlag();
-    await autoConnectAthena();
+
+    const matchCodename = guide === 'athena' ? 'athena-616' : guide;
+
+    if (guide === 'athena') {
+      autoConnect.clearAthenaDisconnectFlag();
+      await autoConnect.autoConnectAthena();
+    } else if (guide === 'cosmos') {
+      autoConnect.clearCosmosDisconnectFlag();
+      await autoConnect.autoConnectCosmos();
+    } else {
+      autoConnect.clearLogosDisconnectFlag();
+      await autoConnect.autoConnectLogos();
+    }
 
     const cosmosStore = useCosmosLogosStore.getState();
-    const athena = cosmosStore.agents.find(a => a.manifest.identity.codename === 'athena-616');
-    if (!athena) {
-      console.warn('[guide-agent] Athena auto-connect failed — leaving stores untouched');
+    const connected = cosmosStore.agents.find(a => a.manifest.identity.codename === matchCodename);
+    if (!connected) {
+      console.warn(`[guide-agent] ${guide} auto-connect failed — leaving stores untouched`);
       return;
     }
-    cosmosStore.setActiveChatAgent(athena.id);
-    useChatStore.getState().switchAgent(athena.id);
+    cosmosStore.setActiveChatAgent(connected.id);
+    useChatStore.getState().switchAgent(connected.id);
 
-    // Hide every builtin catalog agent so the sidebar shows Athena alone.
+    // Hide every builtin catalog agent so the sidebar shows the chosen guide alone.
     const store = useAgentStore.getState();
     for (const a of store.agents) {
       if (!store.hiddenAgentIds.has(a.id)) {

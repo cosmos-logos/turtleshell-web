@@ -27,11 +27,15 @@ export const ALWAYS_VISIBLE_BUILTIN_AGENT_IDS: ReadonlySet<string> = new Set([
 
 /**
  * Is this cosmos-logos connected agent always visible?
- * True for any Athena instance (athena-616, athena-717, athena-303, etc.).
+ * True for any Athena / Cosmos / Logos family instance — the three core
+ * bundled agents share Athena's endpoint and ride the same go-live path.
  */
 export function isAlwaysVisibleCosmosCodename(codename: string | undefined | null): boolean {
   if (!codename) return false;
-  return codename === 'athena' || codename.startsWith('athena-');
+  if (codename === 'athena' || codename.startsWith('athena-')) return true;
+  if (codename === 'cosmos' || codename.startsWith('cosmos-')) return true;
+  if (codename === 'logos' || codename.startsWith('logos-')) return true;
+  return false;
 }
 
 /** Hook — reactively read the beta-enabled flag. */

@@ -35,13 +35,18 @@ interface AgentPickerProps {
 export function AgentPicker({ compact }: AgentPickerProps) {
   const { activeAgent, setActiveAgent, agents: allBuiltinAgentsRaw, hiddenAgentIds } = useAgentStore();
   const testBetaEnabled = useTestBetaEnabled();
-  const allBuiltinAgents = allBuiltinAgentsRaw
-    .filter(a => !hiddenAgentIds.has(a.id))
-    .filter(a => isBuiltinAgentVisibleInBeta(a.id, testBetaEnabled));
   const cosmosAgentsRaw = useCosmosLogosStore((s) => s.agents);
   const cosmosAgents = cosmosAgentsRaw
     .filter(a => !hiddenAgentIds.has(a.id))
     .filter(a => isCosmosAgentVisibleInBeta(a.manifest.identity.codename, testBetaEnabled));
+  // Cosmos and Logos ship as both builtin fallbacks AND bundled cosmos-logos
+  // manifests; when the cosmos-logos store holds a matching codename, hide
+  // the builtin dupe so the picker shows a single row per agent.
+  const cosmosCodenames = new Set(cosmosAgentsRaw.map(a => a.manifest.identity.codename));
+  const allBuiltinAgents = allBuiltinAgentsRaw
+    .filter(a => !hiddenAgentIds.has(a.id))
+    .filter(a => isBuiltinAgentVisibleInBeta(a.id, testBetaEnabled))
+    .filter(a => !cosmosCodenames.has(a.id));
   const agentTheme = useAgentThemeStore((s) => s.agentTheme);
   const activeChatAgentId = useCosmosLogosStore((s) => s.activeChatAgentId);
   const setActiveChatAgent = useCosmosLogosStore((s) => s.setActiveChatAgent);

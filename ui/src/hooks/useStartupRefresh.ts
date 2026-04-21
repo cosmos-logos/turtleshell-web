@@ -4,7 +4,7 @@ import { isOlympusGridTokenPresent, refreshOlympusGridToken } from '@/lib/api/ol
 import { isGitHubConnected, validateGitHubToken } from '@/lib/api/github-client';
 import { isGoogleConnected, isGoogleTokenExpired, refreshGoogleToken } from '@/lib/api/google-client';
 import { isHubSpotConnected, validateHubSpotToken } from '@/lib/api/hubspot-client';
-import { autoConnectAthena } from '@/lib/cosmos-logos/auto-connect';
+import { autoConnectAthena, autoConnectCosmos, autoConnectLogos } from '@/lib/cosmos-logos/auto-connect';
 // Workday deprecated — coming_soon until httpOnly cookie migration
 // import { isWorkdayConnected, validateWorkdayConnection } from '@/lib/api/workday-client';
 export function useStartupRefresh(): { refreshing: boolean } {
@@ -17,8 +17,13 @@ export function useStartupRefresh(): { refreshing: boolean } {
 
     const tasks: Promise<void>[] = [];
 
-    // Auto-connect cloud Athena cosmos-logos agent — runs unconditionally
+    // Auto-connect the three core cosmos-logos agents. All three share the
+    // Athena chat endpoint — the only runtime difference is which bundled
+    // manifest (system_prompt + voice) is active. See
+    // `lib/cosmos-logos/auto-connect.ts` for the bundled-agent contract.
     tasks.push(autoConnectAthena());
+    tasks.push(autoConnectCosmos());
+    tasks.push(autoConnectLogos());
 
     if (isSalesforceConnected()) {
       tasks.push(

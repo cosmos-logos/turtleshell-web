@@ -71,6 +71,18 @@ export function isAthenaFamily(codename: string | null | undefined): boolean {
     return codename === 'athena' || codename.startsWith('athena-');
 }
 
+/** Is a codename part of the Cosmos family? Exact or `cosmos-*` prefix. */
+export function isCosmosFamily(codename: string | null | undefined): boolean {
+    if (!codename) return false;
+    return codename === 'cosmos' || codename.startsWith('cosmos-');
+}
+
+/** Is a codename part of the Logos family? Exact or `logos-*` prefix. */
+export function isLogosFamily(codename: string | null | undefined): boolean {
+    if (!codename) return false;
+    return codename === 'logos' || codename.startsWith('logos-');
+}
+
 /**
  * Hook — returns the scope derived from the current UI state:
  *   - If a cosmos-logos agent is selected (activeChatAgentId), that wins.
@@ -115,6 +127,57 @@ export function useActiveAgentScope(): AgentScope {
                         return p;
                     },
                     kind: 'athena',
+                };
+            }
+            // Cosmos and Logos run on Athena's backend with bundled manifests.
+            // Give them distinct scopes so Memory/History can filter to the
+            // agent the user actually picked in onboarding.
+            //
+            // Backend limitation (as of this commit): the chat request is
+            // stamped `agentId='athena'` for all three because Athena's
+            // `AGENTS` routing table only knows 'athena'/'thoth'/'mars'/
+            // 'gemini'/'turtle' — sending 'cosmos' or 'logos' would fall
+            // through to thoth (Claude), which breaks the "run on the
+            // ChatGPT connector" contract. Until Athena's AGENTS adds
+            // cosmos/logos entries that route to OpenAI, the server-side
+            // memory pool is shared across the three, and cosmos/logos
+            // Memory pages will appear empty. Client-side filtering is
+            // already correct and will light up the moment the backend
+            // stamps records with the real codename.
+            if (isCosmosFamily(cosmosCodename)) {
+                return {
+                    key: 'cosmos',
+                    displayName: 'Cosmos',
+                    avatar: '🐟',
+                    color: cosmosColor ?? '#20c8a0',
+                    greeting: COSMOS_GREETING,
+                    cta: COSMOS_CTA,
+                    matches: (id) => !!id && isCosmosFamily(id),
+                    toQueryParams: () => {
+                        const p = new URLSearchParams();
+                        p.set('agentIds', 'cosmos');
+                        p.set('agentIdPrefix', 'cosmos-');
+                        return p;
+                    },
+                    kind: 'cosmos',
+                };
+            }
+            if (isLogosFamily(cosmosCodename)) {
+                return {
+                    key: 'logos',
+                    displayName: 'Logos',
+                    avatar: '🐢',
+                    color: cosmosColor ?? '#40d0c0',
+                    greeting: LOGOS_GREETING,
+                    cta: LOGOS_CTA,
+                    matches: (id) => !!id && isLogosFamily(id),
+                    toQueryParams: () => {
+                        const p = new URLSearchParams();
+                        p.set('agentIds', 'logos');
+                        p.set('agentIdPrefix', 'logos-');
+                        return p;
+                    },
+                    kind: 'cosmos',
                 };
             }
             // Other cosmos agents (poseidon, thoth, etc.) — exact match on cosmos id

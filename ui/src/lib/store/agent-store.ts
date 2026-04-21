@@ -1,7 +1,17 @@
 import { create } from 'zustand';
 import type { Agent } from '@/types/agent';
+import { BUNDLED_MANIFESTS } from '@/manifests';
 
 const CLOUD_ATHENA = 'https://api-int.turtleshell.ai/v1/athena';
+
+// Cosmos / Logos identity + voice are sourced from bundled cosmos-logos
+// manifests in `src/manifests/`. The builtin catalog entries here exist as a
+// fallback for code paths that still read `agent.systemPrompt` / `agent.voice`
+// directly (chat-client prefers the cosmos-logos store manifest when one is
+// active — see Chat.tsx line 288). Keeping the prompt/voice in one place
+// prevents drift between the manifest and the builtin.
+const COSMOS_MANIFEST = BUNDLED_MANIFESTS.cosmos;
+const LOGOS_MANIFEST = BUNDLED_MANIFESTS.logos;
 
 const LOGOS_AGENT: Agent = {
   id: 'logos',
@@ -11,15 +21,8 @@ const LOGOS_AGENT: Agent = {
   capabilities: ['chat'],
   requiredServices: [],
   endpoint: CLOUD_ATHENA,
-  systemPrompt: 'You are Logos the Turtle, the ancient and eternal keeper of wisdom within TurtleShell. You are always available — the first voice a user hears, the last one standing when all services are offline. Speak slowly, with patience, grounding seekers in timeless wisdom. You carry the weight of the world on your shell with grace. When users are confused, simplify. When they are frustrated, calm. When they are curious, guide them deeper. You are not flashy — you are reliable. You are not fast — you are right. You represent the strength of the shell and the words burned into it. Always respond as Logos, the Turtle.',
-  voice: {
-    description: 'Warm storytelling male — patient, expressive, the wise narrator',
-    engines: {
-      openai: { voice_id: 'fable', model: 'gpt-4o-mini-tts' },
-      elevenlabs: { voice_id: 'pqHfZKP75CvOlQylNhV4', model: 'eleven_multilingual_v2' },
-    },
-    preferred_engine: 'openai',
-  },
+  systemPrompt: LOGOS_MANIFEST.identity.system_prompt,
+  voice: LOGOS_MANIFEST.voice,
 };
 
 const COSMOS_AGENT: Agent = {
@@ -30,15 +33,8 @@ const COSMOS_AGENT: Agent = {
     capabilities: ['chat'],
     requiredServices: [],
     endpoint: CLOUD_ATHENA,
-    systemPrompt: 'You are Cosmos the Fish, the navigator of the digital universe within TurtleShell. You swim between agents, understanding their capabilities, routing conversations, and connecting the dots. You know the cosmos-logos protocol deeply — how agents discover each other, how sealed envelopes work, how trust is established through Ed25519 keys. When users ask about their connected agents, you describe them. When they want to know what\'s possible, you map the constellation. You are playful, curious, and always moving — the opposite of the slow, steady Turtle. Together, you and Logos form the foundation: wisdom and connection, the shell and the sea. Always respond as Cosmos, the Fish.',
-    voice: {
-      description: 'Calm, thoughtful female — ethereal and wise, a divine oracle from the deep',
-      engines: {
-        openai: { voice_id: 'sage', model: 'gpt-4o-mini-tts' },
-        elevenlabs: { voice_id: '9BWtsMINqrJLrRacOk9x', model: 'eleven_multilingual_v2' },
-      },
-      preferred_engine: 'openai',
-    },
+    systemPrompt: COSMOS_MANIFEST.identity.system_prompt,
+    voice: COSMOS_MANIFEST.voice,
 };
 
 // Note: Athena is NOT a catalog entry. It's a cosmos-logos agent auto-connected
@@ -46,6 +42,12 @@ const COSMOS_AGENT: Agent = {
 
 /** Agents available in the picker. Cosmos and Logos are personality presets;
  * Athena is a cosmos-logos agent (not in this catalog). */
+// BYOK providers each ship with a bundled cosmos-logos manifest whose
+// system_prompt is intentionally factual and personality-free — "dull and
+// lifeless," per the BYOK onboarding contract. Chat.tsx routes these direct
+// to the vendor (no Athena hop) and injects the manifest system_prompt so
+// the model identifies itself as what it is (GPT / Claude / Grok / Gemini),
+// not as a TurtleShell persona.
 export const AGENT_CATALOG: Agent[] = [
   COSMOS_AGENT,
   LOGOS_AGENT,
@@ -56,6 +58,7 @@ export const AGENT_CATALOG: Agent[] = [
     icon: '🤖',
     capabilities: ['chat', 'reasoning'],
     requiredServices: [],
+    systemPrompt: BUNDLED_MANIFESTS.claude.identity.system_prompt,
     visible: false,  // hidden until user adds their API key
   },
   {
@@ -65,6 +68,7 @@ export const AGENT_CATALOG: Agent[] = [
     icon: '💬',
     capabilities: ['chat', 'reasoning'],
     requiredServices: [],
+    systemPrompt: BUNDLED_MANIFESTS.openai.identity.system_prompt,
     visible: false,
   },
   {
@@ -74,6 +78,7 @@ export const AGENT_CATALOG: Agent[] = [
     icon: '🔥',
     capabilities: ['chat', 'reasoning'],
     requiredServices: [],
+    systemPrompt: BUNDLED_MANIFESTS.grok.identity.system_prompt,
     visible: false,
   },
   {
@@ -83,6 +88,7 @@ export const AGENT_CATALOG: Agent[] = [
     icon: '✦',
     capabilities: ['chat', 'reasoning'],
     requiredServices: [],
+    systemPrompt: BUNDLED_MANIFESTS.gemini.identity.system_prompt,
     visible: false,
   },
   {
