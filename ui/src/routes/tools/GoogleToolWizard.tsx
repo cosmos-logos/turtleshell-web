@@ -216,13 +216,13 @@ function ConfigureStep({
           className="w-full px-3 py-2 bg-surface-1 border border-border-default rounded-lg text-xs font-mono text-text-primary focus:outline-none focus:border-shell-500"
         />
         <a
-          href="https://console.cloud.google.com/apis/credentials"
+          href="https://console.cloud.google.com/auth/clients"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-xs text-shell-400 hover:text-shell-300 mt-2"
         >
           <ExternalLink size={12} />
-          Open Google Cloud Console → Credentials
+          Open Google Auth Platform → Clients
         </a>
         {hasBuildTimeDefault && !clientId && (
           <div className="text-xs text-text-muted mt-2">
@@ -310,22 +310,39 @@ function SetupChecklist({ callbackUrl }: { callbackUrl: string }) {
         What to configure in your Google Cloud OAuth client
       </summary>
       <div className="px-4 pb-4 pt-2 space-y-4 text-xs text-text-secondary leading-relaxed">
-        <ol className="list-decimal list-inside space-y-2">
+        <p className="pb-1">
+          Google's console can look intimidating. The whole ceremony is three short
+          screens and takes about 3 minutes the first time.
+        </p>
+        <ol className="list-decimal list-outside ml-4 space-y-3">
           <li>
-            In{' '}
+            <span className="font-medium text-text-primary">Open Google Auth Platform.</span>{' '}
             <a
-              href="https://console.cloud.google.com/apis/credentials"
+              href="https://console.cloud.google.com/auth/clients"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-0.5 text-shell-400 hover:text-shell-300 underline"
             >
-              Google Cloud Console <ExternalLink size={11} />
+              console.cloud.google.com/auth/clients <ExternalLink size={11} />
             </a>
-            : APIs & Services → <span className="font-medium">Credentials</span>
-            → <span className="font-medium">Create Credentials</span> → OAuth client ID → <span className="font-medium">Web application</span>
+            {' '}— if Google asks you to pick or create a project, pick one (or click
+            <span className="font-medium"> New Project</span>). The first visit also
+            asks you to configure the app's "branding" (just a name + support email
+            — anything sensible works) and pick the audience (pick{' '}
+            <span className="font-medium">External</span> unless you're in a Google
+            Workspace org doing an internal-only rollout).
           </li>
           <li>
-            Add this authorized redirect URI (click to copy):
+            <span className="font-medium text-text-primary">Create a Client.</span>{' '}
+            Click <span className="font-medium">+ Create Client</span>. Pick
+            <span className="font-medium"> Web application</span> for Application type.
+            Give it a name ("TurtleShell" works).
+          </li>
+          <li>
+            <span className="font-medium text-text-primary">Add this redirect URI.</span>{' '}
+            Under <span className="font-medium">Authorized redirect URIs</span>, click
+            <span className="font-medium"> Add URI</span> and paste this (click the
+            copy button):
             <div className="mt-2 flex items-center gap-2 bg-surface-0 border border-border-default rounded-lg px-3 py-2 font-mono text-xs">
               <span className="flex-1 truncate text-text-primary">{callbackUrl}</span>
               <button
@@ -338,13 +355,43 @@ function SetupChecklist({ callbackUrl }: { callbackUrl: string }) {
                 {copied ? 'Copied' : 'Copy'}
               </button>
             </div>
+            Click <span className="font-medium">Create</span>.
           </li>
           <li>
-            On the OAuth consent screen, enable these scopes (match the read-only tool set we ship today):
-            <ul className="list-disc list-inside ml-4 mt-1 font-mono text-text-primary">
-              <li>openid</li>
-              <li>email</li>
-              <li>profile</li>
+            <span className="font-medium text-text-primary">Copy the Client ID.</span>{' '}
+            Google shows a dialog with both a{' '}
+            <span className="font-medium">Client ID</span> and a{' '}
+            <span className="font-medium">Client secret</span>. You want the{' '}
+            <span className="font-medium">Client ID</span> — ends in{' '}
+            <span className="font-mono">.apps.googleusercontent.com</span>. Copy it and
+            paste into the field above. You can ignore the Client secret — we don't use it.
+          </li>
+          <li>
+            <span className="font-medium text-text-primary">Turn on the APIs you want.</span>{' '}
+            In the left nav go to <span className="font-medium">Enabled APIs & services</span>{' '}
+            →{' '}
+            <a
+              href="https://console.cloud.google.com/apis/library"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 text-shell-400 hover:text-shell-300 underline"
+            >
+              API Library <ExternalLink size={11} />
+            </a>
+            . Turn on <span className="font-medium">Gmail API</span>,{' '}
+            <span className="font-medium">Google Calendar API</span>,{' '}
+            <span className="font-medium">Google Drive API</span>,{' '}
+            <span className="font-medium">Google Docs API</span>, and{' '}
+            <span className="font-medium">Google Sheets API</span>. Each is a one-click
+            enable.
+          </li>
+          <li>
+            <span className="font-medium text-text-primary">Add your scopes.</span>{' '}
+            Under <span className="font-medium">Data Access</span> (or{' '}
+            <span className="font-medium">OAuth consent screen → Scopes</span> in older
+            layouts), add these:
+            <ul className="list-disc list-outside ml-5 mt-1 font-mono text-text-primary">
+              <li>openid, email, profile</li>
               <li>gmail.readonly</li>
               <li>calendar.events</li>
               <li>drive.readonly</li>
@@ -353,9 +400,17 @@ function SetupChecklist({ callbackUrl }: { callbackUrl: string }) {
             </ul>
           </li>
           <li>
-            Save. Copy the <span className="font-medium">Client ID</span> (NOT the client secret — you don't need that) and paste it in the field above.
+            <span className="font-medium text-text-primary">Paste the Client ID above and click "Take me to Google".</span>{' '}
+            Google will sign you in, show a consent screen listing the scopes, and
+            bring you back here.
           </li>
         </ol>
+        <p className="pt-2 border-t border-border-muted text-text-muted">
+          If the first OAuth attempt fails with{' '}
+          <span className="font-mono">invalid_redirect_uri</span>, the redirect URI in
+          step 3 didn't save or is slightly different (watch for trailing slashes).
+          Re-open the Client in Google Auth Platform → Clients and double-check.
+        </p>
       </div>
     </details>
   );
