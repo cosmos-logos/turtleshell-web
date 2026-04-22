@@ -358,6 +358,18 @@ export function clearAllUserSessionState() {
     'sf_pkce_verifier',
     'sf_login_instance_url',
     'sf_client_id_override',
+    // Legacy plaintext Google metadata — matches
+    // LEGACY_GOOGLE_PLAINTEXT_KEYS in google-client.ts. Same rationale:
+    // the Tools-flow Google path writes nothing to localStorage, so
+    // anything here is either a regression signal or stale.
+    'google_pkce_verifier',
+    'google_oauth_state',
+    'google_token_expiry',
+    'google_token_scope',
+    'google_user_email',
+    'google_user_name',
+    'google_user_picture',
+    'google_user_id',
     // Onboarding + guide selection
     'turtleshell-onboarding',
     'turtleshell-guide',

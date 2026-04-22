@@ -43,6 +43,22 @@ export interface RoadmapItem {
 export const RELEASE_NOTES: ReadonlyArray<ReleaseNote> = [
   {
     date: '2026-04-22',
+    title: 'Google Workspace joins Salesforce as a connectable tool',
+    body:
+      'You can now add Google Workspace to any guide that supports it — ' +
+      'Athena, Cosmos, or Logos — alongside Salesforce. Each connection is ' +
+      'separate, scoped to the guide you added it to, and sealed on your ' +
+      'device so only that tool\'s server can read your login.',
+    bullets: [
+      'Add Google Workspace from Tools → Add a tool. The wizard walks you through Google Cloud\'s OAuth setup.',
+      'Each guide holds their own connections. Athena could have your work Google; Cosmos could have your personal one. No crossover.',
+      'Ask about your calendar, search Gmail, pull a Drive file, read a Doc or Sheet — all through a normal chat.',
+      'Same sovereignty promise as Salesforce: your Google login is encrypted on your device with a key only the Google tool server can unlock.',
+      'Switching between Salesforce and Google on different guides proves the security posture scales — one agent can hold both, or two agents can hold one each, and each connection only fires for the guide that authorized it.',
+    ],
+  },
+  {
+    date: '2026-04-22',
     title: 'Tools — bring Salesforce (and soon, more) to your guide',
     body:
       'Your guide can now reach into the apps where your real work lives. ' +

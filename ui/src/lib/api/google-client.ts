@@ -1,9 +1,71 @@
-// ── Google OAuth 2.0 + PKCE Client ────────────────────────────
-// Auth tokens are httpOnly cookies managed by Ares.
-// Token exchange: TSW → Ares → Hermes → googleapis.com
-// API calls: TSW → Ares → Hermes → googleapis.com (cookie → header injection)
+// ── Google OAuth 2.0 + PKCE Client (LEGACY / DEPRECATED) ──────
+//
+// Parallel to salesforce-client.ts — same sovereignty invariant:
+//
+//   Google credentials MUST NOT be available in the browser unless
+//   they are encrypted to the Poseidon Google tool-server's public key.
+//
+// This module used to run the Services-page Google OAuth flow and
+// store PKCE/verifier state + user metadata as plaintext in
+// localStorage. That path is retired. The correct entry point is the
+// per-agent Tools flow (ui/src/lib/tools/google-tool-oauth.ts), which
+// seals tokens on the device before persistence.
+//
+// Entry-point functions below (`getGoogleLoginUrl`, `exchangeCodeForTokens`,
+// `refreshGoogleToken`) throw so nothing in the app can re-introduce
+// plaintext Google credentials. The probe functions
+// (`isGoogleConnected`, `getStoredGoogleUser`) return neutral values
+// so still-extant call sites (e.g. `useStartupRefresh`) degrade
+// quietly. `scrubLegacyGoogleCredentials` wipes any stale plaintext
+// keys on module import — same belt-and-suspenders pattern as SF.
 
 import { useEnvironmentStore } from '@/lib/store/environment-store';
+
+/**
+ * Keys the legacy Google flow used to write. Centralized so the
+ * scrubber, logout wipe, and any future audit code reference the
+ * same list. These are legacy-only — the per-agent Tools flow
+ * never writes any of these; if any appear, something regressed.
+ */
+export const LEGACY_GOOGLE_PLAINTEXT_KEYS = [
+  'google_pkce_verifier',
+  'google_oauth_state',
+  'google_token_expiry',
+  'google_token_scope',
+  'google_user_email',
+  'google_user_name',
+  'google_user_picture',
+  'google_user_id',
+] as const;
+
+/**
+ * Wipe any plaintext Google keys the legacy flow may have written.
+ * Runs on module import (bottom of file), on any legacy entry point
+ * throw, and as part of logout wipe. A non-zero find logs warn — a
+ * regression signal.
+ */
+export function scrubLegacyGoogleCredentials(): void {
+  let found = 0;
+  for (const k of LEGACY_GOOGLE_PLAINTEXT_KEYS) {
+    try {
+      if (localStorage.getItem(k) !== null) {
+        localStorage.removeItem(k);
+        found++;
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+  if (found > 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[Google sovereignty guard] scrubbed ${found} legacy plaintext Google key(s) from localStorage. ` +
+      `Investigate any path that could write these; the invariant is ciphertext-only.`,
+    );
+  }
+}
+
+scrubLegacyGoogleCredentials();
 
 const GOOGLE_CLIENT_ID =
   import.meta.env.VITE_GOOGLE_CLIENT_ID ||
@@ -68,127 +130,44 @@ async function generateChallenge(verifier: string): Promise<string> {
 }
 
 // ── Auth: OAuth 2.0 + PKCE ──────────────────────────────────
+// Helpers retained only so still-imported signatures compile; the
+// legacy Services flow is retired and all entry points below throw.
+// PKCE helpers stay for any future refactor that resurrects a direct
+// browser-to-Google flow (Google doesn't support CORS on /token so
+// that's unlikely without infrastructure changes).
+void generateVerifier;
+void generateState;
+void generateChallenge;
+void GOOGLE_SCOPES;
+void GOOGLE_CALLBACK_URL;
+void GOOGLE_CLIENT_ID;
 
 export async function getGoogleLoginUrl(): Promise<string> {
-  const verifier = generateVerifier();
-  const challenge = await generateChallenge(verifier);
-  const state = generateState();
-
-  // Store in localStorage (not sessionStorage) to survive origin changes during redirect
-  localStorage.setItem('google_pkce_verifier', verifier);
-  localStorage.setItem('google_oauth_state', state);
-
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: GOOGLE_CALLBACK_URL,
-    scope: GOOGLE_SCOPES,
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-    state,
-    access_type: 'offline',
-    prompt: 'consent',
-  });
-
-  console.log('[GOOGLE] OAuth redirect initiated');
-  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  scrubLegacyGoogleCredentials();
+  throw new Error(
+    'The Services Google flow has been retired. Use Tools → Add a tool → Google Workspace.',
+  );
 }
 
 /**
- * Exchange authorization code for tokens via Ares → Hermes → Google.
- * Ares intercepts the response and sets __Host-google_access / __Host-google_refresh cookies.
- * Ares also fetches userinfo and includes it in the response.
+ * DEPRECATED — legacy Services-flow Google token exchange. Retired
+ * with the same sovereignty rationale as the SF equivalent. Throws;
+ * the per-agent Tools flow (lib/tools/google-tool-oauth.ts) is the
+ * only code path that may turn an auth code into tokens, and it
+ * seals before persisting.
  */
-export async function exchangeCodeForTokens(code: string, state: string): Promise<GoogleUser> {
-  const savedState = localStorage.getItem('google_oauth_state');
-  if (state !== savedState) {
-    throw new Error('google_state_mismatch');
-  }
-
-  const verifier = localStorage.getItem('google_pkce_verifier');
-  if (!verifier) {
-    throw new Error('PKCE session data missing — please retry the login flow');
-  }
-
-  console.log('[GOOGLE] Exchanging authorization code for tokens via Ares...');
-
-  const response = await fetch(`${getGatewayUrl()}/v1/google/auth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({
-      grant_type: 'authorization_code',
-      code,
-      client_id: GOOGLE_CLIENT_ID,
-      redirect_uri: GOOGLE_CALLBACK_URL,
-      code_verifier: verifier,
-    }),
-  });
-
-  const json = await response.json();
-
-  if (!response.ok) {
-    console.error('[GOOGLE] Token exchange failed:', json);
-    throw new Error(json.error_description || json.error || 'Token exchange failed');
-  }
-
-  console.log('[GOOGLE] Token exchange successful');
-
-  // Tokens are set as httpOnly cookies by Ares (stripped from response body).
-  // Store non-sensitive metadata only.
-  if (json.expires_in) localStorage.setItem('google_token_expiry', String(Date.now() + (json.expires_in * 1000)));
-  if (json.scope) localStorage.setItem('google_token_scope', json.scope);
-
-  // Clean up PKCE state
-  localStorage.removeItem('google_pkce_verifier');
-  localStorage.removeItem('google_oauth_state');
-
-  // User info is included in the response by Ares
-  const user = json.user;
-  if (user) {
-    localStorage.setItem('google_user_email', user.email);
-    localStorage.setItem('google_user_name', user.name ?? user.email);
-    localStorage.setItem('google_user_picture', user.picture ?? '');
-    localStorage.setItem('google_user_id', user.sub);
-
-    return {
-      email: user.email,
-      name: user.name ?? user.email,
-      picture: user.picture ?? '',
-      sub: user.sub,
-    };
-  }
-
-  throw new Error('User info not available after token exchange');
+export async function exchangeCodeForTokens(_code: string, _state: string): Promise<GoogleUser> {
+  scrubLegacyGoogleCredentials();
+  throw new Error(
+    'The Services Google flow has been retired. Connect Google Workspace through Tools → Add a tool → Google Workspace, which seals your credentials on your device before any persistence. The app never stores plaintext Google tokens.',
+  );
 }
 
-/**
- * Refresh the Google access token via Ares → Hermes → Google.
- * Ares reads __Host-google_refresh cookie and forwards to Hermes.
- */
+/** DEPRECATED — see exchangeCodeForTokens above. Refresh now runs
+ *  server-side inside Poseidon, driven by the sealed envelope. */
 export async function refreshGoogleToken(): Promise<void> {
-  console.log('[GOOGLE] Refreshing access token via Ares...');
-
-  const response = await fetch(`${getGatewayUrl()}/v1/google/auth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({
-      grant_type: 'refresh_token',
-      client_id: GOOGLE_CLIENT_ID,
-    }),
-  });
-
-  const json = await response.json();
-
-  if (!response.ok) {
-    console.error('[GOOGLE] Token refresh failed:', json);
-    clearGoogleTokens();
-    throw new Error('google_refresh_failed');
-  }
-
-  console.log('[GOOGLE] Token refreshed');
-  if (json.expires_in) localStorage.setItem('google_token_expiry', String(Date.now() + (json.expires_in * 1000)));
+  scrubLegacyGoogleCredentials();
+  throw new Error('google_session_expired');
 }
 
 // ── User Info ────────────────────────────────────────────────

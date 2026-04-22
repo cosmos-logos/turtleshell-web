@@ -33,9 +33,15 @@ export function AddTool() {
   }, [bindingsMap, activeAgentId]);
 
   const handlePick = (tool: TrustedToolServer) => {
+    // Each `onboarding` kind maps to a distinct wizard route. The
+    // wizard fetches the full tool object from the active agent's
+    // manifest using the `codename` query param.
     if (tool.onboarding === 'salesforce-oauth') {
-      // Wizard pulls the tool object out of the manifest by codename.
       navigate(`/app/tools/add/salesforce?codename=${encodeURIComponent(tool.codename)}`);
+      return;
+    }
+    if (tool.onboarding === 'google-oauth') {
+      navigate(`/app/tools/add/google?codename=${encodeURIComponent(tool.codename)}`);
       return;
     }
     // Other onboarding types come in future slices.
