@@ -42,6 +42,39 @@ export interface RoadmapItem {
 // Newest first. Append your PR's entry at the TOP, not the bottom.
 export const RELEASE_NOTES: ReadonlyArray<ReleaseNote> = [
   {
+    date: '2026-04-22',
+    title: 'Google Workspace joins Salesforce as a connectable tool',
+    body:
+      'You can now add Google Workspace to any guide that supports it — ' +
+      'Athena, Cosmos, or Logos — alongside Salesforce. Each connection is ' +
+      'separate, scoped to the guide you added it to, and sealed on your ' +
+      'device so only that tool\'s server can read your login.',
+    bullets: [
+      'Add Google Workspace from Tools → Add a tool. The wizard walks you through Google Cloud\'s OAuth setup.',
+      'Each guide holds their own connections. Athena could have your work Google; Cosmos could have your personal one. No crossover.',
+      'Ask about your calendar, search Gmail, pull a Drive file, read a Doc or Sheet — all through a normal chat.',
+      'Same sovereignty promise as Salesforce: your Google login is encrypted on your device with a key only the Google tool server can unlock.',
+      'Switching between Salesforce and Google on different guides proves the security posture scales — one agent can hold both, or two agents can hold one each, and each connection only fires for the guide that authorized it.',
+    ],
+  },
+  {
+    date: '2026-04-22',
+    title: 'Tools — bring Salesforce (and soon, more) to your guide',
+    body:
+      'Your guide can now reach into the apps where your real work lives. ' +
+      'The first tool is Salesforce. Add it to Athena, Cosmos, or Logos ' +
+      'from the new Tools tab in the sidebar and they can look up your ' +
+      'accounts, run a query, pull your open cases — directly from your ' +
+      'own Salesforce org.',
+    bullets: [
+      'Your Salesforce login is sealed on your device before it leaves the browser. Not your guide, not our servers, not us can read it.',
+      'Each guide has their own tool list — just like each has their own memory. Adding Salesforce to Athena doesn\'t give Cosmos the connection.',
+      'You can connect different Salesforce orgs to different guides. Treat each guide as a separate workspace.',
+      'If the connection ever breaks, you\'ll reconnect from the Tools tab. We can\'t restore it for you, because we can\'t read it. That\'s the whole point.',
+      'Switching guides on the Tools, Memory, or History tabs now keeps you on the tab and swaps to that guide\'s perspective — no more bouncing back to Chat.',
+    ],
+  },
+  {
     date: '2026-04-21',
     title: 'Your guides now keep their own memory',
     body:

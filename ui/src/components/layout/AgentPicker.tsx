@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Lock } from 'lucide-react';
-import { useNavigate, useMatch } from 'react-router-dom';
+import { useNavigate, useMatch, useLocation } from 'react-router-dom';
 import { useAgentStore, isAgentAvailable } from '@/lib/store/agent-store';
 import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
@@ -62,6 +62,22 @@ export function AgentPicker({ compact }: AgentPickerProps) {
   const setActiveChatAgent = useCosmosLogosStore((s) => s.setActiveChatAgent);
   const navigate = useNavigate();
   const agentViewMatch = useMatch('/app/agent/:agentId');
+  const location = useLocation();
+
+  /**
+   * Routes that scope their content to the active agent (History,
+   * Memory, Tools — each reads the agent stores and re-renders when
+   * the user picks a different one). When the user picks a new agent
+   * from any of these pages, we switch stores but stay on the route
+   * so they get that agent's perspective of the same tab. Anywhere
+   * else (Settings, Shells, Profile, Docs, etc.) we send them to
+   * /app/chat — picking an agent on those pages overwhelmingly
+   * means "start talking to this one," not "stay on Settings."
+   */
+  const AGENT_SCOPED_PREFIXES = ['/app/history', '/app/memory', '/app/tools'];
+  const onAgentScopedRoute = AGENT_SCOPED_PREFIXES.some(
+    (p) => location.pathname === p || location.pathname.startsWith(`${p}/`),
+  );
 
   // Active cosmos agent: either viewing an iframe agent, or a chat-only
   // agent is selected. Look up against the RAW list so the header still
@@ -123,19 +139,26 @@ export function AgentPicker({ compact }: AgentPickerProps) {
     setActiveChatAgent(null);
     setActiveAgent(agent);
     switchAgent(agent.id);
-    navigate('/app/chat');
+    if (!onAgentScopedRoute) {
+      navigate('/app/chat');
+    }
     setOpen(false);
   };
 
   const handleSelectCosmos = (agentId: string) => {
     const agent = cosmosAgents.find((a) => a.id === agentId);
     if (agent?.manifest.display?.app_url) {
+      // Iframe-backed agents aren't part of the chat/history/memory
+      // model — always navigate to the agent's own view regardless
+      // of current route.
       setActiveChatAgent(null);
       navigate(`/app/agent/${agentId}`);
     } else {
       setActiveChatAgent(agentId);
       switchAgent(agentId);
-      navigate('/app/chat');
+      if (!onAgentScopedRoute) {
+        navigate('/app/chat');
+      }
     }
     setOpen(false);
   };

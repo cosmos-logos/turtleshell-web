@@ -120,12 +120,12 @@ export function SalesforceConnect({ open, onOpenChange }: SalesforceConnectProps
                         type="text"
                         value={clientId}
                         onChange={(e) => {
+                          // Legacy Services page — in-memory only.
+                          // Tool flow owns Consumer-Key persistence via
+                          // its wizard + sessionStorage context; we no
+                          // longer write `sf_client_id_override` to
+                          // localStorage anywhere in the app.
                           setClientId(e.target.value);
-                          if (e.target.value && e.target.value !== SF_CLIENT_ID_DEFAULT) {
-                            localStorage.setItem('sf_client_id_override', e.target.value);
-                          } else {
-                            localStorage.removeItem('sf_client_id_override');
-                          }
                         }}
                         className="w-full px-2.5 py-1.5 bg-surface-2 border border-border-muted rounded text-2xs text-text-primary font-mono focus:outline-none focus:border-shell-400 transition-colors"
                       />

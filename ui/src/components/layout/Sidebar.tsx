@@ -7,6 +7,7 @@ import {
   BookOpen,
   History,
   Brain,
+  Wrench,
   ChevronLeft,
   ChevronRight,
   X,
@@ -151,6 +152,7 @@ function useNavItems(): NavItem[] {
     ...cosmosItems,
     { to: '/app/history', icon: History, label: 'History' },
     { to: '/app/memory', icon: Brain, label: 'Memory' },
+    { to: '/app/tools', icon: Wrench, label: 'Tools' },
   ];
   if (testBetaEnabled) {
     items.push(

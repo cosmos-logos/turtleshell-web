@@ -342,6 +342,34 @@ export function clearAllUserSessionState() {
     'turtleshell-custom-agents',
     'turtleshell-user-api-keys',
     'turtleshell-configured-guides',
+    // Per-agent tool bindings (sealed Salesforce envelopes etc.)
+    // Stored ciphertext-only, but wipe anyway so a new user on the
+    // same device doesn't inherit the previous user's tool list.
+    'turtleshell-tool-bindings',
+    // Legacy plaintext SF credentials — should NEVER be present
+    // after the scrubber runs, but belt-and-suspenders in case a
+    // code path regresses. Matches LEGACY_SF_PLAINTEXT_KEYS in
+    // salesforce-client.ts — keep the two lists in sync.
+    'sf_access_token',
+    'sf_refresh_token',
+    'sf_instance_url',
+    'sf_token_type',
+    'sf_issued_at',
+    'sf_pkce_verifier',
+    'sf_login_instance_url',
+    'sf_client_id_override',
+    // Legacy plaintext Google metadata — matches
+    // LEGACY_GOOGLE_PLAINTEXT_KEYS in google-client.ts. Same rationale:
+    // the Tools-flow Google path writes nothing to localStorage, so
+    // anything here is either a regression signal or stale.
+    'google_pkce_verifier',
+    'google_oauth_state',
+    'google_token_expiry',
+    'google_token_scope',
+    'google_user_email',
+    'google_user_name',
+    'google_user_picture',
+    'google_user_id',
     // Onboarding + guide selection
     'turtleshell-onboarding',
     'turtleshell-guide',

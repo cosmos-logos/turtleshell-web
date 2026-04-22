@@ -1,22 +1,79 @@
-// ── Salesforce Platform OAuth 2.0 + PKCE Client ──────────────
-// Auth tokens are httpOnly cookies managed by Ares.
-// Token exchange: TSW → Ares → Hermes → salesforce.com
-// API calls: TSW → Ares → Hermes → salesforce.com (cookie → header injection)
+// ── Salesforce Platform OAuth 2.0 + PKCE Client (LEGACY / DEPRECATED) ──
+//
+// This module used to run the Services-page Salesforce OAuth flow and
+// store access/refresh tokens as plaintext in localStorage. That path
+// has been retired because it violates the sovereignty invariant:
+//
+//   SF credentials MUST NOT be available in the browser unless they
+//   are encrypted to the Poseidon tool-server's public key.
+//
+// The correct entry point is the per-agent Tools flow
+// (ui/src/lib/tools/salesforce-tool-oauth.ts), which seals tokens on
+// the device before persistence. This module exists only for:
+//   1. Stub exports so still-extant imports compile (no behaviour)
+//   2. The `scrubLegacySfCredentials` guard that wipes any plaintext
+//      sf_* keys it finds in localStorage — defense in depth in case
+//      a compromised build or third-party script writes them.
+//
+// Do NOT re-add plaintext token storage here. If you need a new
+// Salesforce-credential code path, seal first, persist ciphertext only,
+// and route API calls through Poseidon (never direct from the browser).
 
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 
-const SF_CLIENT_ID_DEFAULT =
-  import.meta.env.VITE_SF_CLIENT_ID ||
-  '3MVG9nSH73I5aFNiVgku4fbvk1TBGkXFlEAB7fE7tLMNYPvE5CGkOv5HQGsRCWSwbhpgZYvy5z1xV_GjoeuGd';
+/**
+ * Keys the legacy flow used to write. Centralized so the scrubber,
+ * logout wipe, and any future audit code all reference the same list.
+ *
+ * `sf_client_id_override` is here even though the Consumer Key is a
+ * public identifier (not a secret). Rationale: the tool-flow wizard
+ * no longer stores it in localStorage, so any instance found here is
+ * stale from an older build. Wiping is "leave localStorage empty
+ * post-ceremony" hygiene, not a credential-protection step.
+ */
+export const LEGACY_SF_PLAINTEXT_KEYS = [
+  'sf_access_token',
+  'sf_refresh_token',
+  'sf_instance_url',
+  'sf_token_type',
+  'sf_issued_at',
+  'sf_client_id_override',
+] as const;
 
-/** Read SF client ID — developer override from localStorage takes priority */
-function getSfClientId(): string {
-  return localStorage.getItem('sf_client_id_override') || SF_CLIENT_ID_DEFAULT;
+/**
+ * Defensively wipe any plaintext SF credential keys from localStorage.
+ * Called on module import (see bottom), on any legacy entry point,
+ * and by logout. If anything is wiped, log a warning — that's a
+ * regression signal that something wrote plaintext behind our back.
+ */
+export function scrubLegacySfCredentials(): void {
+  let found = 0;
+  for (const k of LEGACY_SF_PLAINTEXT_KEYS) {
+    try {
+      if (localStorage.getItem(k) !== null) {
+        localStorage.removeItem(k);
+        found++;
+      }
+    } catch {
+      // non-fatal — localStorage may be blocked
+    }
+  }
+  if (found > 0) {
+    // Loud by design: plaintext SF tokens in localStorage violates
+    // the sovereignty invariant. If this fires in production, audit
+    // who wrote it and close that hole.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[SF sovereignty guard] scrubbed ${found} legacy plaintext SF key(s) from localStorage. ` +
+      `Investigate any path that could write these; the invariant is ciphertext-only.`,
+    );
+  }
 }
 
-const SF_CALLBACK_URL =
-  import.meta.env.VITE_SF_CALLBACK_URL ||
-  `${window.location.origin}/oauth/callback/salesforce`;
+// Run once on module load. Any legacy plaintext left over from an
+// earlier build, a previous session, or a regressed code path gets
+// wiped before anything downstream can read it.
+scrubLegacySfCredentials();
 
 function getGatewayUrl(): string {
   return useEnvironmentStore.getState().getGatewayUrl();
@@ -48,130 +105,54 @@ async function generateChallenge(verifier: string): Promise<string> {
 }
 
 // ── Auth: OAuth 2.0 + PKCE ──────────────────────────────────
-
-export async function getSalesforceLoginUrl(instanceUrl: string): Promise<string> {
-  const verifier = generateVerifier();
-  const challenge = await generateChallenge(verifier);
-
-  // Store temporarily for the callback
-  localStorage.setItem('sf_pkce_verifier', verifier);
-  localStorage.setItem('sf_login_instance_url', instanceUrl);
-
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: getSfClientId(),
-    redirect_uri: SF_CALLBACK_URL,
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-  });
-
-  console.log('[SF] Login URL generated for instance:', instanceUrl);
-  return `${instanceUrl}/services/oauth2/authorize?${params.toString()}`;
+// Helpers kept only to satisfy still-imported signatures. The legacy
+// Services flow has been retired end-to-end — both the initiator and
+// the code-exchange throw now, so no localStorage keys ever get
+// written in service of this module. All SF connections must go
+// through the per-agent Tools flow.
+export async function getSalesforceLoginUrl(_instanceUrl: string): Promise<string> {
+  scrubLegacySfCredentials();
+  throw new Error(
+    'The Services Salesforce flow has been retired. Use Tools → Add a tool → Salesforce.',
+  );
 }
+// Silence unused-export warnings for PKCE helpers retained in case
+// a future flow wants to revive direct-to-SF token exchange.
+void generateVerifier;
+void generateChallenge;
 
 /**
- * Exchange authorization code for tokens via Ares → Hermes → Salesforce.
- * Ares intercepts the response and sets __Host-sf_access / __Host-sf_refresh cookies.
+ * DEPRECATED — legacy Services-flow entry point.
+ *
+ * This function used to exchange the PKCE code for SF tokens and stash
+ * them in localStorage as plaintext. That violates the sovereignty
+ * invariant: "SF credentials are not available in the browser unless
+ * they are encrypted to Poseidon." Calling it now throws so no code
+ * path in the app can re-introduce plaintext SF credentials.
+ *
+ * The correct entry point is the per-agent Tools flow
+ * (ui/src/lib/tools/salesforce-tool-oauth.ts), which seals tokens to
+ * the Poseidon tool-server public key on the device before any
+ * persistence happens.
+ *
+ * Also wipes any legacy keys it finds, so visiting this function via
+ * an old bookmark hard-resets the user's plaintext state.
  */
-export async function exchangeCodeForTokens(code: string): Promise<void> {
-  const verifier = localStorage.getItem('sf_pkce_verifier');
-  const loginUrl = localStorage.getItem('sf_login_instance_url');
-
-  if (!verifier || !loginUrl) {
-    throw new Error('PKCE session data missing — please retry the login flow');
-  }
-
-  console.log('[SF] Exchanging authorization code for tokens via proxy...');
-
-  // Route through Vite proxy → Ares → Hermes → Salesforce.
-  // x-token-delivery: header tells Ares to also include tokens in response headers
-  // (alongside setting httpOnly cookies). credentials: 'include' is required so the
-  // cross-origin Set-Cookie response headers actually get persisted by the browser.
-  const response = await fetch(`${getGatewayUrl()}/v1/salesforce/auth/token`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-token-delivery': 'header',
-    },
-    body: JSON.stringify({
-      grant_type: 'authorization_code',
-      client_id: getSfClientId(),
-      redirect_uri: SF_CALLBACK_URL,
-      code,
-      code_verifier: verifier,
-      login_url: loginUrl,
-    }),
-  });
-
-  const json = await response.json();
-
-  if (!response.ok) {
-    console.error('[SF] Token exchange failed:', json);
-    throw new Error(json.error_description || json.error || 'Token exchange failed');
-  }
-
-  console.log('[SF] Token exchange successful — instance:', json.instance_url);
-
-  // Tokens come from response headers (Ares strips them from body for security).
-  // x-token-delivery: header tells Ares to include them in response headers.
-  const accessToken = response.headers.get('x-sf-access-token') || json.access_token;
-  const refreshToken = response.headers.get('x-sf-refresh-token') || json.refresh_token;
-
-  // Store tokens in localStorage — sent as headers on chat requests,
-  // encrypted to Poseidon's public key via cosmos-logos envelope.
-  if (accessToken) localStorage.setItem('sf_access_token', accessToken);
-  if (refreshToken) localStorage.setItem('sf_refresh_token', refreshToken);
-  if (json.instance_url) localStorage.setItem('sf_instance_url', json.instance_url);
-  if (json.token_type) localStorage.setItem('sf_token_type', json.token_type);
-  if (json.issued_at) localStorage.setItem('sf_issued_at', json.issued_at);
-
-  // Clean up session data
-  localStorage.removeItem('sf_pkce_verifier');
-  localStorage.removeItem('sf_login_instance_url');
+export async function exchangeCodeForTokens(_code: string): Promise<void> {
+  scrubLegacySfCredentials();
+  throw new Error(
+    'The legacy Services Salesforce flow has been retired. Connect Salesforce through Tools → Add a tool → Salesforce, which seals your credentials on your device before any persistence. The app never stores plaintext SF tokens.',
+  );
 }
 
 /**
- * Refresh the SF access token via Ares → Hermes → Salesforce.
- * Ares reads __Host-sf_refresh cookie and forwards to Hermes.
+ * DEPRECATED — see exchangeCodeForTokens() above for the rationale.
+ * Server-side refresh now runs inside Poseidon, driven by the sealed
+ * envelope's refresh_token; no client-side refresh path exists.
  */
 export async function refreshSalesforceToken(): Promise<void> {
-  const instanceUrl = localStorage.getItem('sf_instance_url');
-  const refreshToken = localStorage.getItem('sf_refresh_token');
-
-  if (!instanceUrl || !refreshToken) {
-    throw new Error('sf_session_expired');
-  }
-
-  console.log('[SF] Refreshing access token via proxy...');
-
-  const response = await fetch(`${getGatewayUrl()}/v1/salesforce/auth/token`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-token-delivery': 'header',
-      'x-sf-refresh-token': refreshToken,
-    },
-    body: JSON.stringify({
-      grant_type: 'refresh_token',
-      client_id: getSfClientId(),
-      login_url: instanceUrl,
-    }),
-  });
-
-  const json = await response.json();
-
-  if (!response.ok) {
-    console.error('[SF] Token refresh failed:', json);
-    clearSalesforceTokens();
-    throw new Error('sf_session_expired');
-  }
-
-  console.log('[SF] Token refresh successful');
-  const newAccessToken = response.headers.get('x-sf-access-token') || json.access_token;
-  if (newAccessToken) localStorage.setItem('sf_access_token', newAccessToken);
-  if (json.issued_at) localStorage.setItem('sf_issued_at', json.issued_at);
-  if (json.instance_url) localStorage.setItem('sf_instance_url', json.instance_url);
+  scrubLegacySfCredentials();
+  throw new Error('sf_session_expired');
 }
 
 /**
@@ -192,13 +173,15 @@ export function disconnectSalesforce(): void {
 }
 
 function clearSalesforceTokens(): void {
-  localStorage.removeItem('sf_access_token');
-  localStorage.removeItem('sf_refresh_token');
-  localStorage.removeItem('sf_instance_url');
-  localStorage.removeItem('sf_token_type');
-  localStorage.removeItem('sf_issued_at');
-  localStorage.removeItem('sf_pkce_verifier');
-  localStorage.removeItem('sf_login_instance_url');
+  // Credential keys go through the central scrubber so the list stays
+  // authoritative. Session-scoped PKCE state is cleared separately.
+  scrubLegacySfCredentials();
+  try {
+    localStorage.removeItem('sf_pkce_verifier');
+    localStorage.removeItem('sf_login_instance_url');
+  } catch {
+    // non-fatal
+  }
 }
 
 export function isSalesforceConnected(): boolean {

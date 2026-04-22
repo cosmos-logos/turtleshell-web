@@ -63,6 +63,15 @@ export interface CosmosLogosManifest {
     ttl?: number
     agents: TrustEntry[]
   }
+  /**
+   * Tool servers the agent has explicitly whitelisted. Users can only
+   * add a tool to an agent if that tool's codename appears here — this
+   * is the trust boundary that stops arbitrary MCP servers from being
+   * bolted onto an agent. Each entry declares the onboarding ceremony
+   * the UI should run (OAuth, BYOK, etc.) and the manifest URL whose
+   * cryptography.public_key is used to seal the resulting credentials.
+   */
+  trusted_tool_servers?: TrustedToolServer[]
   envelope?: {
     enabled?: boolean
     header?: string
@@ -91,6 +100,34 @@ export interface TrustEntry {
   url?: string
   public_key: string
   relationship?: string
+}
+
+/**
+ * A tool server the agent trusts and knows how to onboard the user to.
+ * `manifest_url` is the source of truth for `cryptography.public_key`
+ * — that's the key we seal user credentials against. The seal is what
+ * the client persists; plaintext never leaves the browser's memory.
+ */
+export interface TrustedToolServer {
+  /** Unique id (matches the tool server's own manifest codename). */
+  codename: string
+  /** Human name shown in the Add Tool card (e.g. "Salesforce"). */
+  display_name: string
+  /** One-sentence description of what adding this unlocks. */
+  description: string
+  /** Where to fetch the tool server's cosmos-logos manifest — we
+   *  read `cryptography.public_key` from it at seal time. */
+  manifest_url: string
+  /** The MCP endpoint Athena dispatches tools/call requests to. */
+  mcp_url: string
+  /** Icon key (matched against a client-side icon map). */
+  icon?: string
+  /** Brand color for the card accent. */
+  color?: string
+  /** Which onboarding ceremony the UI runs. */
+  onboarding: 'salesforce-oauth' | 'google-oauth' | 'byok' | 'none'
+  /** Copy shown on the wizard's recovery disclaimer (LastPass-style). */
+  recovery_copy?: string
 }
 
 // Connection modes must stay in lockstep with environment-store's

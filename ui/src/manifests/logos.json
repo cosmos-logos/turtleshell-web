@@ -32,5 +32,29 @@
   "capabilities": [],
   "trust": {
     "agents": []
-  }
+  },
+  "trusted_tool_servers": [
+    {
+      "codename": "poseidon-616-salesforce",
+      "display_name": "Salesforce",
+      "description": "Query and manage your Salesforce CRM data — accounts, contacts, opportunities, cases.",
+      "manifest_url": "https://api-int.turtleshell.ai/v1/poseidon/mcp/616/salesforce/.well-known/cosmos-logos.json",
+      "mcp_url": "https://api-int.turtleshell.ai/v1/poseidon/mcp/616/salesforce/mcp",
+      "icon": "salesforce",
+      "color": "#00A1E0",
+      "onboarding": "salesforce-oauth",
+      "recovery_copy": "We never see your Salesforce login. If your connection breaks, reconnect from here — we can't restore it for you, because we can't read it."
+    },
+    {
+      "codename": "poseidon-616-google",
+      "display_name": "Google Workspace",
+      "description": "Your Google Calendar, Gmail, Drive, Docs, and Sheets — look things up, pull what you need, draft events.",
+      "manifest_url": "https://api-int.turtleshell.ai/v1/poseidon/mcp/616/google/.well-known/cosmos-logos.json",
+      "mcp_url": "https://api-int.turtleshell.ai/v1/poseidon/mcp/616/google/mcp",
+      "icon": "google",
+      "color": "#4285F4",
+      "onboarding": "google-oauth",
+      "recovery_copy": "We never see your Google login. If your connection breaks, reconnect from here — we can't restore it for you, because we can't read it."
+    }
+  ]
 }

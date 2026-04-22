@@ -2,6 +2,8 @@ import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { buildMCPHeaders } from './mcp-headers';
 import { getShellId } from '@/lib/api/olympus-grid-client';
+import { useChatStore } from '@/lib/store/chat-store';
+import { getToolBindingsForAgent } from '@/lib/store/tool-bindings-store';
 
 /**
  * Stream a chat message to the Athena LLM backend.
@@ -33,7 +35,13 @@ export async function* streamChat(
 
   // Build mcpServers array from connected cosmos-logos agents with x-mcp capability
   const allAgents = useCosmosLogosStore.getState().agents;
-  const mcpServers = allAgents
+  const mcpServers: Array<{
+    namespace: string;
+    url: string;
+    manifestUrl: string;
+    verified: boolean;
+    sealedEnvelope?: string;
+  }> = allAgents
     .filter(a => a.capabilities.includes('x-mcp'))
     .map(a => {
       const mcpCap = a.manifest.capabilities.find(c => c.verb === 'x-mcp');
@@ -45,7 +53,25 @@ export async function* streamChat(
         verified: true,
       };
     })
-    .filter(Boolean);
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
+  // Tool bindings — per-agent sealed credentials (Salesforce, etc).
+  // The agent receiving this chat request is identified by `options.agentId`
+  // when set; otherwise it's the sidebar's active chat agent. Only bindings
+  // that belong to THAT agent get sent — Athena's bindings never travel
+  // with a Cosmos or Logos chat request. That per-agent isolation is the
+  // trust model from the Tools page made real on the wire.
+  const dispatchAgentId = options?.agentId || useChatStore.getState().activeAgentId;
+  const toolBindings = getToolBindingsForAgent(dispatchAgentId);
+  for (const binding of toolBindings) {
+    mcpServers.push({
+      namespace: binding.toolServerCodename,
+      url: binding.mcpUrl,
+      manifestUrl: binding.manifestUrl,
+      verified: true,
+      sealedEnvelope: binding.sealedEnvelope,
+    });
+  }
 
   console.log('[ATHENA] Chat request →', baseUrl,
     'MCP:', mcpServers.length > 0 ? `${mcpServers.length} server(s)` : 'none',

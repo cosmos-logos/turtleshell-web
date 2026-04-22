@@ -17,6 +17,12 @@ import { WhatsNew } from './routes/WhatsNew';
 import { Docs } from './routes/Docs';
 import { OAuthCallback } from './routes/OAuthCallback';
 import { AuthCallback } from './routes/AuthCallback';
+import { Tools } from './routes/tools/Tools';
+import { AddTool } from './routes/tools/AddTool';
+import { SalesforceToolWizard } from './routes/tools/SalesforceToolWizard';
+import { SalesforceToolCallback } from './routes/tools/SalesforceToolCallback';
+import { GoogleToolWizard } from './routes/tools/GoogleToolWizard';
+import { GoogleToolCallback } from './routes/tools/GoogleToolCallback';
 import { ServiceDesk } from './routes/ServiceDesk';
 import { History } from './routes/History';
 import { Memory } from './routes/Memory';
@@ -61,6 +67,9 @@ export function App() {
       {/* Auth callbacks (public) */}
       <Route path="/oauth/callback/:provider" element={<OAuthCallback />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
+      {/* Per-agent Tool OAuth callbacks (sealed — do NOT store plaintext). */}
+      <Route path="/oauth/tool-callback/salesforce" element={<SalesforceToolCallback />} />
+      <Route path="/oauth/tool-callback/google" element={<GoogleToolCallback />} />
 
       {/* Onboarding (requires auth) */}
       <Route path="/onboarding" element={<RequireAuth><Onboarding /></RequireAuth>} />
@@ -72,6 +81,10 @@ export function App() {
         <Route path="chat" element={<Chat />} />
         <Route path="history" element={<History />} />
         <Route path="memory" element={<Memory />} />
+        <Route path="tools" element={<Tools />} />
+        <Route path="tools/add" element={<AddTool />} />
+        <Route path="tools/add/salesforce" element={<SalesforceToolWizard />} />
+        <Route path="tools/add/google" element={<GoogleToolWizard />} />
         <Route path="services" element={<Services />} />
         <Route path="service-desk" element={<ServiceDesk />} />
         <Route path="agents" element={<Agents />} />
