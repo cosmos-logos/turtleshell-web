@@ -42,6 +42,23 @@ export interface RoadmapItem {
 // Newest first. Append your PR's entry at the TOP, not the bottom.
 export const RELEASE_NOTES: ReadonlyArray<ReleaseNote> = [
   {
+    date: '2026-04-22',
+    title: 'Tools — bring Salesforce (and soon, more) to your guide',
+    body:
+      'Your guide can now reach into the apps where your real work lives. ' +
+      'The first tool is Salesforce. Add it to Athena, Cosmos, or Logos ' +
+      'from the new Tools tab in the sidebar and they can look up your ' +
+      'accounts, run a query, pull your open cases — directly from your ' +
+      'own Salesforce org.',
+    bullets: [
+      'Your Salesforce login is sealed on your device before it leaves the browser. Not your guide, not our servers, not us can read it.',
+      'Each guide has their own tool list — just like each has their own memory. Adding Salesforce to Athena doesn\'t give Cosmos the connection.',
+      'You can connect different Salesforce orgs to different guides. Treat each guide as a separate workspace.',
+      'If the connection ever breaks, you\'ll reconnect from the Tools tab. We can\'t restore it for you, because we can\'t read it. That\'s the whole point.',
+      'Switching guides on the Tools, Memory, or History tabs now keeps you on the tab and swaps to that guide\'s perspective — no more bouncing back to Chat.',
+    ],
+  },
+  {
     date: '2026-04-21',
     title: 'Your guides now keep their own memory',
     body:

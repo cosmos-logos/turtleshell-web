@@ -1,0 +1,46 @@
+{
+  "cosmos_logos_version": "1.4.1",
+  "identity": {
+    "name": "Athena",
+    "codename": "athena",
+    "purpose": "Primary guide — olympus-grid's sovereign LLM gateway",
+    "description": "Athena is the default guide for TurtleShell. She routes chat to the LLM of her choice and can call tools on the user's behalf — but only tools she has explicitly whitelisted in her trusted_tool_servers list.",
+    "version": "1.7.4"
+  },
+  "display": {
+    "color": "#C8A84E",
+    "visible": true
+  },
+  "network": {
+    "endpoint": "https://api-int.turtleshell.ai/v1/athena"
+  },
+  "cryptography": {
+    "algorithm": "Ed25519",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA/placeholder/athena/public/key/here=\n-----END PUBLIC KEY-----",
+    "signing_header": "x-cosmos-signature",
+    "timestamp_header": "x-cosmos-timestamp"
+  },
+  "capabilities": [
+    {
+      "verb": "x-chat",
+      "protocol": "sse-http",
+      "path": "/chat"
+    }
+  ],
+  "trust": {
+    "agents": []
+  },
+  "trusted_tool_servers": [
+    {
+      "codename": "poseidon-616-salesforce",
+      "display_name": "Salesforce",
+      "description": "Query and manage your Salesforce CRM data — accounts, contacts, opportunities, cases.",
+      "manifest_url": "https://api-int.turtleshell.ai/v1/poseidon/mcp/616/salesforce/.well-known/cosmos-logos.json",
+      "mcp_url": "https://api-int.turtleshell.ai/v1/poseidon/mcp/616/salesforce/mcp",
+      "icon": "salesforce",
+      "color": "#00A1E0",
+      "onboarding": "salesforce-oauth",
+      "recovery_copy": "We never see your Salesforce login. If your connection breaks, reconnect from here — we can't restore it for you, because we can't read it."
+    }
+  ]
+}
