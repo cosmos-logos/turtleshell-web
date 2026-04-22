@@ -10,7 +10,7 @@
 
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, Loader2, ShieldCheck, AlertTriangle, Copy, Check } from 'lucide-react';
+import { ChevronLeft, Loader2, ShieldCheck, AlertTriangle, Copy, Check, ExternalLink } from 'lucide-react';
 import { useChatStore } from '@/lib/store/chat-store';
 import { getManifestForAgentId } from '@/manifests';
 import type { TrustedToolServer } from '@/lib/cosmos-logos/types';
@@ -215,6 +215,15 @@ function ConfigureStep({
           autoComplete="off"
           className="w-full px-3 py-2 bg-surface-1 border border-border-default rounded-lg text-xs font-mono text-text-primary focus:outline-none focus:border-shell-500"
         />
+        <a
+          href="https://console.cloud.google.com/apis/credentials"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-shell-400 hover:text-shell-300 mt-2"
+        >
+          <ExternalLink size={12} />
+          Open Google Cloud Console → Credentials
+        </a>
         {hasBuildTimeDefault && !clientId && (
           <div className="text-xs text-text-muted mt-2">
             Leave blank to use TurtleShell's default Google client.
@@ -303,7 +312,16 @@ function SetupChecklist({ callbackUrl }: { callbackUrl: string }) {
       <div className="px-4 pb-4 pt-2 space-y-4 text-xs text-text-secondary leading-relaxed">
         <ol className="list-decimal list-inside space-y-2">
           <li>
-            In Google Cloud Console: APIs & Services → <span className="font-medium">Credentials</span>
+            In{' '}
+            <a
+              href="https://console.cloud.google.com/apis/credentials"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 text-shell-400 hover:text-shell-300 underline"
+            >
+              Google Cloud Console <ExternalLink size={11} />
+            </a>
+            : APIs & Services → <span className="font-medium">Credentials</span>
             → <span className="font-medium">Create Credentials</span> → OAuth client ID → <span className="font-medium">Web application</span>
           </li>
           <li>
