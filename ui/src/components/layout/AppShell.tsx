@@ -42,16 +42,20 @@ export function AppShell() {
           if (!cancelled) setOnboardingComplete(false);
           return;
         }
-        const res = (await ogRequest(
+        // Migrated 2026-05-18 to /v1/grid/master/app/profile/turtleshell-web/me.
+        // Identity-scoped via JWT; onboardingComplete / avatar / username
+        // now live inside profileData (the ApplicationProfile blob).
+        const env = (await ogRequest(
           'GET',
-          `/turtleshell/profile/${encodeURIComponent(username)}`,
-        )) as { onboardingComplete?: boolean; profileData?: { avatar?: string }; username?: string };
+          `/app/profile/turtleshell-web/me`,
+        )) as { profileData?: { onboardingComplete?: boolean; avatar?: string; username?: string }; accountStatus?: string };
         if (cancelled) return;
-        setOnboardingComplete(res?.onboardingComplete === true);
+        const pd = env?.profileData ?? {};
+        setOnboardingComplete(pd.onboardingComplete === true);
         // Cache avatar + resolved username so Sidebar UserFooter can
         // display them without a separate profile fetch.
-        if (res?.profileData?.avatar) localStorage.setItem('turtleshell_avatar', res.profileData.avatar);
-        if (res?.username) localStorage.setItem('turtleshell_username', res.username);
+        if (pd.avatar) localStorage.setItem('turtleshell_avatar', pd.avatar);
+        if (pd.username) localStorage.setItem('turtleshell_username', pd.username);
       } catch {
         // Profile fetch failure: fail-safe to true so a transient network
         // blip doesn't kick an already-onboarded user back to the flow.

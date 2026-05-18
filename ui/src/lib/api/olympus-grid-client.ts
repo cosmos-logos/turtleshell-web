@@ -78,22 +78,35 @@ export async function ogRequest(
 
 export async function requestMagicLink(
   email: string,
-): Promise<{ requestId: string; expiresIn: number }> {
-  // Public endpoint — do NOT send cookies (stale JWT causes 401)
-  const url = `${getGridBase()}/auth/email/link/request`;
+): Promise<{ requestId: string | null; expiresIn: number }> {
+  // Migrated 2026-05-18 to the per-app /v1/app/auth/turtleshell-web/*
+  // path (was /v1/auth/email/link/*, TurtleshellProfile-backed). AppKey
+  // is the canonical identifier in the URL; backend stamps
+  // IdentityToken__c.ClientId__c from Application__c.ClientId__c server-
+  // side. Body omits clientId — path wins (forward-compat: backend silently
+  // ignores body clientId).
+  //
+  // Waitlist short-circuit: when Application__c.turtleshell-web.
+  // RequiresWaitlist=true, the backend mints ApplicationProfile at
+  // Waitlist on first contact and returns {success:true, expiresIn:0}
+  // with NO requestId. Caller detects requestId == null and routes the
+  // user to the holding screen instead of advancing to code entry.
+  const url = `${getGridBase()}/app/auth/turtleshell-web/email/link/request`;
   const response = await fetch(url, {
     method: 'POST',
     credentials: 'omit',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email,
-      clientId: 'turtleshell-web',
       callbackUrl: window.location.origin + '/auth/callback',
     }),
   });
   const json = await response.json().catch(() => null);
   if (!response.ok) throw new Error(json?.error || `Request failed (${response.status})`);
-  return (json?.result ?? json) as { requestId: string; expiresIn: number };
+  const result = (json?.result ?? json) as { requestId?: string; expiresIn: number };
+  // Normalize: backend omits requestId when waitlisted; surface as null
+  // so the typed callers can branch on it (per spec).
+  return { requestId: result.requestId ?? null, expiresIn: result.expiresIn };
 }
 
 export interface VerifyResult {
@@ -116,8 +129,9 @@ export async function verifyCode(
   requestId: string,
 ): Promise<VerifyResult> {
   // Use x-token-delivery: header so Ares returns tokens in response headers
-  // instead of httpOnly cookies (cookies don't work through Vite proxy in dev)
-  const url = `${getGridBase()}/auth/email/link/verify`;
+  // instead of httpOnly cookies (cookies don't work through Vite proxy in dev).
+  // Migrated 2026-05-18 to per-app /v1/app/auth/turtleshell-web/* path.
+  const url = `${getGridBase()}/app/auth/turtleshell-web/email/link/verify`;
   const response = await fetch(url, {
     method: 'POST',
     credentials: 'include',
@@ -221,17 +235,28 @@ export async function verifyCode(
  * JWT, mirrors the lifecycle of `verifyCode` so RequireAuth + downstream
  * routing treat it identically to the magic-link path.
  *
- * Endpoint: POST {gateway}/v1/auth/apple/identity/verify
- *   - Hosted on Ares (NOT under /v1/grid/master)
- *   - Ares verifies the JWT against Apple's JWKS, then forwards extracted
- *     claims to Apex /v1/grid/master/auth/apple/identity/verify with
- *     `x-service-name: ares` so Apex trusts the inbound path.
+ * Migrated 2026-05-18 to the per-app /v1/app/auth/turtleshell-web/apple/
+ * identity/verify endpoint (was the legacy /v1/auth/apple/identity/verify
+ * Ares shim, TurtleshellProfile-backed). The new handler in
+ * ApiRouteApplicationAuth.cls:
+ *   - Calls Ares to verify the JWT against Apple's JWKS
+ *   - Find-or-creates Identity__c keyed on Apple sub (cross-app sub-sharing
+ *     via the SIWA umbrella — same human signing into iris/Guardians/
+ *     olympus-gpt lands on the SAME Identity__c row)
+ *   - Find-or-creates ApplicationProfile__c for (Identity, turtleshell-web)
+ *   - Applies the Waitlist gate (RequiresWaitlist=true on the app row)
+ *
+ * Waitlist response: { success:true, accountStatus:"Waitlist" } with NO
+ * tokens. Caller branches on accountStatus to route to the holding screen.
+ *
+ * Body omits clientId — appKey segment in URL is canonical.
  */
 export async function signInWithApple(args: {
   identityToken: string;
   user?: { email?: string; name?: { firstName?: string; lastName?: string } };
+  nonce?: string;
 }): Promise<VerifyResult & { accountStatus?: string; onboardingComplete?: boolean }> {
-  const url = `${getGatewayUrl()}/v1/auth/apple/identity/verify`;
+  const url = `${getGridBase()}/app/auth/turtleshell-web/apple/identity/verify`;
   const response = await fetch(url, {
     method: 'POST',
     credentials: 'include',
@@ -241,8 +266,8 @@ export async function signInWithApple(args: {
     },
     body: JSON.stringify({
       identityToken: args.identityToken,
-      clientId: 'turtleshell-web',
       user: args.user,
+      ...(args.nonce ? { nonce: args.nonce } : {}),
     }),
   });
 
@@ -259,6 +284,18 @@ export async function signInWithApple(args: {
     accountStatus?: string;
     onboardingComplete?: boolean;
   };
+
+  // Waitlist short-circuit (new ApplicationProfile architecture): the
+  // backend returns { success:true, accountStatus:"Waitlist" } with NO
+  // tokens and NO user object when the iris row is queued. Apple SIWA
+  // has no requestId concept, so accountStatus is the explicit gate
+  // signal. Surface as-is — the caller (Login.tsx) routes to /waitlist.
+  if (verified.accountStatus === 'Waitlist' && !accessToken && !verified.accessToken) {
+    if (args.user?.email) {
+      try { localStorage.setItem('olympus_grid_email', args.user.email); } catch { /* ignore */ }
+    }
+    return verified;
+  }
 
   if (accessToken) localStorage.setItem('og_access_token', accessToken);
   else if (verified.accessToken) localStorage.setItem('og_access_token', verified.accessToken);

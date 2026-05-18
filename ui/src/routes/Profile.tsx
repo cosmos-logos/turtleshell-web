@@ -49,6 +49,27 @@ function safeHostname(url: string): string {
   try { return new URL(url).host; } catch { return url; }
 }
 
+// ─── ApplicationProfile envelope adapter ────────────────────────────
+// The new /v1/grid/master/app/profile/turtleshell-web endpoint returns
+// the envelope { appKey, accountStatus, isOwner, profileData, createdAt,
+// updatedAt }. All app-specific fields (username, displayName, cause,
+// etc.) live inside profileData. The view code below expects the legacy
+// flat shape, so this adapter unflattens profileData into the top-level
+// keys the views consume. Also called on PUT responses since the spec
+// §1.6 echo includes profileData.
+function flattenProfileEnvelope(env: any): ProfileResponse | null {
+  if (!env || typeof env !== 'object') return null;
+  const pd = (env.profileData && typeof env.profileData === 'object') ? env.profileData : {};
+  return {
+    ...pd,                      // username, displayName, cause, guideAgent, profilePublic, bio, avatarUrl, etc.
+    profileData: pd,            // raw blob preserved so saveAvatar/toggleGuidePublic can read prior values
+    accountStatus: env.accountStatus,
+    isOwner: env.isOwner,
+    // shellBalance / shellsGiven aren't on ApplicationProfile (Plutus owns).
+    // Views that need them must call plutusClient.getQuota separately.
+  } as ProfileResponse;
+}
+
 interface ProfileResponse {
   username?: string;
   displayName?: string;
@@ -58,6 +79,7 @@ interface ProfileResponse {
   shellBalance?: number;
   shellsGiven?: number;
   avatarUrl?: string;
+  accountStatus?: string;
   profilePublic?: boolean;
   tierId?: string;
   onboardingComplete?: boolean;
@@ -141,8 +163,12 @@ export function Profile() {
           if (username) localStorage.setItem('turtleshell_username', username);
         }
         if (!username) { setLoading(false); return; }
-        const data = await ogRequest('GET', `/turtleshell/profile/${username}`) as any;
-        setProfile(data);
+        // Migrated 2026-05-18 to /v1/grid/master/app/profile/turtleshell-web/me.
+        // Identity-scoped via JWT; the legacy /turtleshell/profile/{username}
+        // path is gone. Username segment ignored — the JWT sub claim
+        // determines whose ApplicationProfile gets returned.
+        const env = await ogRequest('GET', `/app/profile/turtleshell-web/me`) as any;
+        setProfile(flattenProfileEnvelope(env));
       } catch (e: any) {
         console.error('[Profile] fetch failed:', e);
       } finally {
@@ -189,7 +215,10 @@ export function Profile() {
     localStorage.setItem('turtleshell_avatar', emoji);
     setSavingAvatar(true);
     try {
-      await ogRequest('PUT', `/turtleshell/profile/${encodeURIComponent(profile.username)}`, {
+      // wrap-style body — spec §1.4 says nested profileData object
+      // becomes the merge patch. RFC 7396 deep-merges into stored blob;
+      // sibling keys (cause, guidePublic, etc.) preserved.
+      await ogRequest('PUT', `/app/profile/turtleshell-web/me`, {
         profileData: nextBlob,
       });
     } catch (e) {
@@ -202,26 +231,21 @@ export function Profile() {
     }
   }
 
-  // Debounced handle availability probe. Fires whenever the draft
-  // changes while the editor is open. A 350ms debounce keeps the network
-  // chatter down without making the UI feel laggy. We probe via the
-  // public GET /turtleshell/profile/:handle — if it resolves the handle
-  // is taken, if it 404s the handle is available. This route is already
-  // public and used by link-in-bio, so there is no new attack surface.
+  // Client-side handle existence probe disabled 2026-05-18: the new
+  // /v1/app/profile/turtleshell-web endpoint is identity-scoped (/me)
+  // and doesn't expose username lookups — backend spec §5 marks
+  // /u/{username} as a separate follow-up endpoint. Until that ships,
+  // we surface the check state as 'available' for any well-formed
+  // handle and let the PUT enforce uniqueness server-side (error
+  // message bubbles up to the UI as 'taken' via the catch in saveHandle).
   useEffect(() => {
     if (!editingHandle) return;
     if (handleDraft === profile?.username) { setHandleCheckState('idle'); return; }
     if (!HANDLE_REGEX.test(handleDraft)) { setHandleCheckState('invalid'); return; }
-    setHandleCheckState('checking');
-    const t = setTimeout(async () => {
-      try {
-        await ogRequest('GET', `/turtleshell/profile/${encodeURIComponent(handleDraft)}`);
-        setHandleCheckState('taken');
-      } catch {
-        setHandleCheckState('available');
-      }
-    }, 350);
-    return () => clearTimeout(t);
+    // TODO(backend): replace with /v1/app/profile/turtleshell-web/u/{username}
+    // once that endpoint lands. For now, optimistically mark as available;
+    // server is the authoritative uniqueness gate.
+    setHandleCheckState('available');
   }, [handleDraft, editingHandle, profile?.username]);
 
   async function saveHandle() {
@@ -231,13 +255,18 @@ export function Profile() {
     if (normalized === profile.username) { setEditingHandle(false); return; }
     setSavingHandle(true);
     try {
-      const result = await ogRequest('PUT', `/turtleshell/profile/${encodeURIComponent(profile.username)}`, {
-        newUsername: normalized,
+      // New endpoint: username lives INSIDE profileData. Send the rename
+      // as a flat-style top-level patch — server deep-merges username
+      // into the stored blob (RFC 7396). Backend enforces uniqueness;
+      // on collision it throws which lands in the catch below.
+      const result = await ogRequest('PUT', `/app/profile/turtleshell-web/me`, {
+        username: normalized,
       }) as any;
       // Keep the localStorage cache in sync so later GETs (on reload,
       // subscribe flows, etc.) resolve under the new handle.
       localStorage.setItem('turtleshell_username', normalized);
-      setProfile(prev => prev ? { ...prev, ...result, username: result.username ?? normalized } : prev);
+      const flat = flattenProfileEnvelope(result);
+      setProfile(prev => prev ? { ...prev, ...(flat || {}), username: flat?.username ?? normalized } : prev);
       setEditingHandle(false);
       setHandleCheckState('idle');
     } catch (e: any) {
@@ -282,7 +311,7 @@ export function Profile() {
     setSavingGuidePublic(true);
     setProfile({ ...profile, profileData: nextBlob });
     try {
-      await ogRequest('PUT', `/turtleshell/profile/${encodeURIComponent(profile.username)}`, {
+      await ogRequest('PUT', `/app/profile/turtleshell-web/me`, {
         profileData: nextBlob,
       });
     } catch (e) {
@@ -300,7 +329,9 @@ export function Profile() {
     // Optimistic update — revert on failure.
     setProfile({ ...profile, profilePublic: next });
     try {
-      await ogRequest('PUT', `/turtleshell/profile/${encodeURIComponent(profile.username)}`, {
+      // Flat-style patch — top-level keys become the merge patch and
+      // profilePublic gets merged into the stored ProfileData blob.
+      await ogRequest('PUT', `/app/profile/turtleshell-web/me`, {
         profilePublic: next,
       });
     } catch (e) {

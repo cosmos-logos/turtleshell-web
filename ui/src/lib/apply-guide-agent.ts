@@ -39,9 +39,16 @@ export async function restoreGuideAgentFromProfile(email: string): Promise<void>
   if (!username) return;
 
   try {
-    const profile = await ogRequest('GET', `/turtleshell/profile/${encodeURIComponent(username)}`) as {
-      guideAgent?: string | null;
-      profileData?: { configuredGuides?: unknown };
+    // Migrated 2026-05-18 to /v1/grid/master/app/profile/turtleshell-web/me.
+    // guideAgent now lives inside profileData (was top-level on legacy
+    // TurtleshellProfile schema). configuredGuides was already nested in
+    // profileData even on legacy — same access path.
+    const env = await ogRequest('GET', `/app/profile/turtleshell-web/me`) as {
+      profileData?: { guideAgent?: string | null; configuredGuides?: unknown };
+    };
+    const profile = {
+      guideAgent: env?.profileData?.guideAgent,
+      profileData: env?.profileData,
     };
 
     // Seed the configured-guides store from the server-side roster BEFORE
