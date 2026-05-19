@@ -31,7 +31,9 @@ import { Journal } from './routes/Journal';
 import { AgentView } from './routes/AgentView';
 import { OffGrid } from './routes/OffGrid';
 import { Onboarding } from './routes/onboarding/Onboarding';
-import { PublicProfile } from './routes/PublicProfile';
+// PublicProfile route temporarily disabled — see comment near /u/:username
+// route below. Import preserved (commented) so re-enabling is one line.
+// import { PublicProfile } from './routes/PublicProfile';
 import { Profile } from './routes/Profile';
 import { Feedback } from './routes/Feedback';
 import { Login } from './routes/Login';
@@ -61,8 +63,14 @@ export function App() {
       {/* Login (public) */}
       <Route path="/login" element={<Login />} />
 
-      {/* Public profile (public) */}
-      <Route path="/u/:username" element={<PublicProfile />} />
+      {/* Public profile (public) — temporarily disabled 2026-05-18.
+          Depends on a username-scoped lookup that doesn't exist on the
+          new /v1/app/profile/turtleshell-web/* endpoint family yet
+          (backend spec §5 marks /u/{username} as a separate follow-up).
+          PublicProfile.tsx is preserved unchanged so the UI is ready to
+          re-enable when the backend ships
+          GET /v1/app/profile/turtleshell-web/u/{username}. */}
+      {/* <Route path="/u/:username" element={<PublicProfile />} /> */}
 
       {/* Auth callbacks (public) */}
       <Route path="/oauth/callback/:provider" element={<OAuthCallback />} />

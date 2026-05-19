@@ -52,12 +52,15 @@ export function useAllowDeveloperMode(): boolean | null {
                     if (!cancelled) setAllowed(false);
                     return;
                 }
-                const res = (await ogRequest(
+                // Migrated 2026-05-18 to /v1/grid/master/app/profile/turtleshell-web/me.
+                // allowDeveloperMode lives inside profileData on the new endpoint
+                // (was a top-level column on legacy TurtleshellProfile schema).
+                const env = (await ogRequest(
                     'GET',
-                    `/turtleshell/profile/${encodeURIComponent(username)}`,
-                )) as { allowDeveloperMode?: boolean };
+                    `/app/profile/turtleshell-web/me`,
+                )) as { profileData?: { allowDeveloperMode?: boolean } };
                 if (cancelled) return;
-                const next = res?.allowDeveloperMode === true;
+                const next = env?.profileData?.allowDeveloperMode === true;
                 setAllowed(next);
                 // Force-revert any locally-persisted dev flags when the
                 // server says no. Zustand-persist restores from localStorage

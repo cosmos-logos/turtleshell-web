@@ -70,6 +70,15 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
     try {
       const result = await requestMagicLink(email);
       console.log('[OG] requestMagicLink ← requestId:', result.requestId, 'expiresIn:', result.expiresIn);
+      // Waitlist short-circuit (new ApplicationProfile architecture):
+      // backend returns requestId:null when the user is queued. Surface
+      // as a clear error here — this wizard doesn't have a waitlist UI,
+      // so direct them to /login which does. See Login.tsx for the full
+      // Waitlist UX.
+      if (!result.requestId) {
+        setError('Your account is on the waitlist. Visit /login to check status.');
+        return;
+      }
       setRequestId(result.requestId);
       setStep('code');
     } catch (e) {
@@ -111,6 +120,14 @@ export function OlympusGridConnect({ open, onOpenChange }: OlympusGridConnectPro
     try {
       const result = await requestMagicLink(email);
       console.log('[OG] resend ← requestId:', result.requestId);
+      // Defensive null guard — see initial requestMagicLink call above.
+      // A resend should never go from approved to waitlist mid-session,
+      // but a server-side admin demotion between calls is technically
+      // possible. Coerce so TS is happy and surface if it happens.
+      if (!result.requestId) {
+        setError('Account is now on the waitlist. Reload and try again from /login.');
+        return;
+      }
       setRequestId(result.requestId);
     } catch (e) {
       console.error('[OG] resend ERROR:', e);

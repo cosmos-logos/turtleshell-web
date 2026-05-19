@@ -670,29 +670,38 @@ export function Onboarding() {
       void syncConfiguredGuidesToProfile();
     }
 
-    // Create profile. The Apex handler grants the 1000 signup bonus on
-    // first completion — must run before Stripe checkout so the webhook's
-    // additive logic (balance = existing + tier_shells) finds the bonus.
+    // Create / populate the user's ApplicationProfile.
+    //
+    // Migrated 2026-05-18 to /v1/grid/master/app/profile/turtleshell-web
+    // (was legacy /v1/grid/master/turtleshell/profile). The new endpoint
+    // is RFC 7396 JSON Merge Patch — flat-style top-level keys deep-
+    // merge into the stored ProfileData blob. The ApplicationProfile row
+    // already exists (created at sign-in by ApiRouteApplicationAuth);
+    // this call just populates the user's onboarding selections + flips
+    // onboardingComplete=true.
+    //
+    // POST and PUT to /me are semantically identical here (spec §1.1).
+    // Using POST to /app/profile/turtleshell-web for parity with iris
+    // and olympus-gpt onboarding conventions.
     try {
       const email = localStorage.getItem('olympus_grid_email') || '';
       const username = (email.split('@')[0] ?? '').replace(/[^a-z0-9_-]/gi, '').toLowerCase() || 'user-' + Date.now();
 
-      const data = await ogRequest('POST', '/turtleshell/profile', {
+      const result = await ogRequest('POST', '/app/profile/turtleshell-web', {
         username,
         displayName: username,
         cause: cause || undefined,
         guideAgent: selectedGuide || undefined,
-        // Profiles are private by default. The owner can flip to public
-        // from /app/profile once the Make-Profile-Public toggle is out
-        // of Beta (currently gated on testBetaEnabled). Shipping with
-        // private-by-default matches the "nothing exposed without
-        // explicit consent" stance in the security page.
+        // Profiles are private by default. Owner can flip via /app/profile.
         profilePublic: false,
+        // Mark onboarding as complete server-side so the next sign-in
+        // routes to /app/chat instead of bouncing back here.
+        onboardingComplete: true,
       }) as any;
-      console.log('[🐢 Turtleshell] Profile created:', data);
-      if (data?.username) {
-        localStorage.setItem('turtleshell_username', data.username);
-      }
+      console.log('[🐢 Turtleshell] Profile created:', result);
+      // New endpoint echoes the merged blob under result.profileData (spec §1.6).
+      const echoedUsername = result?.profileData?.username ?? username;
+      localStorage.setItem('turtleshell_username', echoedUsername);
     } catch (e) {
       console.error('[🐢 Turtleshell] Profile creation failed:', e);
     }

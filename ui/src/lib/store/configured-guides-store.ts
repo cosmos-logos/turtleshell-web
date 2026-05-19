@@ -119,17 +119,20 @@ export function markGuideConfigured(guide: string): void {
  */
 export async function syncConfiguredGuidesToProfile(): Promise<void> {
   try {
-    const username = localStorage.getItem('turtleshell_username') || '';
-    if (!username) return;
-    const profile = (await ogRequest('GET', `/turtleshell/profile/${encodeURIComponent(username)}`)) as {
+    // Migrated 2026-05-18 to /v1/grid/master/app/profile/turtleshell-web/me.
+    // Identity-scoped via JWT (no username segment). Could be simplified
+    // to a flat-style {configuredGuides} delta thanks to RFC 7396 merge,
+    // but keeping the read-then-write pattern for now since the existing
+    // shape works under both contracts.
+    const env = (await ogRequest('GET', `/app/profile/turtleshell-web/me`)) as {
       profileData?: Record<string, unknown>;
     } | null;
-    const prev = (profile?.profileData && typeof profile.profileData === 'object')
-      ? profile.profileData
+    const prev = (env?.profileData && typeof env.profileData === 'object')
+      ? env.profileData
       : {};
     const configured = useConfiguredGuidesStore.getState().configured;
     const nextProfileData: Record<string, unknown> = { ...prev, configuredGuides: configured };
-    await ogRequest('PUT', `/turtleshell/profile/${encodeURIComponent(username)}`, {
+    await ogRequest('PUT', `/app/profile/turtleshell-web/me`, {
       profileData: nextProfileData,
     });
   } catch (err) {
