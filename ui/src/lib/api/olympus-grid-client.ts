@@ -39,8 +39,6 @@ export async function ogRequest(
 ): Promise<unknown> {
   const fullUrl = `${getGridBase()}${path}`;
 
-  console.log('[OG] REQUEST:', method, fullUrl, body);
-
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   // Include JWT from localStorage if available (x-token-delivery: header path)
   // If not in localStorage, cookies are sent via credentials: 'include' and
@@ -49,6 +47,11 @@ export async function ogRequest(
   if (storedToken) {
     headers['x-user-identity'] = storedToken;
   }
+  console.log('[OG] REQUEST:', method, fullUrl, {
+    bodyPreview: body,
+    hasJwt: !!storedToken,
+    jwtLen: storedToken?.length ?? 0,
+  });
 
   const response = await fetch(fullUrl, {
     method,
@@ -152,11 +155,40 @@ export async function verifyCode(
   const json = await response.json().catch(() => null);
   if (!response.ok) throw new Error(json?.error || `Verification failed (${response.status})`);
 
-  const verified = (json?.result ?? json) as VerifyResult;
+  const verified = (json?.result ?? json) as VerifyResult & { accessToken?: string; refreshToken?: string };
 
-  // Store tokens in localStorage — used for authenticated API requests
-  if (accessToken) localStorage.setItem('og_access_token', accessToken);
-  if (refreshToken) localStorage.setItem('og_refresh_token', refreshToken);
+  // Store tokens in localStorage — used for authenticated API requests.
+  //
+  // Header path is the canonical one (Ares intercepts tokens on the legacy
+  // /v1/grid/master/auth/email/link/verify route and surfaces them via
+  // x-og-{access,refresh}-token response headers). The new per-app path
+  // /v1/grid/master/app/auth/{appKey}/email/link/verify currently falls
+  // through Ares's generic Hermes pass-through and does NOT get token
+  // interception — so the response headers are absent and only the body
+  // carries the JWT. Fall back to body extraction (same shape Apex returns
+  // for Apple sign-in, which already had this fallback) so subsequent
+  // x-user-identity-bearing calls work regardless of whether Ares has been
+  // upgraded to intercept the new path.
+  const bodyAccess = (verified as any)?.accessToken as string | undefined;
+  const bodyRefresh = (verified as any)?.refreshToken as string | undefined;
+  const chosenAccess = accessToken || bodyAccess || null;
+  const chosenRefresh = refreshToken || bodyRefresh || null;
+  console.log('[OG verifyCode] token sources', {
+    headerAccessPresent: !!accessToken,
+    bodyAccessPresent: !!bodyAccess,
+    headerRefreshPresent: !!refreshToken,
+    bodyRefreshPresent: !!bodyRefresh,
+    chosenAccessLen: chosenAccess?.length ?? 0,
+    chosenRefreshLen: chosenRefresh?.length ?? 0,
+    accountStatus: (verified as any)?.accountStatus,
+    onboardingComplete: (verified as any)?.onboardingComplete,
+    sub: (verified as any)?.user?.sub,
+  });
+  if (chosenAccess) localStorage.setItem('og_access_token', chosenAccess);
+  if (chosenRefresh) localStorage.setItem('og_refresh_token', chosenRefresh);
+  if (!chosenAccess) {
+    console.error('[OG verifyCode] NO ACCESS TOKEN in header or body — downstream calls will fail with missing x-user-identity. verify body keys:', Object.keys(verified || {}));
+  }
 
   // Detect an identity switch BEFORE we overwrite the stored sub. When the
   // user signs in as someone different (or after the operator nuked scratch
