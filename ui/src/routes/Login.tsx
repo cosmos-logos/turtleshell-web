@@ -1,12 +1,38 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, Mail, ArrowLeft } from 'lucide-react';
-import { requestMagicLink, verifyCode, signInWithApple } from '@/lib/api/olympus-grid-client';
+import { requestMagicLink, verifyCode, signInWithApple, ogRequest } from '@/lib/api/olympus-grid-client';
 import { useServiceStore } from '@/lib/store/service-store';
 import { signInWithApple as appleSDKSignIn, isAppleSignInSupported } from '@/lib/auth/apple-signin';
 import { restoreGuideAgentFromProfile } from '@/lib/apply-guide-agent';
 
 type Step = 'methods' | 'email' | 'waitlist' | 'signin-email' | 'code' | 'success';
+
+/**
+ * Post-verify routing gate.
+ *
+ * Authentication is separate from app-state — the JWT mint endpoint
+ * tells us WHO you are, the profile service tells us WHAT YOU'VE DONE.
+ * After verifyCode/signInWithApple sets the JWT in localStorage, we
+ * fetch the user's ApplicationProfile and route based on the
+ * server-truth `profileData.onboardingComplete` flag.
+ *
+ * Falls through to /onboarding on any fetch error (fresh signup with no
+ * profile row, transient network blip, etc.) — that's the safe default;
+ * a needlessly-second-time-onboarded user is recoverable, a lost
+ * onboarding step is not.
+ */
+async function resolveOnboardingDest(): Promise<'/app/chat' | '/onboarding'> {
+  try {
+    const profile = (await ogRequest(
+      'GET',
+      '/app/profile/turtleshell-web/me',
+    )) as { profileData?: { onboardingComplete?: boolean } } | null;
+    return profile?.profileData?.onboardingComplete === true ? '/app/chat' : '/onboarding';
+  } catch {
+    return '/onboarding';
+  }
+}
 
 export function Login() {
   const navigate = useNavigate();
@@ -62,17 +88,15 @@ export function Login() {
       const result = await verifyCode(code, requestId);
       useServiceStore.getState().setOlympusGridConnected(result.user);
       setStep('success');
-      // Gate on the server's `onboardingComplete` (Apex
-      // ApiRouteAuth.handleEmailLinkVerify reads TurtleshellProfile__c
-      // and sets it in the response). localStorage was unreliable —
-      // logging out or signing in on a new device would clear it and
-      // send the user through onboarding a second time.
-      const dest = result.onboardingComplete ? '/app/chat' : '/onboarding';
+      // Profile service is the source of truth for onboardingComplete
+      // (see `resolveOnboardingDest` above). The JWT verify response
+      // doesn't carry app-state, by design.
+      const dest = await resolveOnboardingDest();
       // Returning user: restore their saved guide-agent visibility before
       // navigating. Without this, a new device / cleared browser loses the
       // zustand-persisted hiddenAgentIds and shows every builtin agent —
       // including the two the user explicitly didn't choose.
-      if (result.onboardingComplete && result.user?.email) {
+      if (dest === '/app/chat' && result.user?.email) {
         void restoreGuideAgentFromProfile(result.user.email);
       }
       setTimeout(() => navigate(dest, { replace: true }), 800);
@@ -109,9 +133,9 @@ export function Login() {
         return;
       }
       setStep('success');
-      const dest = result.onboardingComplete ? '/app/chat' : '/onboarding';
+      const dest = await resolveOnboardingDest();
       // Returning user: restore saved guide-agent visibility (see handleVerify).
-      if (result.onboardingComplete && result.user?.email) {
+      if (dest === '/app/chat' && result.user?.email) {
         void restoreGuideAgentFromProfile(result.user.email);
       }
       setTimeout(() => navigate(dest, { replace: true }), 600);

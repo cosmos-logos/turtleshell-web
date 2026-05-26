@@ -86,6 +86,20 @@ export function getSessionId(): string {
 }
 
 /**
+ * Lightweight stats for the feedback form — lets us show a visible
+ * "Session log: N events (~XX KB) will attach" caption near the Send
+ * button. Cheaper than `captureSessionLogBase64()` (no encode, no
+ * allocation over RAW_MAX_BYTES).
+ */
+export function getSessionLogStats(): { count: number; rawBytes: number } {
+  const lines = getSessionLogLines();
+  if (lines.length === 0) return { count: 0, rawBytes: 0 };
+  let rawBytes = 0;
+  for (const l of lines) rawBytes += JSON.stringify(l).length + 1; // +1 for '\n'
+  return { count: lines.length, rawBytes };
+}
+
+/**
  * Serialize the ring to base64 JSONL for upload as
  * `ContentVersion(Feedback__c) session_*.jsonl`. Returns null when the
  * ring is empty (no events to ship). Drops oldest 25% if the raw JSONL

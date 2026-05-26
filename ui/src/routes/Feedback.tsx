@@ -9,7 +9,8 @@ import { FeedbackAdminPanel } from './FeedbackAdminPanel';
 import { SurveyForm } from '@/components/feedback/SurveyForm';
 import { getActiveSurvey } from '@/lib/surveys/definitions';
 import type { SurveyAnswers, SurveyDefinition } from '@/lib/surveys/types';
-import { logSession } from '@/lib/api/session-log';
+import { logSession, getSessionLogStats } from '@/lib/api/session-log';
+import { FileText } from 'lucide-react';
 
 type Step = 'form' | 'submitting' | 'confirmed';
 
@@ -34,6 +35,7 @@ export function Feedback() {
   const [history, setHistory] = useState<FeedbackRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [includeSessionLog, setIncludeSessionLog] = useState(true);
 
   const loadHistory = () => {
     setLoadingHistory(true);
@@ -80,6 +82,7 @@ export function Feedback() {
           surveyKey: survey.key,
           answers,
         },
+        includeSessionLog,
       });
       logSession('ui.feedback', 'submit.success', {
         feedbackId: result.feedbackId,
@@ -125,6 +128,8 @@ export function Feedback() {
             setAnswers={setAnswers}
             comments={comments}
             setComments={setComments}
+            includeSessionLog={includeSessionLog}
+            setIncludeSessionLog={setIncludeSessionLog}
             submit={submit}
             canSubmit={canSubmit}
             submitting={step === 'submitting'}
@@ -144,6 +149,8 @@ function FormCard({
   setAnswers,
   comments,
   setComments,
+  includeSessionLog,
+  setIncludeSessionLog,
   submit,
   canSubmit,
   submitting,
@@ -154,11 +161,22 @@ function FormCard({
   setAnswers: (a: SurveyAnswers) => void;
   comments: string;
   setComments: (s: string) => void;
+  includeSessionLog: boolean;
+  setIncludeSessionLog: (v: boolean) => void;
   submit: () => void;
   canSubmit: boolean;
   submitting: boolean;
   error: string | null;
 }) {
+  // Refresh the stats whenever the user pokes the textarea — that's a
+  // reliable proxy for "they're paying attention to this card" and
+  // keeps the displayed event count from going stale during long edits.
+  const stats = useMemo(
+    () => getSessionLogStats(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [comments, includeSessionLog],
+  );
+  const kbApprox = (stats.rawBytes / 1024).toFixed(1);
   return (
     <section className="p-6 bg-surface-1 border border-border-muted rounded-xl space-y-5">
       <SurveyForm
@@ -188,6 +206,32 @@ function FormCard({
           {error}
         </div>
       )}
+
+      {/* Session-log attachment indicator. Visible by default so the user
+          knows what's being shipped along with their feedback; toggle
+          lets them opt out (no opt-in default — too easy to miss). */}
+      <label className="flex items-start gap-3 px-3 py-2.5 bg-surface-2/60 border border-border-muted rounded-lg cursor-pointer hover:border-shell-500/40 transition-colors">
+        <input
+          type="checkbox"
+          checked={includeSessionLog}
+          onChange={(e) => setIncludeSessionLog(e.target.checked)}
+          disabled={submitting}
+          className="mt-0.5 accent-shell-500"
+        />
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-text-primary">
+            <FileText size={12} className="text-shell-400" />
+            Attach session log
+          </span>
+          <span className="block text-2xs text-text-muted leading-relaxed mt-0.5">
+            {includeSessionLog
+              ? stats.count === 0
+                ? 'No events captured yet — boot just started.'
+                : `${stats.count} event${stats.count === 1 ? '' : 's'} · ~${kbApprox} KB. Route changes, fetches, errors. No textarea contents, no tokens.`
+              : 'No log will be attached — body + survey answers only.'}
+          </span>
+        </span>
+      </label>
 
       <div className="flex items-center justify-between gap-3 pt-2">
         <p className="text-2xs text-text-muted leading-relaxed max-w-[320px]">
