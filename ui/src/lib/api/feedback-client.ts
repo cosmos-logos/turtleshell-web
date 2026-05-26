@@ -1,15 +1,14 @@
 /**
  * Feedback API client — routes through Ares → Hermes → Salesforce ApiRoute.
  *
- * Phase 1 (2026-05-23):
- *   - submit + user list hit the new generic `Feedback__c` endpoints
- *     under /v1/app/feedback/turtleshell/* (AppKey = "turtleshell";
- *     web/iOS share one App with two surfaces).
- *   - admin list/respond/markRead stay on the legacy
- *     /v1/turtleshell/feedback-admin* endpoints (TSFeedback__c) until
- *     the olympus-grid backend ships the matching admin endpoints on
- *     Feedback__c. Tracked in
- *     docs/handoff-olympus-grid-feedback-admin-reply-generic.md.
+ * All five entry points (submit / list / listAdmin / respondAdmin /
+ * markReadAdmin) hit the new generic `Feedback__c` endpoints under
+ * /v1/app/feedback/turtleshell/*. Legacy `TSFeedback__c` paths are no
+ * longer called from this client.
+ *
+ * AppKey is `turtleshell` (canonical); web + iOS share one App with two
+ * surfaces. ApplicationProfile rows are keyed by (Identity, App), so a
+ * single human's web and iOS feedback both land in the same admin queue.
  */
 import { ogRequest } from './olympus-grid-client';
 import pkg from '../../../package.json';
@@ -20,7 +19,7 @@ import { captureSessionLogBase64 } from './session-log';
  *  the submission came from. Synced automatically with package.json. */
 const APP_VERSION: string = pkg.version;
 
-// ── New (Feedback__c) types ────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────
 
 export type FeedbackSource =
   | 'Feedback'
@@ -34,9 +33,8 @@ export type FeedbackSource =
 export type FeedbackSeverity = 'Low' | 'Medium' | 'High' | 'Critical';
 
 /**
- * Full Status__c picklist as the backend will expose it post-§6:
- * - `New | Read | Responded` cover the user-visible thread states
- *   (mirrors the legacy Unread/Read/Responded UX).
+ * Full Status__c picklist:
+ * - `New | Read | Responded` cover the user-visible thread states.
  * - `Triaged | InProgress | Resolved | WontFix` cover admin triage.
  * The renderer handles all 7; unknown values fall through to 'New'.
  */
@@ -56,16 +54,24 @@ export interface FeedbackRecord {
   status: FeedbackStatus;
   severity: FeedbackSeverity | null;
   body: string | null;
-  /** Parsed JSON from Feedback__c.StructuredData__c, or raw string if
-   *  unparseable, or null. Populated by the backend after §6 ships;
-   *  may be null on rows created during the in-flight window. */
+  /** Parsed JSON from `Feedback__c.StructuredData__c`, raw string if
+   *  unparseable, or null. For `Source='Survey'`, contains
+   *  `{ surveyKey, answers }`. */
   structuredData: Record<string, unknown> | string | null;
   submittedAt: string | null;
   createdAt: string;
   includesSessionLog: boolean;
   clientVersion: string | null;
   deviceModel: string | null;
-  // Reply chain — null until admin replies and until backend §6 lands
+
+  // Submitter snapshot — populated only by the admin endpoint (the /me
+  // endpoint never needs to tell the caller who THEY are).
+  submittedByIdentity?: string | null;
+  submittedByName?: string | null;
+  submittedByUsername?: string | null;
+  submittedByAvatarUrl?: string | null;
+
+  // Reply chain — null until an admin replies
   adminResponse: string | null;
   respondedAt: string | null;
   respondedByIdentity: string | null;
@@ -94,30 +100,6 @@ export interface SubmitFeedbackResult {
   feedbackName: string;
   includesSessionLog: boolean;
   attachmentSizeBytes: number;
-}
-
-// ── Legacy (TSFeedback__c) admin types — temporary, see file header ──
-
-export type FeedbackPlatform = 'Web' | 'iOS' | 'Both' | 'Other';
-export type FeedbackOnboardingSuccess = 'Yes' | 'Partially' | 'No';
-export type LegacyFeedbackStatus = 'Unread' | 'Read' | 'Responded';
-
-export interface LegacyFeedbackRecord {
-  id: string;
-  name: string;
-  surveyKey: string;
-  platform: FeedbackPlatform | null;
-  onboardingSuccess: FeedbackOnboardingSuccess | null;
-  comments: string | null;
-  status: LegacyFeedbackStatus;
-  adminResponse: string | null;
-  respondedAt: string | null;
-  submittedFromClient: string | null;
-  createdDate: string;
-  respondedByIdentity?: string | null;
-  respondedByName?: string | null;
-  respondedByUsername?: string | null;
-  respondedByAvatarUrl?: string | null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -175,32 +157,40 @@ export const feedbackClient = {
     return result?.feedbacks ?? [];
   },
 
-  // ── Admin (legacy TSFeedback__c — temporary) ─────────────────────
-  // Wired to the new /v1/app/feedback/turtleshell/admin* endpoints
-  // once handoff-olympus-grid-feedback-admin-reply-generic.md ships.
+  // ── Admin (Feedback__c) ──────────────────────────────────────────
+  // Backend enforces admin gating per
+  // docs/handoff-olympus-grid-feedback-admin-reply-generic.md §5. The
+  // probe-pattern in FeedbackAdminPanel relies on `isFeedbackAuthzFailure`
+  // to silently hide the panel for non-admins.
 
-  listAdmin: async (): Promise<LegacyFeedbackRecord[]> => {
-    const result = (await ogRequest('GET', '/turtleshell/feedback-admin')) as {
+  /** GET /v1/app/feedback/turtleshell/admin — list all feedback for
+   *  the app + server-joined submitter & responder profile snapshots. */
+  listAdmin: async (): Promise<FeedbackRecord[]> => {
+    const result = (await ogRequest('GET', '/app/feedback/turtleshell/admin')) as {
       count: number;
-      feedback: LegacyFeedbackRecord[];
+      feedbacks: FeedbackRecord[];
     };
-    return result?.feedback ?? [];
+    return result?.feedbacks ?? [];
   },
 
-  respondAdmin: async (id: string, message: string): Promise<LegacyFeedbackRecord> => {
+  /** POST /v1/app/feedback/turtleshell/admin/{id}/respond — write reply,
+   *  set Status='Responded', backend sends email to submitter. */
+  respondAdmin: async (id: string, message: string): Promise<FeedbackRecord> => {
     const trimmed = message.trim();
     return (await ogRequest(
       'POST',
-      `/turtleshell/feedback-admin/${encodeURIComponent(id)}/respond`,
+      `/app/feedback/turtleshell/admin/${encodeURIComponent(id)}/respond`,
       { message: trimmed },
-    )) as LegacyFeedbackRecord;
+    )) as FeedbackRecord;
   },
 
-  markReadAdmin: async (id: string): Promise<LegacyFeedbackRecord> => {
+  /** POST /v1/app/feedback/turtleshell/admin/{id}/read — promote
+   *  Status from New → Read. Idempotent; never downgrades Responded. */
+  markReadAdmin: async (id: string): Promise<FeedbackRecord> => {
     return (await ogRequest(
       'POST',
-      `/turtleshell/feedback-admin/${encodeURIComponent(id)}/read`,
+      `/app/feedback/turtleshell/admin/${encodeURIComponent(id)}/read`,
       {},
-    )) as LegacyFeedbackRecord;
+    )) as FeedbackRecord;
   },
 };

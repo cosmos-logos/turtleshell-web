@@ -465,6 +465,20 @@ export function getStoredAccessToken(): string | null {
 }
 
 export async function refreshOlympusGridToken(): Promise<void> {
+  // Guard against the fresh-tab path where useStartupRefresh fires before
+  // any session has been established. Without this, every cold boot logs
+  // a console.error + 500 response from the backend ("refreshToken is
+  // required") even though the user never tried to do anything. The
+  // refresh is only meaningful as a tune-up of an existing session.
+  // See docs handoff: 2026-05-26 session log evidence at 05:52:20.014Z.
+  if (
+    !localStorage.getItem('og_access_token') &&
+    !localStorage.getItem('og_refresh_token')
+  ) {
+    console.log('[OG] No local tokens — skipping startup refresh');
+    return;
+  }
+
   console.log('[OG] Refreshing access token via httpOnly cookie...');
 
   const url = `${getGridBase()}/auth/token/session/refresh`;

@@ -20,13 +20,34 @@ function getBaseUrl(): string {
 }
 
 
+/**
+ * In-flight request map keyed by shellId. AppShell, Sidebar, Chat, and a
+ * few other components all kick off `getQuota` at boot more-or-less
+ * simultaneously, which produced 3 overlapping HTTP calls per page load
+ * in the prod session log (2026-05-26 05:53:06-07). Coalescing them
+ * here means subscribers share one Promise — first caller does the
+ * fetch, late callers ride along.
+ */
+const quotaInFlight = new Map<string, Promise<QuotaResponse>>();
+
 export const plutusClient = {
-  getQuota: async (shellId: string): Promise<QuotaResponse> => {
-    const res = await fetch(`${getBaseUrl()}/quota/${shellId}`, {
-      credentials: 'include',
+  getQuota: (shellId: string): Promise<QuotaResponse> => {
+    const existing = quotaInFlight.get(shellId);
+    if (existing) return existing;
+    const promise = (async () => {
+      const res = await fetch(`${getBaseUrl()}/quota/${shellId}`, {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Quota fetch failed');
+      return (await res.json()) as QuotaResponse;
+    })();
+    quotaInFlight.set(shellId, promise);
+    // Clear the entry once the request settles so the NEXT distinct
+    // poll cycle gets fresh data (not a stale cached value).
+    promise.finally(() => {
+      if (quotaInFlight.get(shellId) === promise) quotaInFlight.delete(shellId);
     });
-    if (!res.ok) throw new Error('Quota fetch failed');
-    return res.json();
+    return promise;
   },
 
   createCheckout: async (
