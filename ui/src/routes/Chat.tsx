@@ -8,6 +8,7 @@ import { useChatStore } from '@/lib/store/chat-store';
 import { useApolloStore } from '@/lib/store/apollo-store';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { streamChat } from '@/lib/athena/chat-client';
+import { logSession } from '@/lib/api/session-log';
 import { streamDirect, hasDirectProvider } from '@/lib/providers/direct-chat';
 import * as webMnemosyne from '@/lib/mnemosyne/web-client';
 import { hasUserApiKey } from '@/lib/store/agent-store';
@@ -275,6 +276,9 @@ export function Chat() {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    const sendStartedAt = Date.now();
+    logSession('chat', 'send.start', { chars: prompt.trim().length });
+
     try {
       let accumulated = '';
       const isDev = useEnvironmentStore.getState().developerMode;
@@ -407,7 +411,22 @@ export function Chat() {
       if (spokenText && ttsConnected && useApolloStore.getState().ttsAutoPlay) {
         speakRef.current?.(spokenText);
       }
+      logSession('chat', 'send.success', {
+        responseChars: accumulated.length,
+        ms: Date.now() - sendStartedAt,
+        direct: useDirectProvider,
+      });
     } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        logSession('chat', 'send.abort', { ms: Date.now() - sendStartedAt });
+      } else {
+        logSession(
+          'chat',
+          'send.fail',
+          { err: (err as Error).message.slice(0, 200), ms: Date.now() - sendStartedAt },
+          'error',
+        );
+      }
       if ((err as Error).name !== 'AbortError') {
         const message = (err as Error).message;
         console.error('[Athena] Stream error:', err);

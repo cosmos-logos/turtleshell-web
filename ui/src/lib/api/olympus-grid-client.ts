@@ -464,19 +464,47 @@ export function getStoredAccessToken(): string | null {
   return null;
 }
 
+/** Read the `exp` claim from a JWT. Returns null on any parse failure
+ *  (malformed token, missing claim) so callers can degrade gracefully. */
+function decodeJwtExp(token: string): number | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3 || !parts[1]) return null;
+    let payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = payload.length % 4;
+    if (pad) payload += '='.repeat(4 - pad);
+    const decoded = JSON.parse(atob(payload)) as { exp?: unknown };
+    return typeof decoded.exp === 'number' ? decoded.exp : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function refreshOlympusGridToken(): Promise<void> {
-  // Guard against the fresh-tab path where useStartupRefresh fires before
-  // any session has been established. Without this, every cold boot logs
-  // a console.error + 500 response from the backend ("refreshToken is
-  // required") even though the user never tried to do anything. The
-  // refresh is only meaningful as a tune-up of an existing session.
-  // See docs handoff: 2026-05-26 session log evidence at 05:52:20.014Z.
-  if (
-    !localStorage.getItem('og_access_token') &&
-    !localStorage.getItem('og_refresh_token')
-  ) {
+  const accessToken = localStorage.getItem('og_access_token');
+  const refreshToken = localStorage.getItem('og_refresh_token');
+
+  // Guard 1: fresh-tab path — no local evidence of a session at all.
+  if (!accessToken && !refreshToken) {
     console.log('[OG] No local tokens — skipping startup refresh');
     return;
+  }
+
+  // Guard 2: access token is still comfortably fresh (>5min). The refresh
+  // is a tune-up; firing it when the current token has plenty of life
+  // wastes a round-trip AND blows up with a 500 if the httpOnly
+  // __Host-og_refresh cookie was cleared (which JS can't detect). Either
+  // way: skip. See FB-00006 session log 2026-05-26 06:39:42.870Z for the
+  // benign-500 pattern this avoids.
+  if (accessToken) {
+    const exp = decodeJwtExp(accessToken);
+    if (exp !== null) {
+      const minutesLeft = (exp - Math.floor(Date.now() / 1000)) / 60;
+      if (minutesLeft > 5) {
+        console.log(`[OG] Access token has ${Math.round(minutesLeft)}m left — skipping refresh`);
+        return;
+      }
+    }
   }
 
   console.log('[OG] Refreshing access token via httpOnly cookie...');
@@ -493,6 +521,18 @@ export async function refreshOlympusGridToken(): Promise<void> {
   const json = await response.json().catch(() => null);
 
   if (!response.ok || json?.error) {
+    // Defense in depth: even if the JWT-exp gate misses (e.g. exp claim
+    // unparseable), don't bark when the failure is the benign
+    // "refresh cookie missing" case — the access token is still valid,
+    // user keeps working until it expires.
+    const errStr = String(json?.error || json?.message || '');
+    if (
+      response.status === 500 &&
+      errStr.toLowerCase().includes('refreshtoken is required')
+    ) {
+      console.log('[OG] Refresh cookie missing — staying on current access token');
+      return;
+    }
     console.error('[OG] Token refresh failed:', json);
     const raw = json?.error || json?.message || `Refresh failed (${response.status})`;
     throw new Error(stripHtml(typeof raw === 'string' ? raw : JSON.stringify(raw)));

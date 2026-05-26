@@ -5,6 +5,13 @@ import { requestMagicLink, verifyCode, signInWithApple, ogRequest } from '@/lib/
 import { useServiceStore } from '@/lib/store/service-store';
 import { signInWithApple as appleSDKSignIn, isAppleSignInSupported } from '@/lib/auth/apple-signin';
 import { restoreGuideAgentFromProfile } from '@/lib/apply-guide-agent';
+import { logSession } from '@/lib/api/session-log';
+
+/** Strip the email local-part for logging — domain only, never the user. */
+function emailDomain(email: string): string {
+  const at = email.lastIndexOf('@');
+  return at >= 0 ? email.slice(at + 1) : '';
+}
 
 type Step = 'methods' | 'email' | 'waitlist' | 'signin-email' | 'code' | 'success';
 
@@ -85,8 +92,12 @@ export function Login() {
     setError('');
     setLoading(true);
     try {
+      logSession('auth', 'email.verify.start', {});
       const result = await verifyCode(code, requestId);
       useServiceStore.getState().setOlympusGridConnected(result.user);
+      logSession('auth', 'email.verify.success', {
+        emailDomain: emailDomain(result.user?.email ?? ''),
+      });
       setStep('success');
       // Profile service is the source of truth for onboardingComplete
       // (see `resolveOnboardingDest` above). The JWT verify response
@@ -99,9 +110,12 @@ export function Login() {
       if (dest === '/app/chat' && result.user?.email) {
         void restoreGuideAgentFromProfile(result.user.email);
       }
+      logSession('auth', 'email.verify.routing', { dest });
       setTimeout(() => navigate(dest, { replace: true }), 800);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Verification failed');
+      const msg = e instanceof Error ? e.message : 'Verification failed';
+      logSession('auth', 'email.verify.fail', { err: msg.slice(0, 200) }, 'error');
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -121,12 +135,17 @@ export function Login() {
     setError('');
     setLoading(true);
     try {
+      logSession('auth', 'apple.start', {});
       const apple = await appleSDKSignIn();
       const result = await signInWithApple({
         identityToken: apple.identityToken,
         user: apple.user,
       });
       useServiceStore.getState().setOlympusGridConnected(result.user);
+      logSession('auth', 'apple.success', {
+        emailDomain: emailDomain(result.user?.email ?? ''),
+        accountStatus: result.accountStatus ?? null,
+      });
 
       if (result.accountStatus === 'Waitlist') {
         setStep('waitlist');
@@ -138,13 +157,16 @@ export function Login() {
       if (dest === '/app/chat' && result.user?.email) {
         void restoreGuideAgentFromProfile(result.user.email);
       }
+      logSession('auth', 'apple.routing', { dest });
       setTimeout(() => navigate(dest, { replace: true }), 600);
     } catch (e) {
       // Common Apple errors: popup_closed_by_user, popup_blocked_by_browser
       const msg = e instanceof Error ? e.message : 'Apple sign-in failed';
       if (msg.includes('popup_closed') || msg.includes('user_cancelled')) {
         // User dismissed the Apple sheet — silent, no error banner
+        logSession('auth', 'apple.cancelled', {});
       } else {
+        logSession('auth', 'apple.fail', { err: msg.slice(0, 200) }, 'error');
         setError(msg);
       }
     } finally {
