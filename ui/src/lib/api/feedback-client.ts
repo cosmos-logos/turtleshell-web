@@ -1,53 +1,127 @@
 /**
- * Feedback API client — routes through Ares → Hermes → Salesforce ApiRouter.
+ * Feedback API client — routes through Ares → Hermes → Salesforce ApiRoute.
  *
- * Hits `/v1/turtleshell/feedback` on the same Apex handler used by the iris
- * admin portal (which calls it via same-origin Visualforce Remoting instead).
- * One API, two transports — this file is the external-HTTP transport.
+ * Phase 1 (2026-05-23):
+ *   - submit + user list hit the new generic `Feedback__c` endpoints
+ *     under /v1/app/feedback/turtleshell/* (AppKey = "turtleshell";
+ *     web/iOS share one App with two surfaces).
+ *   - admin list/respond/markRead stay on the legacy
+ *     /v1/turtleshell/feedback-admin* endpoints (TSFeedback__c) until
+ *     the olympus-grid backend ships the matching admin endpoints on
+ *     Feedback__c. Tracked in
+ *     docs/handoff-olympus-grid-feedback-admin-reply-generic.md.
  */
 import { ogRequest } from './olympus-grid-client';
+import pkg from '../../../package.json';
+import { captureSessionLogBase64 } from './session-log';
+
+/** Single source of truth for the client build version. Stamped onto
+ *  every feedback row's ClientVersion__c so admins know which build
+ *  the submission came from. Synced automatically with package.json. */
+const APP_VERSION: string = pkg.version;
+
+// ── New (Feedback__c) types ────────────────────────────────────────
+
+export type FeedbackSource =
+  | 'Feedback'
+  | 'Survey'
+  | 'Bug'
+  | 'FeatureRequest'
+  | 'AutoSubmit'
+  | 'CrashReport'
+  | 'SessionLog';
+
+export type FeedbackSeverity = 'Low' | 'Medium' | 'High' | 'Critical';
+
+/**
+ * Full Status__c picklist as the backend will expose it post-§6:
+ * - `New | Read | Responded` cover the user-visible thread states
+ *   (mirrors the legacy Unread/Read/Responded UX).
+ * - `Triaged | InProgress | Resolved | WontFix` cover admin triage.
+ * The renderer handles all 7; unknown values fall through to 'New'.
+ */
+export type FeedbackStatus =
+  | 'New'
+  | 'Read'
+  | 'Triaged'
+  | 'InProgress'
+  | 'Responded'
+  | 'Resolved'
+  | 'WontFix';
+
+export interface FeedbackRecord {
+  id: string;
+  name: string;
+  source: FeedbackSource;
+  status: FeedbackStatus;
+  severity: FeedbackSeverity | null;
+  body: string | null;
+  /** Parsed JSON from Feedback__c.StructuredData__c, or raw string if
+   *  unparseable, or null. Populated by the backend after §6 ships;
+   *  may be null on rows created during the in-flight window. */
+  structuredData: Record<string, unknown> | string | null;
+  submittedAt: string | null;
+  createdAt: string;
+  includesSessionLog: boolean;
+  clientVersion: string | null;
+  deviceModel: string | null;
+  // Reply chain — null until admin replies and until backend §6 lands
+  adminResponse: string | null;
+  respondedAt: string | null;
+  respondedByIdentity: string | null;
+  respondedByName: string | null;
+  respondedByUsername: string | null;
+  respondedByAvatarUrl: string | null;
+}
+
+export interface SubmitFeedbackPayload {
+  /** Freeform user comment. Lands in Feedback__c.Body__c. */
+  body: string;
+  /** Defaults to 'Feedback'. The route form sends 'Survey' so the
+   *  thread renderer can surface structuredData as answer pills. */
+  source?: FeedbackSource;
+  severity?: FeedbackSeverity;
+  /** Generic structured payload — e.g. `{ surveyKey, answers }` for
+   *  surveys. Server stores verbatim in StructuredData__c. */
+  structuredData?: Record<string, unknown>;
+  /** Defaults to true. Set false to skip session-log capture (e.g.
+   *  privacy-sensitive flows where the user explicitly opts out). */
+  includeSessionLog?: boolean;
+}
+
+export interface SubmitFeedbackResult {
+  feedbackId: string;
+  feedbackName: string;
+  includesSessionLog: boolean;
+  attachmentSizeBytes: number;
+}
+
+// ── Legacy (TSFeedback__c) admin types — temporary, see file header ──
 
 export type FeedbackPlatform = 'Web' | 'iOS' | 'Both' | 'Other';
 export type FeedbackOnboardingSuccess = 'Yes' | 'Partially' | 'No';
-export type FeedbackStatus = 'Unread' | 'Read' | 'Responded';
+export type LegacyFeedbackStatus = 'Unread' | 'Read' | 'Responded';
 
-export interface FeedbackRecord {
+export interface LegacyFeedbackRecord {
   id: string;
   name: string;
   surveyKey: string;
   platform: FeedbackPlatform | null;
   onboardingSuccess: FeedbackOnboardingSuccess | null;
   comments: string | null;
-  status: FeedbackStatus;
+  status: LegacyFeedbackStatus;
   adminResponse: string | null;
   respondedAt: string | null;
   submittedFromClient: string | null;
   createdDate: string;
-  /** Responder Identity id + profile (name / username / avatar). Populated
-   *  once the admin replies — we surface these on the user's thread so the
-   *  reply feels personal (Homer's face + name, not "Admin replied"). All
-   *  optional because older pre-identity records won't have them. */
   respondedByIdentity?: string | null;
   respondedByName?: string | null;
   respondedByUsername?: string | null;
   respondedByAvatarUrl?: string | null;
 }
 
-export interface SubmitFeedbackPayload {
-  surveyKey?: string;
-  platform?: FeedbackPlatform;
-  onboardingSuccess?: FeedbackOnboardingSuccess;
-  comments?: string;
-  client?: string;
-  rawPayload?: unknown;
-}
+// ── Helpers ────────────────────────────────────────────────────────
 
-/**
- * Heuristic: did this error come from the server saying "you aren't a
- * SuperAdmin" (as opposed to a real network failure)? The admin probe
- * uses this to decide whether to silently hide the panel or surface
- * an error to the user. Matches the Apex handler's `CustomExc` messages.
- */
 export function isFeedbackAuthzFailure(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err ?? '');
   const lower = msg.toLowerCase();
@@ -61,61 +135,72 @@ export function isFeedbackAuthzFailure(err: unknown): boolean {
   );
 }
 
+/** Stamped on every submit so admins know which client + device origin. */
+function deriveDeviceLabel(): string {
+  const ua = navigator.userAgent;
+  const platform = navigator.platform || '';
+  return `${platform} · ${ua}`.slice(0, 64);
+}
+
+// ── Client ─────────────────────────────────────────────────────────
+
 export const feedbackClient = {
-  submit: async (payload: SubmitFeedbackPayload): Promise<FeedbackRecord & { created: true }> => {
+  /** POST /v1/app/feedback/turtleshell/submit */
+  submit: async (payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult> => {
+    const includeLog = payload.includeSessionLog ?? true;
+    const sessionLog = includeLog ? await captureSessionLogBase64() : null;
     const body = {
-      surveyKey: payload.surveyKey ?? 'onboarding-v1',
-      platform: payload.platform,
-      onboardingSuccess: payload.onboardingSuccess,
-      comments: payload.comments,
-      client: payload.client ?? 'turtleshell-web',
-      rawPayload: payload.rawPayload,
+      body: payload.body,
+      source: payload.source ?? 'Feedback',
+      severity: payload.severity,
+      structuredData: payload.structuredData,
+      clientVersion: APP_VERSION,
+      deviceModel: deriveDeviceLabel(),
+      submittedAt: new Date().toISOString(),
+      sessionLog,
     };
-    const result = (await ogRequest('POST', '/turtleshell/feedback', body)) as FeedbackRecord & {
-      created: true;
-    };
-    return result;
+    return (await ogRequest(
+      'POST',
+      '/app/feedback/turtleshell/submit',
+      body,
+    )) as SubmitFeedbackResult;
   },
 
+  /** GET /v1/app/feedback/turtleshell/me — user's own thread. */
   list: async (): Promise<FeedbackRecord[]> => {
-    const result = (await ogRequest('GET', '/turtleshell/feedback')) as {
+    const result = (await ogRequest('GET', '/app/feedback/turtleshell/me')) as {
       count: number;
-      feedback: FeedbackRecord[];
+      feedbacks: FeedbackRecord[];
     };
-    return result?.feedback ?? [];
+    return result?.feedbacks ?? [];
   },
 
-  // ── Admin API (requires SuperAdmin on caller's Identity) ─────────
-  // Probe-pattern: try listAdmin, catch — if `isFeedbackAuthzFailure`
-  // returns true, the current user isn't a SuperAdmin and the UI hides
-  // the admin panel silently. Otherwise surface as a real error. Always
-  // fetch the full list (no `?unread=true`); client filters locally —
-  // Ares→Hermes query-string forwarding to `apiCtx.params` is not
-  // something we want to depend on for admin UX.
-  listAdmin: async (): Promise<FeedbackRecord[]> => {
+  // ── Admin (legacy TSFeedback__c — temporary) ─────────────────────
+  // Wired to the new /v1/app/feedback/turtleshell/admin* endpoints
+  // once handoff-olympus-grid-feedback-admin-reply-generic.md ships.
+
+  listAdmin: async (): Promise<LegacyFeedbackRecord[]> => {
     const result = (await ogRequest('GET', '/turtleshell/feedback-admin')) as {
       count: number;
-      feedback: FeedbackRecord[];
+      feedback: LegacyFeedbackRecord[];
     };
     return result?.feedback ?? [];
   },
 
-  respondAdmin: async (id: string, message: string): Promise<FeedbackRecord> => {
+  respondAdmin: async (id: string, message: string): Promise<LegacyFeedbackRecord> => {
     const trimmed = message.trim();
-    const result = (await ogRequest(
+    return (await ogRequest(
       'POST',
       `/turtleshell/feedback-admin/${encodeURIComponent(id)}/respond`,
       { message: trimmed },
-    )) as FeedbackRecord;
-    return result;
+    )) as LegacyFeedbackRecord;
   },
 
-  markReadAdmin: async (id: string): Promise<FeedbackRecord> => {
-    const result = (await ogRequest(
+  markReadAdmin: async (id: string): Promise<LegacyFeedbackRecord> => {
+    return (await ogRequest(
       'POST',
       `/turtleshell/feedback-admin/${encodeURIComponent(id)}/read`,
       {},
-    )) as FeedbackRecord;
-    return result;
+    )) as LegacyFeedbackRecord;
   },
 };

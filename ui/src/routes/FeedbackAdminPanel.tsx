@@ -3,7 +3,7 @@ import { Inbox, Loader2, MessageSquare, Send, CheckCheck, X, ChevronRight } from
 import {
   feedbackClient,
   isFeedbackAuthzFailure,
-  type FeedbackRecord,
+  type LegacyFeedbackRecord,
 } from '@/lib/api/feedback-client';
 
 /**
@@ -24,11 +24,11 @@ export function FeedbackAdminPanel() {
   type Access = 'unknown' | 'allowed' | 'denied';
 
   const [access, setAccess] = useState<Access>('unknown');
-  const [all, setAll] = useState<FeedbackRecord[]>([]);
+  const [all, setAll] = useState<LegacyFeedbackRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'unread' | 'all'>('unread');
-  const [selected, setSelected] = useState<FeedbackRecord | null>(null);
+  const [selected, setSelected] = useState<LegacyFeedbackRecord | null>(null);
 
   useEffect(() => {
     void probeAndLoad();
@@ -81,7 +81,7 @@ export function FeedbackAdminPanel() {
 
   const unrespondedCount = all.filter((r) => r.status !== 'Responded').length;
 
-  function onUpdated(updated: FeedbackRecord) {
+  function onUpdated(updated: LegacyFeedbackRecord) {
     setAll((prev) => {
       const idx = prev.findIndex((r) => r.id === updated.id);
       if (idx === -1) return [updated, ...prev];
@@ -198,7 +198,7 @@ function FilterPill({
   );
 }
 
-function StatusDot({ status }: { status: FeedbackRecord['status'] }) {
+function StatusDot({ status }: { status: LegacyFeedbackRecord['status'] }) {
   const cls =
     status === 'Unread'
       ? 'bg-amber-400'
@@ -233,9 +233,9 @@ function ReplyModal({
   onClose,
   onUpdated,
 }: {
-  record: FeedbackRecord;
+  record: LegacyFeedbackRecord;
   onClose: () => void;
-  onUpdated: (r: FeedbackRecord) => void;
+  onUpdated: (r: LegacyFeedbackRecord) => void;
 }) {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
