@@ -4,6 +4,7 @@ import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { exchangeCodeForTokens } from '@/lib/api/salesforce-client';
 import { exchangeCodeForTokens as exchangeGoogleCode } from '@/lib/api/google-client';
 import { useServiceStore } from '@/lib/store/service-store';
+import { logSession } from '@/lib/api/session-log';
 
 type CallbackState = 'processing' | 'success' | 'error';
 
@@ -18,13 +19,17 @@ export function OAuthCallback() {
     const code = searchParams.get('code');
     const errorParam = searchParams.get('error');
 
+    logSession('oauth.callback', 'start', { provider });
+
     if (errorParam) {
+      logSession('oauth.callback', 'provider_error', { provider, err: errorParam }, 'error');
       setState('error');
       setError(errorParam === 'access_denied' ? 'Authorization cancelled' : errorParam);
       return;
     }
 
     if (!code) {
+      logSession('oauth.callback', 'no_code', { provider }, 'error');
       setState('error');
       setError('No authorization code received');
       return;
@@ -35,11 +40,18 @@ export function OAuthCallback() {
         .then(() => {
           const instanceUrl = localStorage.getItem('sf_instance_url') || '';
           useServiceStore.getState().setSalesforceConnected(instanceUrl);
+          logSession('oauth.callback', 'success', { provider });
           setState('success');
           setTimeout(() => navigate('/app/services'), 1500);
         })
         .catch((e) => {
           console.error('[SF] Token exchange error:', e);
+          logSession(
+            'oauth.callback',
+            'fail',
+            { provider, err: (e instanceof Error ? e.message : String(e)).slice(0, 200) },
+            'error',
+          );
           setState('error');
           setError(e instanceof Error ? e.message : 'Token exchange failed');
         });
@@ -51,11 +63,18 @@ export function OAuthCallback() {
       exchangeGoogleCode(code, stateParam)
         .then((user) => {
           useServiceStore.getState().setGoogleConnected(user.email);
+          logSession('oauth.callback', 'success', { provider });
           setState('success');
           setTimeout(() => navigate('/app/services'), 1500);
         })
         .catch((e) => {
           console.error('[GOOGLE] Token exchange error:', e);
+          logSession(
+            'oauth.callback',
+            'fail',
+            { provider, err: (e instanceof Error ? e.message : String(e)).slice(0, 200) },
+            'error',
+          );
           setState('error');
           setError(e instanceof Error ? e.message : 'Token exchange failed');
         });

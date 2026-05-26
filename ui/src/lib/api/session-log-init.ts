@@ -157,16 +157,37 @@ function wrapPerformanceObserver(): void {
   } catch {
     /* longtask not supported (Safari) */
   }
-  // LCP — when the largest above-the-fold paint settled.
+  // LCP — canonical Web Vitals pattern: track the running max, emit ONE
+  // final value at first visibility hidden / pagehide / 5s settle. The
+  // earlier implementation emitted every LCP candidate (3 entries per
+  // page load in the FB-00006 log) — high noise, low signal.
   try {
+    let lcpMs = 0;
+    let lcpReported = false;
+    let lcpSettleTimer: number | undefined;
+
+    const reportLcp = () => {
+      if (lcpReported || lcpMs === 0) return;
+      lcpReported = true;
+      logSession('perf', 'lcp', { ms: Math.round(lcpMs) });
+    };
+
     const lcpObserver = new PerformanceObserver((list) => {
-      const entries = list.getEntries();
-      const last = entries[entries.length - 1];
-      if (last) {
-        logSession('perf', 'lcp', { ms: Math.round(last.startTime) });
+      for (const entry of list.getEntries()) {
+        if (entry.startTime > lcpMs) lcpMs = entry.startTime;
       }
+      // No new LCP candidate for 5s → page settled, emit. Guarantees the
+      // LCP lands in the ring before any feedback submit on a page
+      // that stays visible.
+      if (lcpSettleTimer) clearTimeout(lcpSettleTimer);
+      lcpSettleTimer = window.setTimeout(reportLcp, 5000);
     });
     lcpObserver.observe({ type: 'largest-contentful-paint', buffered: true });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') reportLcp();
+    });
+    window.addEventListener('pagehide', reportLcp);
   } catch {
     /* not supported */
   }
