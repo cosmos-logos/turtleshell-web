@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useStartupRefresh } from './hooks/useStartupRefresh';
+import { RouteLogger } from './components/RouteLogger';
 import { MarketingLayout } from './components/layout/MarketingLayout';
 import { AppShell } from './components/layout/AppShell';
 import { Landing } from './routes/Landing';
@@ -43,7 +44,9 @@ export function App() {
   useStartupRefresh();
 
   return (
-    <Routes>
+    <>
+      <RouteLogger />
+      <Routes>
       {/* Public pages with marketing layout */}
       <Route element={<MarketingLayout />}>
         <Route path="/" element={<Landing />} />
@@ -110,5 +113,6 @@ export function App() {
       {/* Catch-all goes to landing */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }

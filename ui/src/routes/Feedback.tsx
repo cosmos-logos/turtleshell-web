@@ -1,38 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MessageSquare, CheckCircle2, Heart, Send, Loader2 } from 'lucide-react';
 import {
   feedbackClient,
   type FeedbackRecord,
-  type FeedbackPlatform,
-  type FeedbackOnboardingSuccess,
+  type FeedbackStatus,
 } from '@/lib/api/feedback-client';
 import { FeedbackAdminPanel } from './FeedbackAdminPanel';
+import { SurveyForm } from '@/components/feedback/SurveyForm';
+import { getActiveSurvey } from '@/lib/surveys/definitions';
+import type { SurveyAnswers, SurveyDefinition } from '@/lib/surveys/types';
+import { logSession } from '@/lib/api/session-log';
 
 type Step = 'form' | 'submitting' | 'confirmed';
-
-interface FormState {
-  onboardingSuccess: FeedbackOnboardingSuccess | '';
-  platform: FeedbackPlatform | '';
-  comments: string;
-}
-
-const EMPTY_FORM: FormState = {
-  onboardingSuccess: '',
-  platform: '',
-  comments: '',
-};
 
 /**
  * Leave Feedback — survey form + thread of past submissions + admin responses.
  *
- * Intentionally warm: the goal isn't to file a ticket, it's to have a short
- * direct conversation with the founder. The confirmation state reassures the
- * user that homer@ is personally CC'd on every submission, which removes the
- * "this disappeared into a black hole" feeling that kills feedback loops.
+ * Wired to the generic `Feedback__c` backend as of 2026-05-23. The structured
+ * survey answers ride `StructuredData__c` as `{ surveyKey, answers }`; the
+ * freeform comment lands in `Body__c`. The thread renderer surfaces survey
+ * answers as pills above the body so old TurtleShell behavior is preserved.
+ *
+ * The admin reply chain renders from `adminResponse / respondedAt /
+ * respondedBy*` fields on the user-list response — those land on
+ * `Feedback__c` once the §6 backend handoff ships (see
+ * docs/handoff-olympus-grid-feedback-admin-reply-generic.md).
  */
 export function Feedback() {
   const [step, setStep] = useState<Step>('form');
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [survey] = useState<SurveyDefinition>(() => getActiveSurvey());
+  const [answers, setAnswers] = useState<SurveyAnswers>({});
+  const [comments, setComments] = useState('');
   const [history, setHistory] = useState<FeedbackRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,34 +48,52 @@ export function Feedback() {
     loadHistory();
   }, []);
 
-  const canSubmit =
-    form.onboardingSuccess !== '' && form.platform !== '' && form.comments.trim().length > 0;
+  const allRequiredAnswered = useMemo(() => {
+    return survey.questions
+      .filter((q) => q.required)
+      .every((q) => {
+        const a = answers[q.key];
+        if (typeof a === 'string') return a.length > 0;
+        if (Array.isArray(a)) return a.length > 0;
+        return false;
+      });
+  }, [survey.questions, answers]);
+
+  const canSubmit = allRequiredAnswered && comments.trim().length > 0;
 
   const submit = async () => {
     if (!canSubmit) return;
     setError(null);
     setStep('submitting');
+    // Breadcrumbs for the attached session log — when triaging this
+    // feedback later, these three lines bracket the user's intent
+    // ("they clicked Send", "it landed", "it failed with X").
+    logSession('ui.feedback', 'submit.start', {
+      bodyChars: comments.trim().length,
+      surveyKey: survey.key,
+    });
     try {
-      await feedbackClient.submit({
-        onboardingSuccess: form.onboardingSuccess as FeedbackOnboardingSuccess,
-        platform: form.platform as FeedbackPlatform,
-        comments: form.comments.trim(),
-        client: 'turtleshell-web',
-        rawPayload: {
-          answers: {
-            onboardingSuccess: form.onboardingSuccess,
-            platform: form.platform,
-            comments: form.comments.trim(),
-          },
-          submittedAt: new Date().toISOString(),
-          userAgent: navigator.userAgent,
+      const result = await feedbackClient.submit({
+        body: comments.trim(),
+        source: 'Survey',
+        structuredData: {
+          surveyKey: survey.key,
+          answers,
         },
       });
+      logSession('ui.feedback', 'submit.success', {
+        feedbackId: result.feedbackId,
+        includesSessionLog: result.includesSessionLog,
+        attachmentSizeBytes: result.attachmentSizeBytes,
+      });
       setStep('confirmed');
-      setForm(EMPTY_FORM);
+      setAnswers({});
+      setComments('');
       loadHistory();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong — please try again.');
+      const msg = e instanceof Error ? e.message : 'Something went wrong — please try again.';
+      logSession('ui.feedback', 'submit.fail', { err: msg }, 'error');
+      setError(msg);
       setStep('form');
     }
   };
@@ -104,8 +120,11 @@ export function Feedback() {
           <Confirmation onWriteAnother={() => setStep('form')} />
         ) : (
           <FormCard
-            form={form}
-            setForm={setForm}
+            survey={survey}
+            answers={answers}
+            setAnswers={setAnswers}
+            comments={comments}
+            setComments={setComments}
             submit={submit}
             canSubmit={canSubmit}
             submitting={step === 'submitting'}
@@ -120,15 +139,21 @@ export function Feedback() {
 }
 
 function FormCard({
-  form,
-  setForm,
+  survey,
+  answers,
+  setAnswers,
+  comments,
+  setComments,
   submit,
   canSubmit,
   submitting,
   error,
 }: {
-  form: FormState;
-  setForm: (f: FormState) => void;
+  survey: SurveyDefinition;
+  answers: SurveyAnswers;
+  setAnswers: (a: SurveyAnswers) => void;
+  comments: string;
+  setComments: (s: string) => void;
   submit: () => void;
   canSubmit: boolean;
   submitting: boolean;
@@ -136,57 +161,12 @@ function FormCard({
 }) {
   return (
     <section className="p-6 bg-surface-1 border border-border-muted rounded-xl space-y-5">
-      <div className="space-y-2">
-        <div className="text-sm font-semibold">How did onboarding go?</div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          {(
-            [
-              { value: 'Yes', label: 'Smooth — no problems' },
-              { value: 'Partially', label: 'Partially — some friction' },
-              { value: 'No', label: 'I got stuck' },
-            ] as const
-          ).map((opt) => {
-            const selected = form.onboardingSuccess === opt.value;
-            return (
-              <button
-                key={opt.value}
-                onClick={() => setForm({ ...form, onboardingSuccess: opt.value })}
-                disabled={submitting}
-                className={`flex-1 px-4 py-3 rounded-lg text-sm font-medium border transition-colors text-left ${
-                  selected
-                    ? 'bg-shell-500/10 border-shell-500 text-text-primary'
-                    : 'bg-surface-2 border-border-muted text-text-secondary hover:border-shell-500/40'
-                }`}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <div className="text-sm font-semibold">Which platform?</div>
-        <div className="flex gap-2 flex-wrap">
-          {(['Web', 'iOS', 'Both', 'Other'] as const).map((p) => {
-            const selected = form.platform === p;
-            return (
-              <button
-                key={p}
-                onClick={() => setForm({ ...form, platform: p })}
-                disabled={submitting}
-                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                  selected
-                    ? 'bg-shell-500/10 border-shell-500 text-text-primary'
-                    : 'bg-surface-2 border-border-muted text-text-secondary hover:border-shell-500/40'
-                }`}
-              >
-                {p}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <SurveyForm
+        survey={survey}
+        answers={answers}
+        onAnswersChange={setAnswers}
+        disabled={submitting}
+      />
 
       <div className="space-y-2">
         <div className="text-sm font-semibold">Tell us everything.</div>
@@ -194,8 +174,8 @@ function FormCard({
           What worked, what didn't, what you wish existed. Raw and honest — we'd rather hear it than not.
         </div>
         <textarea
-          value={form.comments}
-          onChange={(e) => setForm({ ...form, comments: e.target.value })}
+          value={comments}
+          onChange={(e) => setComments(e.target.value)}
           disabled={submitting}
           placeholder="Write like you're messaging a friend who asked how it went…"
           rows={6}
@@ -294,10 +274,11 @@ function ThreadSection({
 }
 
 function FeedbackEntry({ fb }: { fb: FeedbackRecord }) {
-  const submittedLabel = new Date(fb.createdDate).toLocaleString(undefined, {
+  const submittedLabel = new Date(fb.createdAt).toLocaleString(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
+  const surveyPills = extractAnswerPills(fb.structuredData);
   return (
     <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-3">
       <div className="flex items-start justify-between gap-3">
@@ -305,18 +286,21 @@ function FeedbackEntry({ fb }: { fb: FeedbackRecord }) {
           <div className="text-2xs uppercase tracking-wider text-text-muted">
             {fb.name} · {submittedLabel}
           </div>
-          <div className="flex items-center gap-2 text-xs text-text-muted">
-            {fb.platform && <span className="px-1.5 py-0.5 bg-surface-2 rounded">{fb.platform}</span>}
-            {fb.onboardingSuccess && (
-              <span className="px-1.5 py-0.5 bg-surface-2 rounded">{fb.onboardingSuccess}</span>
-            )}
-          </div>
+          {surveyPills.length > 0 && (
+            <div className="flex items-center gap-2 text-xs text-text-muted flex-wrap">
+              {surveyPills.map((label, i) => (
+                <span key={i} className="px-1.5 py-0.5 bg-surface-2 rounded">
+                  {label}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <StatusPill status={fb.status} />
       </div>
-      {fb.comments && (
+      {fb.body && (
         <div className="text-sm text-text-primary whitespace-pre-wrap leading-relaxed">
-          {fb.comments}
+          {fb.body}
         </div>
       )}
       {fb.adminResponse && (
@@ -332,12 +316,26 @@ function FeedbackEntry({ fb }: { fb: FeedbackRecord }) {
 }
 
 /**
+ * Pull display labels from `structuredData.answers`. Used to render the
+ * old "[Web] [Yes]" pills above the comment body for survey submissions.
+ * Tolerant of null/unparseable structuredData (returns empty array).
+ */
+function extractAnswerPills(
+  structuredData: FeedbackRecord['structuredData'],
+): string[] {
+  if (!structuredData || typeof structuredData === 'string') return [];
+  const data = structuredData as Record<string, unknown>;
+  const answers = data.answers;
+  if (!answers || typeof answers !== 'object') return [];
+  return Object.values(answers as Record<string, unknown>)
+    .map((v) => (Array.isArray(v) ? v.join(', ') : String(v)))
+    .filter((s) => s.length > 0);
+}
+
+/**
  * The avatar + name + timestamp row above an admin reply. When Homer
  * replies, the user sees Homer's face, his display name, and his @handle
- * as a link to his public profile — so the reply reads like a personal
- * note from the founder, not a form-letter ticket response. Falls back
- * gracefully to a branded pill when the responder data hasn't arrived
- * yet (older records or server not-yet-updated).
+ * as a link to his public profile.
  */
 function ResponderLine({ fb }: { fb: FeedbackRecord }) {
   const displayName = fb.respondedByName || 'TurtleShell team';
@@ -392,13 +390,18 @@ function ResponderLine({ fb }: { fb: FeedbackRecord }) {
   );
 }
 
-function StatusPill({ status }: { status: FeedbackRecord['status'] }) {
-  const map: Record<FeedbackRecord['status'], { label: string; classes: string }> = {
-    Unread: { label: 'We\u2019ll get to this', classes: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
-    Read: { label: 'Homer read it', classes: 'bg-surface-2 text-text-muted border-border-muted' },
-    Responded: { label: 'Replied', classes: 'bg-shell-500/10 text-shell-400 border-shell-500/30' },
-  };
-  const s = map[status];
+const STATUS_PILLS: Record<FeedbackStatus, { label: string; classes: string }> = {
+  New:        { label: 'We’ll get to this', classes: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
+  Read:       { label: 'Homer read it',          classes: 'bg-surface-2 text-text-muted border-border-muted' },
+  Triaged:    { label: 'Triaged',                classes: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
+  InProgress: { label: 'In progress',            classes: 'bg-blue-500/10 text-blue-400 border-blue-500/30' },
+  Responded:  { label: 'Replied',                classes: 'bg-shell-500/10 text-shell-400 border-shell-500/30' },
+  Resolved:   { label: 'Resolved',               classes: 'bg-shell-500/10 text-shell-400 border-shell-500/30' },
+  WontFix:    { label: 'Closed',                 classes: 'bg-surface-2 text-text-muted border-border-muted' },
+};
+
+function StatusPill({ status }: { status: FeedbackStatus }) {
+  const s = STATUS_PILLS[status] ?? STATUS_PILLS.New;
   return (
     <span className={`px-2 py-0.5 rounded text-2xs font-medium border whitespace-nowrap ${s.classes}`}>
       {s.label}
