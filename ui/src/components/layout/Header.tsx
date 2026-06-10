@@ -3,6 +3,7 @@ import { Menu, ChevronRight } from 'lucide-react';
 import { useAgentStatus } from '@/lib/hooks/useAgentStatus';
 import type { AgentHealth } from '@/lib/hooks/useAgentStatus';
 import { AgentPicker } from './AgentPicker';
+import ClusterPicker from '@/components/cluster/ClusterPicker';
 
 interface HeaderProps {
   desktopSidebarOpen: boolean;
@@ -100,10 +101,16 @@ export function Header({ desktopSidebarOpen, onDesktopSidebarToggle, onMobileMen
         </div>
       </div>
 
-      {/* Right side — connection status (developer mode only). The
-          former "build 012" hardcoded label was removed; build version
-          lives in package.json / about dialog, not the chat header. */}
+      {/* Right side — cluster picker + connection status (developer mode only). */}
       <div className="flex items-center gap-3">
+        {/* Cluster picker — gated on JWT presence. Pre-login it would have
+            no clusters to show (the registry call needs an identity); the
+            NodePicker on /login handles the pre-auth surface. Shown at
+            all viewport widths so users can recover from the "signed in
+            but runtime is hitting the wrong Pantheon" state without
+            needing to widen the window. */}
+        {typeof window !== 'undefined' &&
+          !!localStorage.getItem('og_access_token') && <ClusterPicker />}
         {showStatus && (
           <div className="relative">
             <button

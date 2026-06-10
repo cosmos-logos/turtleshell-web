@@ -78,3 +78,24 @@ jobs:
                 body,
               });
             }
+
+  # ── Notify cosmos-logos/turtleshell-offgrid that a new web bundle exists.
+  # Receiver workflow (refresh-web-bundle.yml) checks out this SHA, rebuilds,
+  # rsyncs into status/web/, bumps version, and opens an auto-PR.
+  dispatch-offgrid-refresh:
+    needs: build-and-deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/brain/1.7.x.x'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch turtleshell-web-updated
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.CROSS_REPO_PAT }}
+          repository: cosmos-logos/turtleshell-offgrid
+          event-type: turtleshell-web-updated
+          client-payload: |
+            {
+              "web_sha": "${{ github.sha }}",
+              "actor": "${{ github.actor }}",
+              "ref": "${{ github.ref_name }}"
+            }

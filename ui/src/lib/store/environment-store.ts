@@ -1,6 +1,63 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+// EOS-2 cluster override — ClusterContext writes the active cluster's
+// gateway URL here on every CLUSTERS/SELECT or CLUSTERS/USE_OVERRIDE.
+// Kept in sync with the constant in src/state/cluster.ts.
+const CLUSTER_OVERRIDE_KEY = 'og_api_base';
+
+/** Read the active cluster's gateway URL (origin only, no trailing slash).
+ *  Returns null when no cluster is selected — caller falls back to the
+ *  env-store preset. */
+function readClusterOverride(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(CLUSTER_OVERRIDE_KEY);
+    if (!raw) return null;
+    const trimmed = raw.trim().replace(/\/+$/, '');
+    return trimmed || null;
+  } catch {
+    return null;
+  }
+}
+
+/** When a cluster override is active, build `${cluster}/v1/${service}`;
+ *  otherwise return the preset URL unchanged. */
+function withClusterOverride(preset: string, servicePath: string): string {
+  const override = readClusterOverride();
+  if (!override) return preset;
+  return `${override}/v1/${servicePath}`;
+}
+
+/**
+ * Apply the active cluster override to an arbitrary base URL, swapping
+ * the origin while preserving the path. Used by clients that resolve
+ * their URL from somewhere other than the env-store getters (notably
+ * `chat-client.ts`, which picks up the URL from the connected cosmos-
+ * logos agent — that agent.url is persisted in zustand and pre-dates
+ * the cluster pick).
+ *
+ * Idempotent: if `originalUrl` already starts with the cluster origin,
+ * the result is unchanged. Falls back to `originalUrl` on parse errors
+ * and when no cluster is selected.
+ */
+export function applyClusterOverride(originalUrl: string): string {
+  if (!originalUrl) return originalUrl;
+  const override = readClusterOverride();
+  if (!override) return originalUrl;
+  try {
+    const parsed = new URL(originalUrl);
+    // Preserve the path so /v1/athena, /v1/apollo, etc. survive the swap.
+    const path = parsed.pathname.replace(/\/+$/, '');
+    return `${override}${path}`;
+  } catch {
+    // Relative URLs (e.g. '/v1/athena') — env-store offgrid/local presets.
+    // Treat the override as the new origin and graft the path on.
+    const path = originalUrl.startsWith('/') ? originalUrl : `/${originalUrl}`;
+    return `${override}${path.replace(/\/+$/, '')}`;
+  }
+}
+
 export type AppEnvironment = 'cloud' | 'offgrid' | 'local' | 'custom';
 
 /** Default URLs for each service per environment preset. */
@@ -126,16 +183,28 @@ export const useEnvironmentStore = create<EnvironmentStore>()(
       setDeveloperMode:   (developerMode)   => set({ developerMode }),
       setTestBetaEnabled: (testBetaEnabled) => set({ testBetaEnabled }),
 
-      getAthenaUrl:    () => get().endpoints.athena,
-      getHermesUrl:    () => get().endpoints.hermes,
-      getMnemosyneUrl: () => get().endpoints.mnemosyne,
-      getPlutusUrl:    () => get().endpoints.plutus,
-      getApolloUrl:    () => get().endpoints.apollo,
-      getAresUrl:      () => get().endpoints.ares,
+      // Each service-URL getter checks the cluster override FIRST. When the
+      // user has picked a Cluster via ClusterPicker (or set a custom URL
+      // via NodePicker pre-login), ClusterContext writes the cluster's
+      // gateway URL to localStorage.og_api_base. We read it here on every
+      // call so every existing API client (chat-client, olympus-grid-
+      // client, feedback-client, etc.) retargets automatically — no
+      // per-client edits, no React-context dependency from non-React code.
+      getAthenaUrl:    () => withClusterOverride(get().endpoints.athena, 'athena'),
+      getHermesUrl:    () => withClusterOverride(get().endpoints.hermes, 'hermes'),
+      getMnemosyneUrl: () => withClusterOverride(get().endpoints.mnemosyne, 'mnemosyne'),
+      getPlutusUrl:    () => withClusterOverride(get().endpoints.plutus,    'plutus/api'),
+      getApolloUrl:    () => withClusterOverride(get().endpoints.apollo,    'apollo'),
+      getAresUrl:      () => withClusterOverride(get().endpoints.ares,      'ares'),
 
       // Legacy compat — was getBaseUrl (pointed at athena)
-      getBaseUrl: () => get().endpoints.athena,
+      getBaseUrl: () => withClusterOverride(get().endpoints.athena, 'athena'),
       getGatewayUrl: () => {
+        // When a cluster override is active, its endpointUrl IS the gateway
+        // origin — no need to URL-parse a relative path. Otherwise fall back
+        // to the preset's athena origin.
+        const override = readClusterOverride();
+        if (override) return override;
         try { return new URL(get().endpoints.athena).origin; } catch { return ''; }
       },
     }),

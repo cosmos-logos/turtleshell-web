@@ -6,6 +6,7 @@ import { useServiceStore } from '@/lib/store/service-store';
 import { signInWithApple as appleSDKSignIn, isAppleSignInSupported } from '@/lib/auth/apple-signin';
 import { restoreGuideAgentFromProfile } from '@/lib/apply-guide-agent';
 import { logSession } from '@/lib/api/session-log';
+import NodePicker from '@/components/cluster/NodePicker';
 
 /** Strip the email local-part for logging — domain only, never the user. */
 function emailDomain(email: string): string {
@@ -188,7 +189,12 @@ export function Login() {
   }, [email]);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-surface-0">
+    <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-surface-0 relative">
+      {/* Server (Node) picker — floating top-right so it never disturbs the
+          centered login layout but is always reachable before sign-in. */}
+      <div className="absolute top-4 right-4 z-10">
+        <NodePicker />
+      </div>
 
       {/* Logo + Wordmark */}
       <div className="text-center mb-10">

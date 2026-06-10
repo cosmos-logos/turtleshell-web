@@ -39,12 +39,13 @@ import { Profile } from './routes/Profile';
 import { Feedback } from './routes/Feedback';
 import { Login } from './routes/Login';
 import { RequireAuth } from './components/auth/RequireAuth';
+import { ClusterProvider } from './state/ClusterContext';
 
 export function App() {
   useStartupRefresh();
 
   return (
-    <>
+    <ClusterProvider>
       <RouteLogger />
       <Routes>
       {/* Public pages with marketing layout */}
@@ -113,6 +114,6 @@ export function App() {
       {/* Catch-all goes to landing */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-    </>
+    </ClusterProvider>
   );
 }
