@@ -27,19 +27,19 @@ export async function* streamChat(
   const cosmosAgent = activeChatAgentId
     ? useCosmosLogosStore.getState().agents.find(a => a.id === activeChatAgentId)
     : null;
-  // The agent.url chain (cosmosAgent?.url) is persisted in the zustand
-  // turtleshell-cosmos-agents store and predates any cluster pick — so a
-  // logged-in user who picks a cluster still chats against the URL the
-  // agent was originally bound to. Apply the cluster override here so
-  // ANY URL source retargets to the picked cluster's origin. An explicit
-  // options.endpointOverride is respected as-is — caller knows best.
+  // The agent.url chain (cosmosAgent?.url, builtin agent endpoint,
+  // PublicProfile owner endpoint) is captured-at-bind time and predates
+  // any cluster pick. The cluster override is the user's *explicit*
+  // routing choice and ALWAYS wins — including when callers pass an
+  // endpointOverride, because every caller in the codebase resolves
+  // endpointOverride from an agent URL that doesn't know about clusters.
+  // applyClusterOverride is idempotent: when the URL already starts
+  // with the cluster origin (or no cluster is picked) it's a no-op.
   const rawBaseUrl =
     options?.endpointOverride ||
     cosmosAgent?.url ||
     useEnvironmentStore.getState().getBaseUrl();
-  const baseUrl = options?.endpointOverride
-    ? rawBaseUrl
-    : applyClusterOverride(rawBaseUrl);
+  const baseUrl = applyClusterOverride(rawBaseUrl);
 
   const mcpHeaders = buildMCPHeaders();
 
