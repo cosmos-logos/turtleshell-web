@@ -1,4 +1,4 @@
-import { useEnvironmentStore } from '@/lib/store/environment-store';
+import { useEnvironmentStore, applyClusterOverride } from '@/lib/store/environment-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { buildMCPHeaders } from './mcp-headers';
 import { getShellId } from '@/lib/api/olympus-grid-client';
@@ -27,7 +27,19 @@ export async function* streamChat(
   const cosmosAgent = activeChatAgentId
     ? useCosmosLogosStore.getState().agents.find(a => a.id === activeChatAgentId)
     : null;
-  const baseUrl = options?.endpointOverride || cosmosAgent?.url || useEnvironmentStore.getState().getBaseUrl();
+  // The agent.url chain (cosmosAgent?.url) is persisted in the zustand
+  // turtleshell-cosmos-agents store and predates any cluster pick — so a
+  // logged-in user who picks a cluster still chats against the URL the
+  // agent was originally bound to. Apply the cluster override here so
+  // ANY URL source retargets to the picked cluster's origin. An explicit
+  // options.endpointOverride is respected as-is — caller knows best.
+  const rawBaseUrl =
+    options?.endpointOverride ||
+    cosmosAgent?.url ||
+    useEnvironmentStore.getState().getBaseUrl();
+  const baseUrl = options?.endpointOverride
+    ? rawBaseUrl
+    : applyClusterOverride(rawBaseUrl);
 
   const mcpHeaders = buildMCPHeaders();
 
@@ -46,10 +58,16 @@ export async function* streamChat(
     .map(a => {
       const mcpCap = a.manifest.capabilities.find(c => c.verb === 'x-mcp');
       if (!mcpCap) return null;
+      // Same cluster-override rationale as the chat baseUrl above —
+      // a.url is whatever was persisted at connect time, but Athena
+      // (server-side) needs to reach MCP on the currently-active
+      // cluster, not the alpha-org default the agent was first bound
+      // to.
+      const agentBase = applyClusterOverride(a.url);
       return {
         namespace: a.manifest.identity.codename,
-        url: `${a.url}${mcpCap.path}`,
-        manifestUrl: `${a.url}/.well-known/cosmos-logos.json`,
+        url: `${agentBase}${mcpCap.path}`,
+        manifestUrl: `${agentBase}/.well-known/cosmos-logos.json`,
         verified: true,
       };
     })

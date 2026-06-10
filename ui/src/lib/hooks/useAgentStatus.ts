@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useEnvironmentStore } from '@/lib/store/environment-store';
+import { useEnvironmentStore, applyClusterOverride } from '@/lib/store/environment-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 
 const POLL_INTERVAL = 30_000; // 30s
@@ -35,7 +35,10 @@ export function useAgentStatus() {
       cosmosAgents.map(async (agent): Promise<AgentHealth> => {
         const name = agent.displayName || agent.manifest.identity.name;
         const healthPath = agent.manifest.network?.health || '/health';
-        const healthUrl = `${agent.url}${healthPath}`;
+        // agent.url is captured-at-connect; retarget to the currently
+        // active cluster so health pings hit the same Pantheon the
+        // chat client is talking to.
+        const healthUrl = `${applyClusterOverride(agent.url)}${healthPath}`;
         const start = performance.now();
         try {
           const resp = await fetch(healthUrl, {

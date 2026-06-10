@@ -13,6 +13,12 @@
 import { ogRequest } from './olympus-grid-client';
 import pkg from '../../../package.json';
 import { captureSessionLogBase64 } from './session-log';
+import {
+  fetchNodeSessionLog,
+  nodeSessionLogAvailable,
+  nodeSessionLogDivider,
+} from './node-session-log';
+import { clientVersionTag } from './surface';
 
 /** Single source of truth for the client build version. Stamped onto
  *  every feedback row's ClientVersion__c so admins know which build
@@ -130,13 +136,59 @@ export const feedbackClient = {
   /** POST /v1/app/feedback/turtleshell/submit */
   submit: async (payload: SubmitFeedbackPayload): Promise<SubmitFeedbackResult> => {
     const includeLog = payload.includeSessionLog ?? true;
-    const sessionLog = includeLog ? await captureSessionLogBase64() : null;
+    let sessionLog = includeLog ? await captureSessionLogBase64() : null;
+
+    // Off-grid surfaces also bring along the node-level session log
+    // (proxy traffic, /api/* dashboard calls, fleet state) appended to the
+    // browser log with a divider line. Single ContentVersion attachment
+    // keeps the backend ApiRouteFeedback contract unchanged; admins viewing
+    // the file in iris see two streams in one document.
+    if (includeLog) {
+      const nodeInfo = await nodeSessionLogAvailable();
+      if (nodeInfo) {
+        const nodeText = await fetchNodeSessionLog();
+        if (nodeText) {
+          const browserText = sessionLog?.contentBase64
+            ? new TextDecoder().decode(
+                Uint8Array.from(atob(sessionLog.contentBase64), (c) =>
+                  c.charCodeAt(0),
+                ),
+              )
+            : '';
+          const combined =
+            browserText +
+            (browserText && !browserText.endsWith('\n') ? '\n' : '') +
+            nodeSessionLogDivider(nodeInfo) +
+            '\n' +
+            nodeText;
+          // Chunked base64 — String.fromCharCode(...bytes) blows the spread
+          // call-stack limit around ~100k chars. Off-grid node logs can be
+          // several MB, so we chunk through the byte stream.
+          const bytes = new TextEncoder().encode(combined);
+          let binary = '';
+          const CHUNK = 0x8000;
+          for (let i = 0; i < bytes.length; i += CHUNK) {
+            binary += String.fromCharCode(
+              ...bytes.subarray(i, i + CHUNK),
+            );
+          }
+          const contentBase64 = btoa(binary);
+          const fileName =
+            sessionLog?.fileName?.replace(
+              /\.jsonl$/,
+              '+offgrid.jsonl',
+            ) ?? `offgrid_session_${nodeInfo.sessionId.slice(0, 8)}.jsonl`;
+          sessionLog = { fileName, contentBase64 };
+        }
+      }
+    }
+
     const body = {
       body: payload.body,
       source: payload.source ?? 'Feedback',
       severity: payload.severity,
       structuredData: payload.structuredData,
-      clientVersion: APP_VERSION,
+      clientVersion: clientVersionTag(APP_VERSION),
       deviceModel: deriveDeviceLabel(),
       submittedAt: new Date().toISOString(),
       sessionLog,

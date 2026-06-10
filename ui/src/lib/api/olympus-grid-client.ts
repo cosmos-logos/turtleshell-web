@@ -1,5 +1,6 @@
 import type { OlympusUser, CaseRecord } from '@/types/service';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
+import { useNodeStore } from '@/lib/store/node-store';
 
 /**
  * Display URL for the Olympus-Grid master route.
@@ -15,9 +16,48 @@ function getGatewayUrl(): string {
   return useEnvironmentStore.getState().getGatewayUrl();
 }
 
-/** Base URL for Olympus-Grid calls routed through Ares gateway. */
+/** Base URL for Olympus-Grid calls routed through Ares gateway.
+ *  Runtime queries against the spawning SF org (Service Desk, identity/me,
+ *  etc.) go through the picked Cluster's Ares forwarder. Auth + cluster-
+ *  list calls go DIRECT to the Node (see getNodeAuthUrl below). */
 function getGridBase(): string {
   return useEnvironmentStore.getState().getGatewayUrl() + '/v1/grid/master';
+}
+
+/**
+ * Identity-plane URL builder — bypasses Pantheon entirely. Auth calls
+ * (email-link request/verify, Apple SIWA verify, token refresh) and the
+ * cluster registry POST/GET directly to the Node's Apex REST endpoint,
+ * because the JWT is minted by the *Node*, not by any cluster on it.
+ *
+ * Mirrors omens' OlympusGridAuthClient (engines/godot/scripts/auth/).
+ * Path shape: `${nodeIdentityUrl}/v1/app/auth/turtleshell-web/<rest>`.
+ * `${nodeIdentityUrl}` already encodes the namespace, so the SF Apex
+ * route resolves correctly for both managed-package and `--no-namespace`
+ * scratch deployments.
+ */
+function getNodeAuthUrl(rest: string): string {
+  const base = useNodeStore.getState().getIdentityUrl();
+  const suffix = rest.startsWith('/') ? rest : `/${rest}`;
+  return `${base}/v1/app/auth/turtleshell-web${suffix}`;
+}
+
+/**
+ * General Node Apex REST URL builder for non-auth SF calls (feedback,
+ * Service Desk, profile, etc.). Caller passes the path relative to
+ * `/v1/`, e.g. `/app/feedback/turtleshell/submit`, and we resolve to
+ * `${nodeIdentityUrl}/v1${path}`.
+ *
+ * Why direct-to-Node and not via the cluster's Ares: spawned clusters'
+ * Pantheon images don't mount the `/v1/grid/master/*` Salesforce
+ * forwarder — that was an alpha-org-Ares-only construct. The Node IS
+ * the system of record for SF writes; routing through a Cluster is a
+ * pointless hop that breaks on every realm that isn't alpha-org.
+ */
+function getNodeApiUrl(path: string): string {
+  const base = useNodeStore.getState().getIdentityUrl();
+  const suffix = path.startsWith('/') ? path : `/${path}`;
+  return `${base}/v1${suffix}`;
 }
 
 function stripHtml(text: string): string {
@@ -37,12 +77,16 @@ export async function ogRequest(
   path: string,
   body?: unknown,
 ): Promise<unknown> {
-  const fullUrl = `${getGridBase()}${path}`;
+  // Direct-to-Node Apex (see getNodeApiUrl docstring for why). Caller
+  // passes a path like `/app/feedback/turtleshell/submit` and we resolve
+  // to `${nodeIdentityUrl}/v1${path}`.
+  const fullUrl = getNodeApiUrl(path);
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  // Include JWT from localStorage if available (x-token-delivery: header path)
-  // If not in localStorage, cookies are sent via credentials: 'include' and
-  // Ares cookieToHeader middleware converts them to x-user-identity
+  // JWT carried in x-user-identity header. Direct-to-Apex doesn't use
+  // cookies — SF CORS responses set Allow-Credentials: false on Apex
+  // REST, so any `credentials: 'include'` triggers a preflight-creds
+  // mismatch and the browser blocks the response.
   const storedToken = localStorage.getItem('og_access_token');
   if (storedToken) {
     headers['x-user-identity'] = storedToken;
@@ -55,7 +99,7 @@ export async function ogRequest(
 
   const response = await fetch(fullUrl, {
     method,
-    credentials: 'include',
+    credentials: 'omit',
     headers,
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
@@ -94,7 +138,7 @@ export async function requestMagicLink(
   // Waitlist on first contact and returns {success:true, expiresIn:0}
   // with NO requestId. Caller detects requestId == null and routes the
   // user to the holding screen instead of advancing to code entry.
-  const url = `${getGridBase()}/app/auth/turtleshell-web/email/link/request`;
+  const url = getNodeAuthUrl('/email/link/request');
   const response = await fetch(url, {
     method: 'POST',
     credentials: 'omit',
@@ -131,13 +175,20 @@ export async function verifyCode(
   code: string,
   requestId: string,
 ): Promise<VerifyResult> {
-  // Use x-token-delivery: header so Ares returns tokens in response headers
-  // instead of httpOnly cookies (cookies don't work through Vite proxy in dev).
-  // Migrated 2026-05-18 to per-app /v1/app/auth/turtleshell-web/* path.
-  const url = `${getGridBase()}/app/auth/turtleshell-web/email/link/verify`;
+  // Direct-to-Node Apex REST. Cross-origin to the SF Site — the response
+  // headers (x-og-access-token, x-og-refresh-token) only flow from the
+  // Ares-fronted path; direct-to-Apex returns tokens in the body, which
+  // the fallback below handles. Keeping x-token-delivery: header is
+  // harmless (Apex ignores it).
+  const url = getNodeAuthUrl('/email/link/verify');
   const response = await fetch(url, {
     method: 'POST',
-    credentials: 'include',
+    // credentials: 'omit' — direct-to-Apex doesn't use cookies; JWT comes
+    // back in the response body. Salesforce CORS responses set
+    // Access-Control-Allow-Credentials: false on Apex REST endpoints, so
+    // any 'include' mode triggers a preflight-credentials mismatch and
+    // the browser blocks the response.
+    credentials: 'omit',
     headers: {
       'Content-Type': 'application/json',
       'x-token-delivery': 'header',
@@ -288,10 +339,11 @@ export async function signInWithApple(args: {
   user?: { email?: string; name?: { firstName?: string; lastName?: string } };
   nonce?: string;
 }): Promise<VerifyResult & { accountStatus?: string; onboardingComplete?: boolean }> {
-  const url = `${getGridBase()}/app/auth/turtleshell-web/apple/identity/verify`;
+  const url = getNodeAuthUrl('/apple/identity/verify');
   const response = await fetch(url, {
     method: 'POST',
-    credentials: 'include',
+    // See verifyCode for why credentials: 'omit' on direct-to-Apex.
+    credentials: 'omit',
     headers: {
       'Content-Type': 'application/json',
       'x-token-delivery': 'header',
@@ -507,15 +559,28 @@ export async function refreshOlympusGridToken(): Promise<void> {
     }
   }
 
-  console.log('[OG] Refreshing access token via httpOnly cookie...');
+  console.log('[OG] Refreshing access token via Node Apex REST...');
 
-  const url = `${getGridBase()}/auth/token/session/refresh`;
+  // Direct-to-Node refresh. The cross-origin call cannot rely on the
+  // Ares-set __Host-og_refresh httpOnly cookie (different eTLD+1), so we
+  // pass the refresh token explicitly in the body. The Node's Apex
+  // /v1/app/auth/turtleshell-web/token/session/refresh handler issues a
+  // new access token in the response body. Mirrors omens'
+  // OlympusGridAuthClient (PerformRefreshAsync).
+  if (!refreshToken) {
+    console.log('[OG] No refresh token in localStorage — skipping refresh');
+    return;
+  }
+  const url = getNodeAuthUrl('/token/session/refresh');
   const response = await fetch(url, {
     method: 'POST',
-    credentials: 'include',
+    // See verifyCode for why credentials: 'omit' on direct-to-Apex.
+    credentials: 'omit',
     headers: {
       'Content-Type': 'application/json',
+      'x-token-delivery': 'header',
     },
+    body: JSON.stringify({ refreshToken }),
   });
 
   const json = await response.json().catch(() => null);
@@ -538,8 +603,24 @@ export async function refreshOlympusGridToken(): Promise<void> {
     throw new Error(stripHtml(typeof raw === 'string' ? raw : JSON.stringify(raw)));
   }
 
-  // New tokens are set as httpOnly cookies by Ares — nothing to store locally
-  console.log('[OG] Token refresh successful');
+  // Direct-to-Node returns new tokens in body (preferred) or response
+  // headers when the Node's Apex is fronted by an Ares that intercepts.
+  // Either way, persist into localStorage so subsequent x-user-identity
+  // headers carry the fresh JWT.
+  const result = (json?.result ?? json) as {
+    accessToken?: string;
+    refreshToken?: string;
+  };
+  const headerAccess = response.headers.get('x-og-access-token');
+  const headerRefresh = response.headers.get('x-og-refresh-token');
+  const newAccess = headerAccess || result.accessToken;
+  const newRefresh = headerRefresh || result.refreshToken;
+  if (newAccess) localStorage.setItem('og_access_token', newAccess);
+  if (newRefresh) localStorage.setItem('og_refresh_token', newRefresh);
+  console.log('[OG] Token refresh successful', {
+    newAccessLen: newAccess?.length ?? 0,
+    newRefreshLen: newRefresh?.length ?? 0,
+  });
 }
 
 // ── Auth Status ──────────────────────────────────────────
