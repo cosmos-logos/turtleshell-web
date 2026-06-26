@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { Send, Square, Trash2, Mic, Copy, Check, Volume2, Settings2, X, Wrench, ExternalLink, Brain, Bookmark, Shell, Shuffle } from 'lucide-react';
+import { Send, Square, Trash2, Mic, Copy, Check, Volume2, Settings2, X, Wrench, ExternalLink, Brain, Bookmark, Shell, Shuffle, Paperclip, FileText, AlertCircle, Loader2 } from 'lucide-react';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
 import { getShellId } from '@/lib/api/olympus-grid-client';
 import * as audioManager from '@/lib/audio/audio-manager';
@@ -20,7 +20,40 @@ import { useAgentThemeStore } from '@/lib/store/agent-theme-store';
 import { OLYMPUS_AGENTS } from '@/lib/agents/olympus-data';
 import { generateId, formatTimestamp } from '@/lib/utils/helpers';
 import { useApollo } from '@/lib/hooks/useApollo';
-import type { ChatMessage } from '@/types/chat';
+import type { ChatMessage, ChatAttachment } from '@/types/chat';
+import {
+  routeForAnalyze,
+  fileToBase64,
+  fileToDataUrl,
+  FILE_PICKER_ACCEPT,
+  MAX_ATTACHMENTS_PER_TURN,
+  type AnalyzeMediaType,
+} from '@/lib/media/media-router';
+import { analyzeFile, type AnalyzeResult } from '@/lib/athena/analyze-client';
+
+type StagedAttachment = {
+  id: string;
+  file: File;
+  name: string;
+  mediaType: AnalyzeMediaType;
+  thumbnailDataUrl?: string;
+  status: 'idle' | 'analyzing' | 'error';
+  error?: string;
+};
+
+const EMPTY_ATTACHMENT_DEFAULT = 'Please review and discuss these attachments.';
+
+function buildAttachmentPrompt(
+  userText: string,
+  analyzed: Array<{ name: string; mediaType: string; analysis: AnalyzeResult }>,
+): string {
+  if (analyzed.length === 0) return userText;
+  const blocks = analyzed
+    .map((r, i) => `[ATTACHMENT ${i + 1} — ${r.name} (${r.mediaType})]\n${JSON.stringify(r.analysis, null, 2)}`)
+    .join('\n\n');
+  const userBlock = userText.trim() || EMPTY_ATTACHMENT_DEFAULT;
+  return `${blocks}\n\nUSER MESSAGE:\n${userBlock}`;
+}
 
 // Matches "[Calling tool <name> with args <json>]" lines from Athena
 const TOOL_CALL_PATTERN = /^\[Calling tool .+ with args .+\]$/;
@@ -169,6 +202,12 @@ export function Chat() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [isHoldingMic, setIsHoldingMic] = useState(false);
+  const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // dragCounter tracks nested drag enter/leave so child elements firing
+  // dragleave don't prematurely hide the drop overlay.
+  const dragCounter = useRef(0);
   // Rotating welcome-prompt CTA — "I'm Feeling Lucky" style. Random starting
   // index per mount so returning users see a different suggestion each visit;
   // 🎲 button cycles to the next one client-side without sending.
@@ -245,7 +284,10 @@ export function Chat() {
     },
   });
 
-  const handleSendMessage = useCallback(async (prompt: string) => {
+  const handleSendMessage = useCallback(async (
+    prompt: string,
+    internal?: { serverPrompt?: string; attachments?: ChatAttachment[] },
+  ) => {
     if (!prompt.trim() || isStreaming) return;
     if (isOutOfShells) {
       setError('You are out of Sea Shells. Upgrade to continue.');
@@ -260,6 +302,9 @@ export function Chat() {
       role: 'user',
       content: prompt.trim(),
       timestamp: Date.now(),
+      ...(internal?.attachments && internal.attachments.length > 0
+        ? { attachments: internal.attachments }
+        : {}),
     };
     addMessage(userMsg);
 
@@ -344,10 +389,16 @@ export function Chat() {
           .map(m => ({ role: m.role, content: m.content }));
       }
 
+      // When attachments rode in, internal.serverPrompt carries the augmented
+      // payload (ATTACHMENTS blocks + USER MESSAGE). The bare `prompt` stays
+      // the user's typed text so logging, memory recall, and fact extraction
+      // see the human intent, not the analyze JSON blobs.
+      const serverPrompt = internal?.serverPrompt ?? prompt;
+
       // Choose streaming source
       const tokenStream = useDirectProvider
-        ? streamDirect(builtinAgent.id, prompt, controller.signal, { systemPrompt: directSystemPrompt, conversationHistory: directHistory })
-        : streamChat(prompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save, systemPrompt, agentId: llmAgentId, endpointOverride: agentEndpoint });
+        ? streamDirect(builtinAgent.id, serverPrompt, controller.signal, { systemPrompt: directSystemPrompt, conversationHistory: directHistory })
+        : streamChat(serverPrompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save, systemPrompt, agentId: llmAgentId, endpointOverride: agentEndpoint });
 
       for await (const token of tokenStream) {
         // Handle metadata objects (conversationId)
@@ -461,9 +512,154 @@ export function Chat() {
     sendRef.current = handleSendMessage;
   }, [handleSendMessage]);
 
+  // --- Attachments ---
+  // Picker + drag-and-drop both flow through stageFiles, which routes each
+  // candidate through the media router (mime + size + HEIC gate), generates
+  // a thumbnail data URL for images, and pushes onto stagedAttachments.
+  // Limit is enforced here, not at the input level, so drop+pick paths agree.
+  const stageFiles = useCallback(async (files: FileList | File[] | null) => {
+    if (!files) return;
+    const arr = Array.from(files);
+    if (arr.length === 0) return;
+
+    setError(null);
+    const accepted: StagedAttachment[] = [];
+    const errors: string[] = [];
+    const currentCount = stagedAttachments.length;
+
+    for (const f of arr) {
+      if (currentCount + accepted.length >= MAX_ATTACHMENTS_PER_TURN) {
+        errors.push(`Attachment limit is ${MAX_ATTACHMENTS_PER_TURN} per message`);
+        break;
+      }
+      const routed = routeForAnalyze(f);
+      if (!routed.ok) {
+        errors.push(routed.reason);
+        continue;
+      }
+      let thumb: string | undefined;
+      if (routed.mediaType.startsWith('image/')) {
+        try {
+          thumb = await fileToDataUrl(routed.file);
+        } catch {
+          // Non-fatal — render filename without thumbnail
+        }
+      }
+      accepted.push({
+        id: generateId(),
+        file: routed.file,
+        name: routed.file.name,
+        mediaType: routed.mediaType,
+        thumbnailDataUrl: thumb,
+        status: 'idle',
+      });
+    }
+
+    if (accepted.length > 0) {
+      setStagedAttachments(prev => [...prev, ...accepted]);
+    }
+    if (errors.length > 0) {
+      setError(errors.join(' · '));
+    }
+  }, [stagedAttachments.length, setError]);
+
+  const removeAttachment = useCallback((id: string) => {
+    setStagedAttachments(prev => prev.filter(a => a.id !== id));
+  }, []);
+
+  const onFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    void stageFiles(e.target.files);
+    // Reset so picking the same file twice in a row re-fires onChange
+    e.target.value = '';
+  }, [stageFiles]);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    dragCounter.current += 1;
+    setIsDragging(true);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    dragCounter.current = Math.max(0, dragCounter.current - 1);
+    if (dragCounter.current === 0) setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    dragCounter.current = 0;
+    setIsDragging(false);
+    void stageFiles(e.dataTransfer.files);
+  }, [stageFiles]);
+
+  // Submit-with-attachments: serial /analyze per chip, abort on any failure
+  // (one bad chip marked red), then call the standard send path with the
+  // augmented serverPrompt. Mirrors the spec's two-turn pattern: analyze
+  // returns structured JSON; we feed it into /chat for the conversational
+  // turn so Athena (and history) get the full context.
+  const submitWithAttachments = useCallback(async () => {
+    if (isStreaming) return;
+    if (isOutOfShells) {
+      setError('You are out of Sea Shells. Upgrade to continue.');
+      return;
+    }
+    const atts = stagedAttachments;
+    if (atts.length === 0) return;
+
+    setError(null);
+    const analyzed: Array<{ name: string; mediaType: string; analysis: AnalyzeResult }> = [];
+
+    for (const att of atts) {
+      setStagedAttachments(prev =>
+        prev.map(a => a.id === att.id ? { ...a, status: 'analyzing', error: undefined } : a),
+      );
+      try {
+        const data = await fileToBase64(att.file);
+        const resp = await analyzeFile({ data, mediaType: att.mediaType });
+        analyzed.push({ name: att.name, mediaType: att.mediaType, analysis: resp.result });
+        setStagedAttachments(prev =>
+          prev.map(a => a.id === att.id ? { ...a, status: 'idle' } : a),
+        );
+      } catch (e) {
+        const reason = (e as Error).message;
+        setStagedAttachments(prev =>
+          prev.map(a => a.id === att.id ? { ...a, status: 'error', error: reason } : a),
+        );
+        setError(`Couldn't analyze ${att.name} — remove it or try again. (${reason})`);
+        return;
+      }
+    }
+
+    const userText = input.trim();
+    const serverPrompt = buildAttachmentPrompt(userText, analyzed);
+    const displayContent = userText || EMPTY_ATTACHMENT_DEFAULT;
+    const bubbleAttachments: ChatAttachment[] = atts.map(a => ({
+      name: a.name,
+      mediaType: a.mediaType,
+      thumbnailDataUrl: a.thumbnailDataUrl,
+    }));
+
+    setInput('');
+    setStagedAttachments([]);
+
+    await handleSendMessage(displayContent, { serverPrompt, attachments: bubbleAttachments });
+  }, [isStreaming, isOutOfShells, stagedAttachments, input, handleSendMessage, setError]);
+
   const sendMessage = useCallback(() => {
+    if (stagedAttachments.length > 0) {
+      void submitWithAttachments();
+      return;
+    }
     handleSendMessage(input);
-  }, [input, handleSendMessage]);
+  }, [input, handleSendMessage, stagedAttachments.length, submitWithAttachments]);
 
   // Close controls panel on outside click
   useEffect(() => {
@@ -571,13 +767,14 @@ export function Chat() {
         ? <Mic size={18} />
         : <Send size={18} />;
 
+  const hasComposerContent = input.trim().length > 0 || stagedAttachments.length > 0;
   const sendButtonClass = isStreaming
     ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
     : isAudioActive
       ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
       : isHoldingMic
         ? 'bg-shell-500/20 text-shell-400 animate-pulse'
-        : input.trim()
+        : hasComposerContent
           ? 'bg-shell-500 text-white hover:bg-shell-600'
           : 'bg-surface-3 text-text-muted cursor-not-allowed';
 
@@ -669,6 +866,22 @@ export function Chat() {
                     : 'message-bubble-assistant'
                 }`}
               >
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {msg.attachments.map((att, i) => (
+                      <div key={i} className="rounded-lg overflow-hidden border border-white/10 bg-black/10">
+                        {att.thumbnailDataUrl ? (
+                          <img src={att.thumbnailDataUrl} alt={att.name} className="w-16 h-16 object-cover block" />
+                        ) : (
+                          <div className="flex items-center gap-1.5 px-2 py-1.5 max-w-[180px]">
+                            <FileText size={14} className="flex-shrink-0 opacity-70" />
+                            <span className="text-xs truncate" title={att.name}>{att.name}</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="text-sm leading-relaxed whitespace-pre-wrap">
                   {msg.role === 'assistant' && developerMode
                     ? msg.content.split('\n').map((line, i, arr) => {
@@ -757,8 +970,68 @@ export function Chat() {
       )}
 
       {/* Input bar */}
-      <div className="flex-shrink-0 border-t border-border-muted px-3 py-3 sm:px-4 sm:py-4">
-        <div className="max-w-3xl mx-auto flex items-center gap-2">
+      <div
+        className="flex-shrink-0 border-t border-border-muted px-3 py-3 sm:px-4 sm:py-4 relative"
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {isDragging && (
+          <div className="absolute inset-2 bg-shell-500/15 border-2 border-dashed border-shell-400 rounded-xl flex items-center justify-center z-20 pointer-events-none">
+            <div className="text-sm font-semibold text-shell-300">Drop to attach</div>
+          </div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={FILE_PICKER_ACCEPT}
+          multiple
+          className="hidden"
+          onChange={onFileInputChange}
+        />
+        <div className="max-w-3xl mx-auto flex flex-col gap-2">
+          {stagedAttachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {stagedAttachments.map(att => (
+                <div
+                  key={att.id}
+                  className={`group relative flex items-center gap-2 pr-7 rounded-lg border ${
+                    att.status === 'error'
+                      ? 'border-red-500/50 bg-red-500/10'
+                      : att.status === 'analyzing'
+                        ? 'border-shell-400/50 bg-shell-500/10'
+                        : 'border-border-muted bg-surface-2'
+                  }`}
+                  title={att.error || att.name}
+                >
+                  {att.thumbnailDataUrl ? (
+                    <img src={att.thumbnailDataUrl} alt={att.name} className="w-10 h-10 object-cover rounded-l-lg block" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-l-lg bg-surface-3 flex items-center justify-center flex-shrink-0">
+                      <FileText size={16} className="text-text-muted" />
+                    </div>
+                  )}
+                  <span className="text-xs text-text-primary truncate max-w-[140px]">{att.name}</span>
+                  {att.status === 'analyzing' && (
+                    <Loader2 size={12} className="text-shell-300 animate-spin flex-shrink-0" />
+                  )}
+                  {att.status === 'error' && (
+                    <AlertCircle size={12} className="text-red-400 flex-shrink-0" />
+                  )}
+                  <button
+                    onClick={() => removeAttachment(att.id)}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-surface-3 transition-colors"
+                    title="Remove"
+                    aria-label={`Remove ${att.name}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
           {/* Voice controls popover */}
           <div className="relative flex-shrink-0" ref={controlsRef}>
             <button
@@ -882,6 +1155,23 @@ export function Chat() {
             )}
           </div>
 
+          {/* Attach files — picker click; drag/drop is handled by the wrapper */}
+          {!isActiveAgentHidden && !isOutOfShells && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={stagedAttachments.length >= MAX_ATTACHMENTS_PER_TURN}
+              className="flex-shrink-0 p-2 rounded-lg text-text-muted hover:text-text-secondary hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={
+                stagedAttachments.length >= MAX_ATTACHMENTS_PER_TURN
+                  ? `Maximum ${MAX_ATTACHMENTS_PER_TURN} attachments`
+                  : 'Attach images or PDF'
+              }
+              aria-label="Attach files"
+            >
+              <Paperclip size={18} />
+            </button>
+          )}
+
           {isOutOfShells ? (
             <div className="flex-1 flex items-center justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2.5">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -924,11 +1214,12 @@ export function Chat() {
             onPointerUp={handleSendPointerUp}
             onPointerCancel={endHold}
             onClick={handleSendClick}
-            disabled={!isStreaming && !isAudioActive && !input.trim() && !isHoldingMic}
+            disabled={!isStreaming && !isAudioActive && !hasComposerContent && !isHoldingMic}
             className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center transition-all select-none touch-none ${sendButtonClass}`}
           >
             {sendButtonIcon}
           </button>}
+          </div>
         </div>
       </div>
     </div>
