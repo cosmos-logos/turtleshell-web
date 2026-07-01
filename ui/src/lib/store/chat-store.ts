@@ -157,7 +157,27 @@ export const useChatStore = create<ChatStore>()(
     {
       name: 'turtleshell-chat',
       partialize: (state) => ({
-        threads: state.threads,
+        // Strip ChatMessage.attachments before persist. Attachment thumbnail
+        // data URLs (even at 96px JPEG) plus filenames can push a chat
+        // history past the 5 MB localStorage cap when several turns each
+        // include images. Attachments are an in-session render-only
+        // affordance — the canonical conversation history that Mnemosyne
+        // (server-side) keeps is text-only via the augmented prompt block.
+        // Reloading the page will simply render the user bubble without the
+        // thumbnail strip; the chat content (and Athena's reply) survive.
+        threads: Object.fromEntries(
+          Object.entries(state.threads).map(([agentId, t]: [string, any]) => [
+            agentId,
+            {
+              ...t,
+              messages: (t.messages ?? []).map((m: any) => {
+                if (!m.attachments) return m;
+                const { attachments: _drop, ...rest } = m;
+                return rest;
+              }),
+            },
+          ]),
+        ),
         activeAgentId: state.activeAgentId,
         memoryEnabled: state.memoryEnabled,
         saveConversation: state.saveConversation,
