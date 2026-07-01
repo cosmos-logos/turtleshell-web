@@ -33,6 +33,14 @@ export interface AnalyzeResponse {
   error?: string;
 }
 
+// Wall-clock cap for a single /analyze call. Athena's upstream provider
+// timeouts can be 5 min, but the SSL/TLS handshake to OpenAI occasionally
+// hangs without ever returning (we saw an SSL "bad record mac" silently
+// stall mid-flight earlier in EOS-5 testing). 90s is long enough for the
+// slow-but-completing PDF + Claude path, short enough that one stuck blob
+// doesn't lock the whole multi-attachment submit.
+const ANALYZE_TIMEOUT_MS = 90_000;
+
 // POST /v1/athena/analyze — runtime-plane (Pantheon cluster), mirrors
 // streamChat's URL/auth chain so the same cluster pick + JWT route both calls.
 export async function analyzeFile(
@@ -55,15 +63,41 @@ export async function analyzeFile(
   const ogToken = localStorage.getItem('og_access_token');
   if (ogToken) headers['x-user-identity'] = ogToken;
 
+  // Compose the caller's signal (if any) with our timeout so either one
+  // aborts the fetch. AbortSignal.any (Chrome 116+) is cleanest; we fall
+  // back to a manual relay for older runtimes.
+  const timeoutCtrl = new AbortController();
+  const timer = setTimeout(() => timeoutCtrl.abort(new Error('timeout')), ANALYZE_TIMEOUT_MS);
+  const composedSignal: AbortSignal = (typeof (AbortSignal as any).any === 'function' && signal)
+    ? (AbortSignal as any).any([signal, timeoutCtrl.signal])
+    : timeoutCtrl.signal;
+  if (signal && composedSignal === timeoutCtrl.signal) {
+    signal.addEventListener('abort', () => timeoutCtrl.abort(signal.reason), { once: true });
+  }
+
   console.log('[ATHENA] Analyze →', baseUrl, req.mediaType, `${(req.data.length / 1024).toFixed(1)} KB b64`);
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    credentials: 'include',
-    signal,
-    body: JSON.stringify(req),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      signal: composedSignal,
+      body: JSON.stringify(req),
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    // Differentiate "we timed out" from "user aborted" from "network died"
+    if ((e as Error).name === 'AbortError' || (e as DOMException).name === 'AbortError') {
+      const reason = (timeoutCtrl.signal.aborted && (timeoutCtrl.signal.reason as Error)?.message === 'timeout')
+        ? `Analyze timed out after ${ANALYZE_TIMEOUT_MS / 1000}s — the upstream may be hung; retry or remove`
+        : 'Analyze cancelled';
+      throw new Error(reason);
+    }
+    throw e;
+  }
+  clearTimeout(timer);
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');

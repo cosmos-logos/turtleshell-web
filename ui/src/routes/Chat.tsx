@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { Send, Square, Trash2, Mic, Copy, Check, Volume2, Settings2, X, Wrench, ExternalLink, Brain, Bookmark, Shell, Shuffle, Paperclip, FileText, AlertCircle, Loader2 } from 'lucide-react';
+import { Send, Square, Trash2, Mic, Copy, Check, Volume2, Settings2, X, Wrench, ExternalLink, Brain, Bookmark, Shell, Shuffle, Paperclip, FileText, AlertCircle, Loader2, RotateCcw, Clock } from 'lucide-react';
 import { plutusClient, type QuotaResponse } from '@/lib/api/plutus-client';
 import { getShellId } from '@/lib/api/olympus-grid-client';
 import * as audioManager from '@/lib/audio/audio-manager';
@@ -23,8 +23,9 @@ import { useApollo } from '@/lib/hooks/useApollo';
 import type { ChatMessage, ChatAttachment } from '@/types/chat';
 import {
   routeForAnalyze,
+  prepareForAnalyze,
   fileToBase64,
-  fileToDataUrl,
+  generateChipThumbnail,
   FILE_PICKER_ACCEPT,
   MAX_ATTACHMENTS_PER_TURN,
   type AnalyzeMediaType,
@@ -37,8 +38,14 @@ type StagedAttachment = {
   name: string;
   mediaType: AnalyzeMediaType;
   thumbnailDataUrl?: string;
-  status: 'idle' | 'analyzing' | 'error';
+  // pending = staged but not yet sent to /analyze
+  // analyzing = /analyze in flight
+  // analyzed = /analyze returned ok, result cached on the chip so a partial
+  //   resubmit doesn't re-pay for chips that already succeeded
+  // error = /analyze failed; user can click the retry icon
+  status: 'pending' | 'analyzing' | 'analyzed' | 'error';
   error?: string;
+  analysis?: AnalyzeResult;
 };
 
 const EMPTY_ATTACHMENT_DEFAULT = 'Please review and discuss these attachments.';
@@ -203,6 +210,10 @@ export function Chat() {
   const [controlsOpen, setControlsOpen] = useState(false);
   const [isHoldingMic, setIsHoldingMic] = useState(false);
   const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
+  // isPreparing covers the analyze-loop window — between Send click and the
+  // streamChat call. Drives the send-button spinner so the composer doesn't
+  // look idle while three or four uploads churn through /analyze in serial.
+  const [isPreparing, setIsPreparing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // dragCounter tracks nested drag enter/leave so child elements firing
@@ -537,21 +548,17 @@ export function Chat() {
         errors.push(routed.reason);
         continue;
       }
-      let thumb: string | undefined;
-      if (routed.mediaType.startsWith('image/')) {
-        try {
-          thumb = await fileToDataUrl(routed.file);
-        } catch {
-          // Non-fatal — render filename without thumbnail
-        }
-      }
+      // 96px JPEG thumbnail — must stay small because ChatMessage.attachments
+      // ride localStorage via the chat-store persist layer; full-file data
+      // URLs blew the 5 MB cap with 3+ images per turn.
+      const thumb = await generateChipThumbnail(routed.file);
       accepted.push({
         id: generateId(),
         file: routed.file,
         name: routed.file.name,
         mediaType: routed.mediaType,
         thumbnailDataUrl: thumb,
-        status: 'idle',
+        status: 'pending',
       });
     }
 
@@ -564,8 +571,14 @@ export function Chat() {
   }, [stagedAttachments.length, setError]);
 
   const removeAttachment = useCallback((id: string) => {
-    setStagedAttachments(prev => prev.filter(a => a.id !== id));
-  }, []);
+    setStagedAttachments(prev => {
+      const next = prev.filter(a => a.id !== id);
+      // If the user clears every chip, also clear any attachment-related
+      // chat-level error so the banner doesn't outlive its referents.
+      if (next.length === 0) setError(null);
+      return next;
+    });
+  }, [setError]);
 
   const onFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     void stageFiles(e.target.files);
@@ -600,13 +613,102 @@ export function Chat() {
     void stageFiles(e.dataTransfer.files);
   }, [stageFiles]);
 
+  // Clipboard paste — image kinds get staged like a drop; non-image paste
+  // (plain text) falls through to the textarea's default. ChatGPT/Claude
+  // convention: Cmd+V a screenshot from the OS clipboard drops it as a chip.
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items || items.length === 0) return;
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i];
+      if (!item) continue;
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const f = item.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length === 0) return; // no images — let text paste through
+    e.preventDefault();
+    void stageFiles(files);
+  }, [stageFiles]);
+
   // Submit-with-attachments: serial /analyze per chip, abort on any failure
   // (one bad chip marked red), then call the standard send path with the
   // augmented serverPrompt. Mirrors the spec's two-turn pattern: analyze
   // returns structured JSON; we feed it into /chat for the conversational
   // turn so Athena (and history) get the full context.
+  // Run /analyze for a single attachment, with up-to-2 automatic retries
+  // for transient failures (timeouts, 5xx, network drops). 4xx errors
+  // are NOT retried — those are deterministic (bad mediaType, missing
+  // data, etc.) and retrying just burns shells. The chip stays on
+  // 'analyzing' across retries so the user sees one continuous spinner
+  // instead of flickering between analyzing/error.
+  const analyzeOne = useCallback(async (att: StagedAttachment): Promise<AnalyzeResult> => {
+    setStagedAttachments(prev =>
+      prev.map(a => a.id === att.id ? { ...a, status: 'analyzing', error: undefined } : a),
+    );
+    try {
+      const prepared = await prepareForAnalyze({ ok: true, file: att.file, mediaType: att.mediaType });
+      if (!prepared.ok) throw new Error(prepared.reason);
+      const data = await fileToBase64(prepared.file);
+
+      const MAX_ATTEMPTS = 3; // initial + 2 retries
+      let lastErr: Error | undefined;
+      let resp;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+        try {
+          resp = await analyzeFile({ data, mediaType: prepared.mediaType });
+          lastErr = undefined;
+          break;
+        } catch (e) {
+          lastErr = e as Error;
+          const msg = lastErr.message || '';
+          // 4xx is deterministic — don't burn shells retrying.
+          const is4xx = /returned 4\d\d/.test(msg);
+          const isLast = attempt === MAX_ATTEMPTS;
+          if (is4xx || isLast) throw lastErr;
+          // Exponential backoff: 400ms, 1200ms.
+          await new Promise(r => setTimeout(r, 400 * Math.pow(3, attempt - 1)));
+          console.warn(`[ATHENA] analyze retry ${attempt + 1}/${MAX_ATTEMPTS} for ${att.name}: ${msg.slice(0, 100)}`);
+        }
+      }
+      if (!resp) throw lastErr ?? new Error('analyze: unknown failure');
+
+      setStagedAttachments(prev =>
+        prev.map(a => a.id === att.id ? { ...a, status: 'analyzed', analysis: resp!.result, error: undefined } : a),
+      );
+      return resp.result;
+    } catch (e) {
+      const reason = (e as Error).message;
+      setStagedAttachments(prev =>
+        prev.map(a => a.id === att.id ? { ...a, status: 'error', error: reason } : a),
+      );
+      throw e;
+    }
+  }, []);
+
+  // Retry handler — re-runs /analyze for a single chip (the small ↻ button
+  // on errored chips). Doesn't fire the chat; user clicks send when ready.
+  const retryAttachment = useCallback(async (id: string) => {
+    const att = stagedAttachments.find(a => a.id === id);
+    if (!att) return;
+    try { await analyzeOne(att); }
+    catch { /* state already updated to error inside analyzeOne */ }
+  }, [stagedAttachments, analyzeOne]);
+
+  // Submit-with-attachments runs in two phases:
+  //   1. Analyze every chip that hasn't already succeeded (pending or error).
+  //      Failures don't abort the loop — every chip gets its turn so the
+  //      user sees the full set of error/success states at once.
+  //   2. If all chips end up `analyzed`, build the augmented prompt and fire
+  //      chat. Otherwise leave chips visible with retry buttons; the user
+  //      retries (or removes) failures and clicks send again. Successful
+  //      analyses are cached on each chip so we don't re-pay for them on
+  //      a partial-failure resubmit — mirrors the Plutus shell_cost model
+  //      ("one analyze call costs one shell").
   const submitWithAttachments = useCallback(async () => {
-    if (isStreaming) return;
+    if (isStreaming || isPreparing) return;
     if (isOutOfShells) {
       setError('You are out of Sea Shells. Upgrade to continue.');
       return;
@@ -615,28 +717,48 @@ export function Chat() {
     if (atts.length === 0) return;
 
     setError(null);
-    const analyzed: Array<{ name: string; mediaType: string; analysis: AnalyzeResult }> = [];
+    setIsPreparing(true);
 
-    for (const att of atts) {
-      setStagedAttachments(prev =>
-        prev.map(a => a.id === att.id ? { ...a, status: 'analyzing', error: undefined } : a),
-      );
-      try {
-        const data = await fileToBase64(att.file);
-        const resp = await analyzeFile({ data, mediaType: att.mediaType });
-        analyzed.push({ name: att.name, mediaType: att.mediaType, analysis: resp.result });
-        setStagedAttachments(prev =>
-          prev.map(a => a.id === att.id ? { ...a, status: 'idle' } : a),
-        );
-      } catch (e) {
-        const reason = (e as Error).message;
-        setStagedAttachments(prev =>
-          prev.map(a => a.id === att.id ? { ...a, status: 'error', error: reason } : a),
-        );
-        setError(`Couldn't analyze ${att.name} — remove it or try again. (${reason})`);
-        return;
+    // Phase 1 — analyze every chip that isn't already 'analyzed'. Fan out
+    // in parallel so 4 attachments don't pay the latency of 4 serial trips
+    // to Athena (~5-30s each on cold paths). Promise.allSettled never
+    // rejects — we collect successes into `fresh` and tally failures so
+    // the chat call only fires when every chip has an analysis.
+    //
+    // Already-analyzed chips (from a partial-failure resubmit) are reused
+    // from their cached `analysis` so we don't re-pay Plutus shells for
+    // them.
+    const fresh = new Map<string, AnalyzeResult>();
+    const tasks = atts.map(att => {
+      if (att.status === 'analyzed' && att.analysis) {
+        return Promise.resolve({ id: att.id, result: att.analysis });
+      }
+      return analyzeOne(att).then(result => ({ id: att.id, result }));
+    });
+    const settled = await Promise.allSettled(tasks);
+    let failures = 0;
+    for (const r of settled) {
+      if (r.status === 'fulfilled') {
+        fresh.set(r.value.id, r.value.result);
+      } else {
+        failures += 1;
       }
     }
+
+    if (failures > 0) {
+      setError(
+        `${failures} attachment${failures === 1 ? '' : 's'} failed — click the ↻ to retry or × to remove, then send again.`,
+      );
+      setIsPreparing(false);
+      return; // do NOT fire chat with partial context
+    }
+
+    // Phase 2 — every chip has a fresh analysis. Build prompt + send.
+    const analyzed = atts.map(a => ({
+      name: a.name,
+      mediaType: a.mediaType,
+      analysis: fresh.get(a.id)!,
+    }));
 
     const userText = input.trim();
     const serverPrompt = buildAttachmentPrompt(userText, analyzed);
@@ -649,9 +771,13 @@ export function Chat() {
 
     setInput('');
     setStagedAttachments([]);
+    // Hand off to handleSendMessage — it owns isStreaming from here on.
+    // Clear isPreparing before await so the send button transitions from
+    // "preparing spinner" to "streaming square" cleanly.
+    setIsPreparing(false);
 
     await handleSendMessage(displayContent, { serverPrompt, attachments: bubbleAttachments });
-  }, [isStreaming, isOutOfShells, stagedAttachments, input, handleSendMessage, setError]);
+  }, [isStreaming, isPreparing, isOutOfShells, stagedAttachments, input, handleSendMessage, setError, analyzeOne]);
 
   const sendMessage = useCallback(() => {
     if (stagedAttachments.length > 0) {
@@ -763,20 +889,24 @@ export function Chat() {
     ? <Square size={18} />
     : isAudioActive
       ? <X size={18} />
-      : isHoldingMic
-        ? <Mic size={18} />
-        : <Send size={18} />;
+      : isPreparing
+        ? <Loader2 size={18} className="animate-spin" />
+        : isHoldingMic
+          ? <Mic size={18} />
+          : <Send size={18} />;
 
   const hasComposerContent = input.trim().length > 0 || stagedAttachments.length > 0;
   const sendButtonClass = isStreaming
     ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
     : isAudioActive
       ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-      : isHoldingMic
-        ? 'bg-shell-500/20 text-shell-400 animate-pulse'
-        : hasComposerContent
-          ? 'bg-shell-500 text-white hover:bg-shell-600'
-          : 'bg-surface-3 text-text-muted cursor-not-allowed';
+      : isPreparing
+        ? 'bg-shell-500/20 text-shell-400 cursor-wait'
+        : isHoldingMic
+          ? 'bg-shell-500/20 text-shell-400 animate-pulse'
+          : hasComposerContent
+            ? 'bg-shell-500 text-white hover:bg-shell-600'
+            : 'bg-surface-3 text-text-muted cursor-not-allowed';
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -943,8 +1073,16 @@ export function Chat() {
         ))}
 
         {error && (
-          <div className="mx-auto px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">
-            {error}
+          <div className="mx-auto px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400 flex items-start gap-2">
+            <span className="flex-1">{error}</span>
+            <button
+              onClick={() => setError(null)}
+              className="flex-shrink-0 p-0.5 rounded hover:bg-red-500/20 transition-colors"
+              title="Dismiss"
+              aria-label="Dismiss error"
+            >
+              <X size={14} />
+            </button>
           </div>
         )}
       </div>
@@ -976,6 +1114,7 @@ export function Chat() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        onPaste={handlePaste}
       >
         {isDragging && (
           <div className="absolute inset-2 bg-shell-500/15 border-2 border-dashed border-shell-400 rounded-xl flex items-center justify-center z-20 pointer-events-none">
@@ -993,42 +1132,74 @@ export function Chat() {
         <div className="max-w-3xl mx-auto flex flex-col gap-2">
           {stagedAttachments.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {stagedAttachments.map(att => (
-                <div
-                  key={att.id}
-                  className={`group relative flex items-center gap-2 pr-7 rounded-lg border ${
-                    att.status === 'error'
-                      ? 'border-red-500/50 bg-red-500/10'
-                      : att.status === 'analyzing'
-                        ? 'border-shell-400/50 bg-shell-500/10'
-                        : 'border-border-muted bg-surface-2'
-                  }`}
-                  title={att.error || att.name}
-                >
-                  {att.thumbnailDataUrl ? (
-                    <img src={att.thumbnailDataUrl} alt={att.name} className="w-10 h-10 object-cover rounded-l-lg block" />
-                  ) : (
-                    <div className="w-10 h-10 rounded-l-lg bg-surface-3 flex items-center justify-center flex-shrink-0">
-                      <FileText size={16} className="text-text-muted" />
-                    </div>
-                  )}
-                  <span className="text-xs text-text-primary truncate max-w-[140px]">{att.name}</span>
-                  {att.status === 'analyzing' && (
-                    <Loader2 size={12} className="text-shell-300 animate-spin flex-shrink-0" />
-                  )}
-                  {att.status === 'error' && (
-                    <AlertCircle size={12} className="text-red-400 flex-shrink-0" />
-                  )}
-                  <button
-                    onClick={() => removeAttachment(att.id)}
-                    className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-surface-3 transition-colors"
-                    title="Remove"
-                    aria-label={`Remove ${att.name}`}
+              {stagedAttachments.map(att => {
+                // Chip color + border tells the user the state at a glance:
+                //   pending  → muted (not yet sent — make this obvious so the
+                //              user doesn't think "attached" == "uploaded")
+                //   analyzing → shell-green tint with spinner
+                //   analyzed → shell-green tint with check (ready to send)
+                //   error    → red + retry icon
+                const styles = (
+                  att.status === 'error'
+                    ? { border: 'border-red-500/50', bg: 'bg-red-500/10' }
+                    : att.status === 'analyzing'
+                      ? { border: 'border-shell-400/50', bg: 'bg-shell-500/10' }
+                      : att.status === 'analyzed'
+                        ? { border: 'border-shell-500/50', bg: 'bg-shell-500/15' }
+                        : { border: 'border-border-muted border-dashed', bg: 'bg-surface-2/60' }
+                );
+                const showRetry = att.status === 'error';
+                // Pad-right on the chip reserves space for the X button — bump
+                // when a retry button is also present so it doesn't overlap.
+                const pr = showRetry ? 'pr-12' : 'pr-7';
+                return (
+                  <div
+                    key={att.id}
+                    className={`group relative flex items-center gap-2 ${pr} rounded-lg border ${styles.border} ${styles.bg}`}
+                    title={att.error || `${att.name} — ${att.status}`}
                   >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
+                    {att.thumbnailDataUrl ? (
+                      <img src={att.thumbnailDataUrl} alt={att.name} className="w-10 h-10 object-cover rounded-l-lg block" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-l-lg bg-surface-3 flex items-center justify-center flex-shrink-0">
+                        <FileText size={16} className="text-text-muted" />
+                      </div>
+                    )}
+                    <span className="text-xs text-text-primary truncate max-w-[140px]">{att.name}</span>
+                    {att.status === 'pending' && (
+                      <Clock size={12} className="text-text-muted flex-shrink-0" aria-label="Pending — not uploaded yet" />
+                    )}
+                    {att.status === 'analyzing' && (
+                      <Loader2 size={12} className="text-shell-300 animate-spin flex-shrink-0" aria-label="Analyzing" />
+                    )}
+                    {att.status === 'analyzed' && (
+                      <Check size={12} className="text-shell-400 flex-shrink-0" aria-label="Ready" />
+                    )}
+                    {att.status === 'error' && (
+                      <AlertCircle size={12} className="text-red-400 flex-shrink-0" aria-label="Failed" />
+                    )}
+                    {showRetry && (
+                      <button
+                        onClick={() => void retryAttachment(att.id)}
+                        disabled={isStreaming}
+                        className="absolute right-6 top-1/2 -translate-y-1/2 p-0.5 rounded text-red-300 hover:text-red-200 hover:bg-red-500/20 transition-colors disabled:opacity-40"
+                        title={`Retry — ${att.error || 'analyze failed'}`}
+                        aria-label={`Retry ${att.name}`}
+                      >
+                        <RotateCcw size={12} />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => removeAttachment(att.id)}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-surface-3 transition-colors"
+                      title="Remove"
+                      aria-label={`Remove ${att.name}`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
           <div className="flex items-center gap-2">
@@ -1214,7 +1385,7 @@ export function Chat() {
             onPointerUp={handleSendPointerUp}
             onPointerCancel={endHold}
             onClick={handleSendClick}
-            disabled={!isStreaming && !isAudioActive && !hasComposerContent && !isHoldingMic}
+            disabled={isPreparing || (!isStreaming && !isAudioActive && !hasComposerContent && !isHoldingMic)}
             className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center transition-all select-none touch-none ${sendButtonClass}`}
           >
             {sendButtonIcon}
