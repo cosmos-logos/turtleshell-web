@@ -19,6 +19,23 @@ function getBaseUrl(): string {
   return useEnvironmentStore.getState().getPlutusUrl();
 }
 
+/**
+ * GAP-66: `credentials: 'include'` alone is not enough for the
+ * `/plutus/api/stripe/**` route family — Ares' cookie-to-header middleware
+ * fires for `/plutus/api/quota/**` but not for the stripe sub-tree, so
+ * signed-in users were hitting subscription-status anonymously (`user_identity=anonymous`,
+ * `tenant_id=default` in the api.inbound ledger row despite Homer's sub being in the
+ * path). Mirroring the mnemosyne/web-client.ts pattern: attach `x-user-identity`
+ * explicitly from the session JWT. Belt-and-suspenders with the cookie so both
+ * routes now authenticate identically.
+ */
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const headers: Record<string, string> = { ...extra };
+  const token = localStorage.getItem('og_access_token');
+  if (token) headers['x-user-identity'] = token;
+  return headers;
+}
+
 
 /**
  * In-flight request map keyed by shellId. AppShell, Sidebar, Chat, and a
@@ -37,6 +54,7 @@ export const plutusClient = {
     const promise = (async () => {
       const res = await fetch(`${getBaseUrl()}/quota/${shellId}`, {
         credentials: 'include',
+        headers: authHeaders(),
       });
       if (!res.ok) throw new Error('Quota fetch failed');
       return (await res.json()) as QuotaResponse;
@@ -59,7 +77,7 @@ export const plutusClient = {
   ): Promise<{ checkout_url: string }> => {
     const res = await fetch(`${getBaseUrl()}/stripe/checkout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       credentials: 'include',
       body: JSON.stringify({
         shell_id: shellId,
@@ -83,7 +101,7 @@ export const plutusClient = {
   ): Promise<{ ok: boolean; tier: string }> => {
     const res = await fetch(`${getBaseUrl()}/stripe/change-plan`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       credentials: 'include',
       body: JSON.stringify({ shell_id: shellId, tier }),
     });
@@ -105,6 +123,7 @@ export const plutusClient = {
     // endpoint isn't deployed yet (pre-v1.7.4.29 Plutus).
     const res = await fetch(`${getBaseUrl()}/stripe/subscription-status/${shellId}`, {
       credentials: 'include',
+      headers: authHeaders(),
     });
     if (!res.ok) throw new Error('Subscription status fetch failed');
     return res.json();
@@ -121,7 +140,7 @@ export const plutusClient = {
   }): Promise<{ ok: boolean }> => {
     const res = await fetch(`${getBaseUrl()}/feedback/churn`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       credentials: 'include',
       body: JSON.stringify(payload),
     });
@@ -135,7 +154,7 @@ export const plutusClient = {
   ): Promise<{ portal_url: string }> => {
     const res = await fetch(`${getBaseUrl()}/stripe/portal`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       credentials: 'include',
       body: JSON.stringify({ shell_id: shellId, return_url: returnUrl }),
     });
