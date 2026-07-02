@@ -21,7 +21,7 @@ export const OCEAN_AGENTS: OceanAgent[] = [
     description: 'Born 400 million years ago.\nBreathes air and water both.\nFelt something behind the glass\nand started the whole story.',
     greekName: 'Κόσμος',
     shellPrice: '0 shells · origin',
-    available: true,
+    available: false,
   },
   {
     codename: 'logos',
@@ -32,7 +32,7 @@ export const OCEAN_AGENTS: OceanAgent[] = [
     description: 'Carries the truth into the world.\nThe shell is the platform.\nThe turtle is the sovereign vessel.\nThe word was always first.',
     greekName: 'Λόγος',
     shellPrice: '1 shell / session',
-    available: true,
+    available: false,
   },
 
   // ── Olympus-616 Gods ───────────────────────────────
