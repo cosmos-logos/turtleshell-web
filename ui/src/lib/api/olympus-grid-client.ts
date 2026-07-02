@@ -685,12 +685,42 @@ export function isOlympusGridTokenPresent(): boolean {
   return !!localStorage.getItem('olympus_grid_email');
 }
 
+/** Decode a JWT's `sub` claim WITHOUT verification (display-only use).
+ *  Returns null on any parse failure. */
+function decodeJwtSub(token: string | null | undefined): string | null {
+  if (!token) return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const b64 = parts[1]!.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded));
+    return typeof payload?.sub === 'string' && payload.sub.length > 0
+      ? payload.sub
+      : null;
+  } catch { return null; }
+}
+
 /**
  * Get the authenticated user's shell ID (JWT sub).
- * Falls back to 'shell-default' if not authenticated.
+ *
+ * Prefer the JWT sub — it's the authoritative user identity minted by the
+ * auth handler and available IMMEDIATELY after Apple SIWA / email-code
+ * verify, before the mirrored `olympus_grid_shell_id` localStorage payload
+ * is populated (or on paths where verify returned no `user` envelope).
+ *
+ * Never returns 'shell-default': that string would ride to plutus, plutus
+ * would call SF's /v1/turtleshell/billing/shell-default, and the SOQL
+ * `WHERE Identity__r.Sub__c = 'shell-default'` returns zero → 500 "Profile
+ * not found for shellId: shell-default". Empty string is safer — server
+ * treats it as missing shell-id and routes to its own default bucket, no
+ * URL segment becomes a literal shellId lookup. Mirrors the iris PR #119
+ * fix (templeathena AthenaChat.tsx) that landed for the same anti-pattern.
  */
 export function getShellId(): string {
-  return localStorage.getItem('olympus_grid_shell_id') || 'shell-default';
+  const jwtSub = decodeJwtSub(localStorage.getItem('og_access_token'));
+  if (jwtSub) return jwtSub;
+  return localStorage.getItem('olympus_grid_shell_id') || '';
 }
 
 // ── Connection Test ──────────────────────────────────────
