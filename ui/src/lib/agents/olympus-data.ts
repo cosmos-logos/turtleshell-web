@@ -26,7 +26,7 @@ export const OLYMPUS_AGENTS: OlympusAgent[] = [
     greekName: 'ΚΟΣΜΟΣ',
     shellPrice: '0 shells · origin',
     capabilities: ['Navigator', 'Core Agent', 'Free Forever'],
-    available: true,
+    available: false,
   },
   {
     codename: 'logos',
@@ -39,7 +39,7 @@ export const OLYMPUS_AGENTS: OlympusAgent[] = [
     greekName: 'ΛΟΓΟΣ',
     shellPrice: '1 shell / session',
     capabilities: ['Discovery', 'Sovereign Agent', 'Protocol'],
-    available: true,
+    available: false,
   },
 
   // ── Olympus-616 Gods ───────────────────────────────

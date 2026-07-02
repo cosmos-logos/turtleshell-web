@@ -12,6 +12,13 @@ import { useAgentThemeStore } from '@/lib/store/agent-theme-store';
 import { OceanAgentsView } from '@/components/agents/OceanAgentsView';
 import { OlympusAgentsView } from '@/components/agents/OlympusAgentsView';
 
+// Codenames that ship as "Soon" — the card renders but every interaction
+// is gated. Athena is the only launchable interface tonight; Cosmos + Logos
+// come later. Ocean + Olympus themes surface this via `available: false` on
+// their catalogs (existing Coming Soon overlay). The default view honors
+// this set explicitly in AgentRow below.
+export const COMING_SOON_CODENAMES = new Set(['cosmos', 'logos']);
+
 // ── Agent Configuration ──────────────────────────────────────
 
 export interface AgentConfig {
@@ -666,6 +673,7 @@ function AgentRow({ agent, expanded, onExpand }: {
   agent: { id: string; type: 'cosmos-agent' | 'byok' | 'custom'; config?: AgentConfig; builtinAgent?: Agent; name: string; icon: string; description: string; color: string; visible: boolean };
   expanded: boolean; onExpand: () => void;
 }) {
+  const isComingSoon = COMING_SOON_CODENAMES.has(agent.id);
   const toggleVisibility = useAgentStore((s) => s.toggleVisibility);
   const cosmosAgents = useCosmosLogosStore((s) => s.agents);
   const cosmosStore = useCosmosLogosStore();
@@ -729,13 +737,21 @@ function AgentRow({ agent, expanded, onExpand }: {
   const byokHasKey = isBYOK && !!getUserApiKeys()[agent.id as keyof UserApiKeys];
 
   return (
-    <div className={`border border-border-muted rounded-xl overflow-hidden transition-colors ${expanded ? 'border-shell-500/30' : ''}`}>
+    <div className={`border border-border-muted rounded-xl overflow-hidden transition-colors ${expanded ? 'border-shell-500/30' : ''} ${isComingSoon ? 'opacity-50' : ''}`}>
       {/* Summary row */}
-      <div className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface-2 transition-colors" onClick={onExpand}>
+      <div
+        className={`flex items-center gap-3 px-4 py-3 transition-colors ${isComingSoon ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-surface-2'}`}
+        onClick={isComingSoon ? undefined : onExpand}
+        aria-disabled={isComingSoon}
+        title={isComingSoon ? `${agent.name} is coming soon` : undefined}
+      >
         <span className="w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0 bg-surface-3">{agent.icon}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold">{agent.name}</span>
+            {isComingSoon && (
+              <span className="text-2xs text-text-muted font-semibold px-1.5 py-0.5 bg-surface-3 rounded-full uppercase tracking-wider">Soon</span>
+            )}
             {agent.type === 'custom' && <span className="text-2xs text-shell-400 font-medium px-1.5 py-0.5 bg-shell-500/10 rounded-full">Custom</span>}
             {connectedCount > 0 && (
               <span className="text-2xs text-green-400 font-medium px-1.5 py-0.5 bg-green-500/10 rounded-full">{connectedCount} connected</span>
@@ -1238,9 +1254,16 @@ export function Agents() {
               className="flex items-center gap-2 px-3 py-2 border border-border-muted text-text-secondary hover:bg-surface-2 rounded-xl text-xs font-medium transition-colors">
               <Plus size={14} /> Connect
             </button>
-            <button onClick={() => setShowCreate(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-shell-500/10 text-shell-400 hover:bg-shell-500/20 rounded-xl text-xs font-semibold transition-colors">
+            {/* Create your own — gated as "Soon" until the workflow is ready.
+                Athena is the only launchable agent tonight. Kept visible so
+                the affordance stays discoverable. */}
+            <button
+              disabled
+              title="Custom agents coming soon"
+              className="flex items-center gap-2 px-3 py-2 bg-surface-3 text-text-muted rounded-xl text-xs font-semibold cursor-not-allowed opacity-60"
+            >
               <Sparkles size={14} /> Create
+              <span className="text-2xs font-semibold px-1.5 py-0.5 bg-surface-2 rounded-full uppercase tracking-wider ml-1">Soon</span>
             </button>
           </div>
         </div>

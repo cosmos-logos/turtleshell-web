@@ -158,20 +158,26 @@ function GuideSection() {
             </button>
           ))}
 
-          <Link
-            to="/app/settings/change-guide"
-            className="flex items-center gap-3 p-4 rounded-xl bg-surface-1 border border-dashed border-border-muted text-text-muted hover:border-shell-500/40 hover:text-shell-400 transition-colors"
+          {/* "Add another guide" — gated as "Soon" until multi-guide onboarding
+              is ready. Athena is the only launchable interface tonight. */}
+          <div
+            className="flex items-center gap-3 p-4 rounded-xl bg-surface-1 border border-dashed border-border-muted text-text-muted opacity-60 cursor-not-allowed"
+            title="Additional guides coming soon"
+            aria-disabled="true"
           >
             <div className="w-10 h-10 rounded-full bg-surface-2 border border-dashed border-border-muted flex items-center justify-center shrink-0">
               <Plus size={18} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold">Add another guide</div>
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold">Add another guide</div>
+                <span className="text-2xs font-semibold px-1.5 py-0.5 bg-surface-3 rounded-full uppercase tracking-wider">Soon</span>
+              </div>
               <div className="text-2xs mt-0.5">
                 Each has their own voice and their own memory.
               </div>
             </div>
-          </Link>
+          </div>
         </div>
       )}
     </section>
