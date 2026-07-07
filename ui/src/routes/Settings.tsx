@@ -1,4 +1,5 @@
-import { Info, Sun, Moon, Brain, Wrench, Compass, Plus } from 'lucide-react';
+import { useState } from 'react';
+import { Info, Sun, Moon, Brain, Wrench, Compass, Plus, Sparkles, Mic } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { useChatStore } from '@/lib/store/chat-store';
@@ -9,6 +10,9 @@ import { useAllowDeveloperMode } from '@/lib/hooks/useAllowDeveloperMode';
 import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
 import { useAgentStore, hasUserApiKey } from '@/lib/store/agent-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
+import { useSovereignAiStore } from '@/lib/store/sovereign-ai-store';
+import { chatProviderByKey, voiceProviderByKey } from '@/lib/sovereign-ai/provider-catalog';
+import { ProviderChooser } from '@/components/settings/ProviderChooser';
 import { GUIDES, BYOK_GUIDES } from '@/routes/onboarding/OnboardingData';
 
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
@@ -184,6 +188,90 @@ function GuideSection() {
   );
 }
 
+// ── Sovereign AI section ───────────────────────────────
+// The commodity-thesis-as-UI: chat + voice provider picker. Every row is a
+// visual peer of Olympus-Grid. Storage is per-provider slot (Zustand +
+// localStorage) — switching providers doesn't wipe stored keys.
+function SovereignAiSection() {
+  const store = useSovereignAiStore();
+  const [category, setCategory] = useState<'chat' | 'voice' | null>(null);
+  const chatCatalog = chatProviderByKey(store.chatProvider);
+  const voiceCatalog = voiceProviderByKey(store.voiceProvider);
+  const chatKeysStored = Object.values(store.chatKeysByProvider).filter((v) => !!v).length;
+  const voiceKeysStored = Object.values(store.voiceKeysByProvider).filter((v) => !!v).length;
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
+        <Sparkles size={14} /> Sovereign AI
+      </h2>
+      <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
+        <p className="text-2xs text-text-muted">
+          Pick who thinks and speaks for your Guardian. Bring your own keys — sealed for the exact server that will use them; not even we can read them in transit.
+        </p>
+
+        {/* Chat AI row */}
+        <button
+          onClick={() => setCategory('chat')}
+          className="w-full flex items-center gap-3 p-3 rounded-lg bg-surface-2/40 border border-border-muted hover:border-shell-500/40 transition-colors text-left"
+        >
+          <Brain size={16} className="flex-shrink-0 text-shell-400" />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-text-primary flex items-center gap-2">
+              Chat AI
+              {chatKeysStored > 0 && (
+                <span className="text-2xs font-normal text-shell-400/80 bg-shell-500/10 px-1.5 py-0.5 rounded-full">
+                  {chatKeysStored} key{chatKeysStored === 1 ? '' : 's'} saved
+                </span>
+              )}
+            </div>
+            <div className="text-2xs text-text-muted mt-0.5">
+              {chatCatalog?.displayName ?? 'Olympus-Grid'}
+              {store.chatProvider !== 'olympus-grid' && <span className="text-shell-400/80"> · your key</span>}
+            </div>
+          </div>
+          <span className="text-xs text-text-muted">Change ›</span>
+        </button>
+
+        {/* Voice AI row */}
+        <button
+          onClick={() => setCategory('voice')}
+          className="w-full flex items-center gap-3 p-3 rounded-lg bg-surface-2/40 border border-border-muted hover:border-shell-500/40 transition-colors text-left"
+        >
+          <Mic size={16} className="flex-shrink-0 text-shell-400" />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-text-primary flex items-center gap-2">
+              Voice AI
+              {voiceKeysStored > 0 && (
+                <span className="text-2xs font-normal text-shell-400/80 bg-shell-500/10 px-1.5 py-0.5 rounded-full">
+                  {voiceKeysStored} key{voiceKeysStored === 1 ? '' : 's'} saved
+                </span>
+              )}
+            </div>
+            <div className="text-2xs text-text-muted mt-0.5">
+              {voiceCatalog?.displayName ?? 'Olympus-Grid'}
+              {store.voiceProvider !== 'olympus-grid' && <span className="text-shell-400/80"> · your key</span>}
+            </div>
+          </div>
+          <span className="text-xs text-text-muted">Change ›</span>
+        </button>
+
+        <div className="pt-2 text-2xs text-text-muted italic">
+          Every AI is a commodity. If one gets too expensive, switch. Your Guardian doesn't care.
+        </div>
+      </div>
+
+      {category && (
+        <ProviderChooser
+          category={category}
+          open={true}
+          onClose={() => setCategory(null)}
+        />
+      )}
+    </section>
+  );
+}
+
 const AGENT_THEMES: { value: AgentTheme; label: string }[] = [
   { value: 'standard', label: 'Standard' },
   { value: 'ocean', label: 'Ocean' },
@@ -246,6 +334,8 @@ export function Settings() {
         </div>
 
         <GuideSection />
+
+        <SovereignAiSection />
 
         {/* Appearance — Dark Mode toggle only. First visible knob. */}
         <section className="space-y-3">
