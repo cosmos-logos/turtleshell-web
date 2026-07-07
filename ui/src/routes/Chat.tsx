@@ -7,7 +7,9 @@ import * as audioManager from '@/lib/audio/audio-manager';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useApolloStore } from '@/lib/store/apollo-store';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
-import { streamChat } from '@/lib/athena/chat-client';
+import { useSovereignAiStore, getChatByokKey, getChatByokEndpoint } from '@/lib/store/sovereign-ai-store';
+import { chatProviderByKey } from '@/lib/sovereign-ai/provider-catalog';
+import { streamChat, type ChatProvenance, type SovereignAIIntent } from '@/lib/athena/chat-client';
 import { logSession } from '@/lib/api/session-log';
 import { streamDirect, hasDirectProvider } from '@/lib/providers/direct-chat';
 import * as webMnemosyne from '@/lib/mnemosyne/web-client';
@@ -236,8 +238,11 @@ export function Chat() {
   const controlsRef = useRef<HTMLDivElement>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const didHoldRef = useRef(false);
-  const { messages, isStreaming, error, addMessage, updateLastAssistantMessage, setStreaming, setError, clearMessages, newThread, setConversationId, memoryEnabled, saveConversation, setMemoryEnabled, setSaveConversation } =
+  const { messages, isStreaming, error, addMessage, updateLastAssistantMessage, setLastAssistantProvenance, setStreaming, setError, clearMessages, newThread, setConversationId, memoryEnabled, saveConversation, setMemoryEnabled, setSaveConversation } =
     useChatStore();
+  // EOS-5.4 — subscribe to the sovereign store so a provider switch in
+  // Settings takes effect on the very next Send without a page reload.
+  useSovereignAiStore((s) => s.chatProvider);
   const developerMode = useEnvironmentStore((s) => s.developerMode);
   const showAvatars = useChatPreferencesStore((s) => s.showAgentAvatars);
   const agentAvatar = useAgentAvatar();
@@ -252,8 +257,17 @@ export function Chat() {
   const speakRef = useRef<(text: string) => Promise<void>>(undefined);
   const sendRef = useRef<(prompt: string) => void>(undefined);
 
-  // Talk mode → auto-send; hold-to-record → append to input for review
-  const hasTTS = useCosmosLogosStore((s) => s.agents.some(a => a.capabilities.includes('x-tts')));
+  // Talk mode → auto-send; hold-to-record → append to input for review.
+  // Voice availability now has two triggers — either the legacy cosmos-logos
+  // x-tts handshake (pre-EOS-5.4 flow) OR the sovereign Voice AI store is
+  // enabled (default true; means Apollo's house Olympus-Grid path works out
+  // of the box). The play button on assistant messages appears whenever
+  // EITHER of these is on — users with a sovereign voice provider picked
+  // (OpenAI TTS / ElevenLabs / XTTS) get their choice; unconfigured users
+  // still hear the house voice.
+  const hasLegacyTTS = useCosmosLogosStore((s) => s.agents.some(a => a.capabilities.includes('x-tts')));
+  const sovereignVoiceEnabled = useSovereignAiStore((s) => s.useAI);
+  const hasTTS = hasLegacyTTS || sovereignVoiceEnabled;
   const activeCosmosChatName = useCosmosLogosStore((s) => {
     if (!s.activeChatAgentId) return null;
     const agent = s.agents.find(a => a.id === s.activeChatAgentId);
@@ -406,15 +420,49 @@ export function Chat() {
       // see the human intent, not the analyze JSON blobs.
       const serverPrompt = internal?.serverPrompt ?? prompt;
 
+      // EOS-5.4 — build the sovereign AI intent from the settings store.
+      // When the user has picked a non-Olympus-Grid chat provider, streamChat
+      // fetches Athena's manifest, seals the {provider,key,endpoint,model}
+      // payload against Athena's pubkey, and attaches the sovereignAI block
+      // to the /chat body. Athena decrypts, routes to the BYOK provider
+      // adapter with the user's key, and emits a provenance frame.
+      const sai = useSovereignAiStore.getState();
+      const sovereignChatProvider = sai.useAI ? sai.chatProvider : 'olympus-grid';
+      let sovereignAI: SovereignAIIntent | null = null;
+      if (sovereignChatProvider !== 'olympus-grid') {
+        const providerRow = chatProviderByKey(sovereignChatProvider);
+        sovereignAI = {
+          chatProvider:  sovereignChatProvider,
+          byokKey:       getChatByokKey(),
+          byokEndpoint:  getChatByokEndpoint(),
+          byokModel:     providerRow?.defaultModel ?? null,
+          clientSurface: 'turtleshell-web',
+        };
+      }
+
       // Choose streaming source
       const tokenStream = useDirectProvider
         ? streamDirect(builtinAgent.id, serverPrompt, controller.signal, { systemPrompt: directSystemPrompt, conversationHistory: directHistory })
-        : streamChat(serverPrompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save, systemPrompt, agentId: llmAgentId, endpointOverride: agentEndpoint });
+        : streamChat(serverPrompt, controller.signal, mem ? convId : null, { memoryEnabled: mem, saveConversation: save, systemPrompt, agentId: llmAgentId, endpointOverride: agentEndpoint, sovereignAI });
 
       for await (const token of tokenStream) {
         // Handle metadata objects (conversationId)
         if (typeof token === 'object' && 'conversationId' in token) {
           if (mem) setConversationId(token.conversationId);
+          continue;
+        }
+        // EOS-5.4 provenance frame — attach to the current assistant message
+        // so the Powered-by chip renders below the bubble.
+        if (typeof token === 'object' && 'provenance' in token) {
+          const p = token.provenance as ChatProvenance;
+          setLastAssistantProvenance({
+            chatProvider:      p.chatProvider,
+            chatModel:         p.chatModel,
+            byokUsed:          p.byokUsed,
+            endpointClass:     p.endpointClass,
+            tithed:            p.tithed,
+            turnCorrelationId: p.turnCorrelationId,
+          });
           continue;
         }
         accumulated += token;
@@ -1033,6 +1081,29 @@ export function Chat() {
                   )}
                 </div>
               </div>
+              {/* EOS-5.4 Powered-by chip — appears BELOW the bubble on
+                  assistant messages with an attached provenance frame.
+                  BYOK path renders "⚡ Powered by {provider} · {model} ·
+                  your key · {endpointClass}"; house path renders
+                  "⚡ Powered by {provider} · {model} · house". */}
+              {msg.role === 'assistant' && msg.provenance && (
+                <div className="text-2xs text-shell-400/80 flex items-center gap-1 mt-0.5">
+                  <span title={`Turn ${msg.provenance.turnCorrelationId.slice(0, 8)}`}>⚡</span>
+                  <span className="font-medium">Powered by {msg.provenance.chatProvider}</span>
+                  <span className="text-text-muted"> · </span>
+                  <span className="font-mono text-2xs">{msg.provenance.chatModel}</span>
+                  <span className="text-text-muted"> · </span>
+                  {msg.provenance.byokUsed ? (
+                    <>
+                      <span className="text-shell-400/90">your key</span>
+                      <span className="text-text-muted"> · </span>
+                      <span className="text-text-muted">{msg.provenance.endpointClass}</span>
+                    </>
+                  ) : (
+                    <span className="text-text-muted">house</span>
+                  )}
+                </div>
+              )}
               {/* Metadata row — OUTSIDE the message-bubble. Timestamp
                   + copy + play are system chrome, not part of the speech
                   act; keeping them on the neutral background makes the

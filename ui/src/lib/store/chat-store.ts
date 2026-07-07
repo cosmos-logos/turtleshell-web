@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ChatMessage } from '@/types/chat';
+import type { ChatMessage, ChatMessageProvenance } from '@/types/chat';
 
 interface AgentThread {
   messages: ChatMessage[];
@@ -26,6 +26,10 @@ interface ChatStore {
   newThread: () => void;
   addMessage: (message: ChatMessage) => void;
   updateLastAssistantMessage: (content: string) => void;
+  /** EOS-5.4: attach the provenance frame to the most-recent assistant
+   *  message. Called from Chat.tsx when streamChat yields a `provenance`
+   *  metadata object. Powered-by chip renders when this is present. */
+  setLastAssistantProvenance: (provenance: ChatMessageProvenance) => void;
   setStreaming: (streaming: boolean) => void;
   setError: (error: string | null) => void;
   setConversationId: (id: string | null) => void;
@@ -96,6 +100,18 @@ export const useChatStore = create<ChatStore>()(
         const last = msgs.length - 1;
         if (last >= 0 && msgs[last]?.role === 'assistant') {
           msgs[last] = { ...msgs[last], content };
+        }
+        const updated = { ...threads, [activeAgentId]: { ...t, messages: msgs } };
+        set({ threads: updated, ...syncDerived(updated, activeAgentId) });
+      },
+
+      setLastAssistantProvenance: (provenance) => {
+        const { activeAgentId, threads } = get();
+        const t = thread(threads, activeAgentId);
+        const msgs = [...t.messages];
+        const last = msgs.length - 1;
+        if (last >= 0 && msgs[last]?.role === 'assistant') {
+          msgs[last] = { ...msgs[last], provenance };
         }
         const updated = { ...threads, [activeAgentId]: { ...t, messages: msgs } };
         set({ threads: updated, ...syncDerived(updated, activeAgentId) });

@@ -4,6 +4,38 @@ import { buildMCPHeaders } from './mcp-headers';
 import { getShellId } from '@/lib/api/olympus-grid-client';
 import { useChatStore } from '@/lib/store/chat-store';
 import { getToolBindingsForAgent } from '@/lib/store/tool-bindings-store';
+import { sealSovereignAiEnvelope } from '@/lib/sovereign-ai/envelope';
+
+/** Sovereign AI intent — attached to the chat request when the user has picked
+ *  a non-Olympus-Grid chat provider and supplied BYOK material. streamChat
+ *  fetches Athena's manifest, seals the payload, and adds the sovereignAI
+ *  block to the wire body. See src/lib/sovereign-ai/envelope.ts and
+ *  olympus-616/docs/sovereign-ai-seam-cross-surface-reference.md §3. */
+export interface SovereignAIIntent {
+  chatProvider: string;        // openai | anthropic | grok | gemini | ollama
+  byokKey: string | null;
+  byokEndpoint: string | null;
+  byokModel: string | null;
+  clientSurface: string;       // "turtleshell-web"
+}
+
+/** Provenance frame — server emits after a sovereign turn as an SSE
+ *  `event: provenance` frame. Callers surface it via the metadata yield
+ *  (same union as conversationId) so Chat.tsx can render the Powered-by
+ *  chip below the assistant bubble. */
+export interface ChatProvenance {
+  chatProvider: string;
+  chatModel: string;
+  byokUsed: boolean;
+  endpointClass: string;
+  clientSurface: string | null;
+  tithed: boolean;
+  infrastructureShells: number;
+  turnCorrelationId: string;
+  tokensIn: number;
+  tokensOut: number;
+  turnDurationMs: number;
+}
 
 /**
  * Stream a chat message to the Athena LLM backend.
@@ -20,8 +52,8 @@ export async function* streamChat(
   prompt: string,
   signal?: AbortSignal,
   conversationId?: string | null,
-  options?: { memoryEnabled?: boolean; saveConversation?: boolean; systemPrompt?: string; agentId?: string; endpointOverride?: string },
-): AsyncGenerator<string | { conversationId: string }, void, unknown> {
+  options?: { memoryEnabled?: boolean; saveConversation?: boolean; systemPrompt?: string; agentId?: string; endpointOverride?: string; sovereignAI?: SovereignAIIntent | null },
+): AsyncGenerator<string | { conversationId: string } | { provenance: ChatProvenance }, void, unknown> {
   // Resolve base URL: explicit endpoint > connected cosmos agent > environment preset
   const activeChatAgentId = useCosmosLogosStore.getState().activeChatAgentId;
   const cosmosAgent = activeChatAgentId
@@ -91,8 +123,60 @@ export async function* streamChat(
     });
   }
 
+  // ── EOS-5.4 Sovereign AI ── Seal the BYOK envelope BEFORE we build the
+  // body. The plaintext key never touches the wire — only the sealed box
+  // does. Athena's private key decrypts on arrival; even Ares and Hermes
+  // (both pass-through proxies for the body) cannot read the key.
+  //
+  // When sovereignAI is absent or chatProvider === 'olympus-grid', we take
+  // the house path and skip the seal — the request lands on the same
+  // /chat endpoint but with no sovereignAI block, and Athena falls back
+  // to its server-side key resolution + emits a provenance frame carrying
+  // byokUsed=false, tithed=true, so the client can still render the chip.
+  let sovereignBlock: {
+    chatProvider: string;
+    sealedEnvelope: string;
+    envelopeFormat: string;
+    envelopeVersion: string;
+    manifestUrl: string;
+  } | null = null;
+  if (options?.sovereignAI && options.sovereignAI.chatProvider !== 'olympus-grid') {
+    try {
+      const manifestUrl = `${baseUrl}/.well-known/cosmos-logos.json`;
+      const sealed = await sealSovereignAiEnvelope(
+        manifestUrl,
+        {
+          provider: options.sovereignAI.chatProvider,
+          key: options.sovereignAI.byokKey,
+          endpoint: options.sovereignAI.byokEndpoint,
+          model: options.sovereignAI.byokModel,
+        },
+        options.sovereignAI.clientSurface,
+      );
+      sovereignBlock = {
+        chatProvider: options.sovereignAI.chatProvider,
+        sealedEnvelope: sealed.sealedEnvelopeBase64,
+        envelopeFormat: sealed.envelopeFormat,
+        envelopeVersion: sealed.envelopeVersion,
+        manifestUrl: sealed.manifestUrl,
+      };
+      console.log('[ATHENA] sovereignAI sealed', {
+        provider: options.sovereignAI.chatProvider,
+        byokPresent: !!options.sovereignAI.byokKey,
+        endpointPresent: !!options.sovereignAI.byokEndpoint,
+        manifestFp: sealed.manifestFingerprint,
+      });
+    } catch (err) {
+      // Fail-safe: if the seal fails, refuse to fall through to the house
+      // path (which would billing-mislead the user). Surface as a chat
+      // error so the UI shows what happened.
+      throw new Error(`Failed to seal Sovereign AI envelope: ${(err as Error).message}`);
+    }
+  }
+
   console.log('[ATHENA] Chat request →', baseUrl,
     'MCP:', mcpServers.length > 0 ? `${mcpServers.length} server(s)` : 'none',
+    'sovereignAI:', sovereignBlock ? sovereignBlock.chatProvider : '(none)',
     'system_prompt:', options?.systemPrompt ? options.systemPrompt.substring(0, 60) + '...' : '(none)');
 
   const headers: Record<string, string> = {
@@ -125,6 +209,9 @@ export async function* streamChat(
       ...(options?.memoryEnabled === false ? { memoryEnabled: false } : {}),
       ...(options?.saveConversation ? { saveConversation: true } : {}),
       ...(mcpServers.length > 0 ? { mcpServers } : {}),
+      // EOS-5.4 sovereign envelope — attach the sealed block when present.
+      // Ares + Hermes pass it through untouched; only Athena decrypts.
+      ...(sovereignBlock ? { sovereignAI: sovereignBlock } : {}),
     }),
     signal,
   });
@@ -189,6 +276,32 @@ export async function* streamChat(
                 yield { conversationId: meta.conversationId };
               }
             } catch { /* ignore malformed metadata */ }
+            currentEventType = '';
+            continue;
+          }
+          // EOS-5.4 provenance frame — server emits ONE per turn just before
+          // [DONE]. Contains the honest attribution the Powered-by chip
+          // renders. Yield as a metadata object so Chat.tsx can peel it off
+          // the token stream via a typeof===object check.
+          if (currentEventType === 'provenance') {
+            try {
+              const prov = JSON.parse(data);
+              yield {
+                provenance: {
+                  chatProvider:         String(prov.chatProvider ?? 'unknown'),
+                  chatModel:            String(prov.chatModel ?? 'unknown'),
+                  byokUsed:             prov.byokUsed === true,
+                  endpointClass:        String(prov.endpointClass ?? 'managed-cloud'),
+                  clientSurface:        prov.clientSurface != null ? String(prov.clientSurface) : null,
+                  tithed:               prov.tithed === true,
+                  infrastructureShells: Number(prov.infrastructureShells ?? 1),
+                  turnCorrelationId:    String(prov.turnCorrelationId ?? ''),
+                  tokensIn:             Number(prov.tokensIn ?? 0),
+                  tokensOut:            Number(prov.tokensOut ?? 0),
+                  turnDurationMs:       Number(prov.turnDurationMs ?? 0),
+                },
+              };
+            } catch { /* malformed provenance is non-fatal */ }
             currentEventType = '';
             continue;
           }
