@@ -42,6 +42,106 @@ export interface RoadmapItem {
 // Newest first. Append your PR's entry at the TOP, not the bottom.
 export const RELEASE_NOTES: ReadonlyArray<ReleaseNote> = [
   {
+    date: '2026-07-07',
+    title: 'The gift of sovereign AI',
+    body:
+      'The point of TurtleShell was never to be the middle. It\'s to be ' +
+      'the shell — a place where you can hold any AI, any voice, any ' +
+      'relationship, and know that when you switch, nothing about you ' +
+      'gets held on to. Today that promise gets a floor to stand on. ' +
+      'You can bring your own OpenAI, Anthropic, xAI, Google, or a ' +
+      'local Ollama for your chat. You can bring your own OpenAI voice, ' +
+      'ElevenLabs, or your own XTTS server for how your guide sounds. ' +
+      'Every reply tells you who really answered — a small chip under ' +
+      'each turn — and if the server tries to swap in someone else, ' +
+      'you\'ll see a red mark instead of silence. This is ' +
+      'freedom-from-vendor-lock-in, in your hands.',
+    bullets: [
+      'Chat: OpenAI (GPT), Anthropic (Claude), xAI (Grok), Google (Gemini), Ollama (your own machine), LM Studio (your own machine).',
+      'Voice: OpenAI TTS, ElevenLabs, XTTS on your own server, plus the built-in voices.',
+      'Your key is sealed on your device with the specific god that will use it. Ares (our gate) and Hermes (our router) see only opaque bytes; only the god that needs it can open it.',
+      'Under every reply is a Powered-by chip that names who thought and who spoke.',
+      'If the server sends back a different provider than you asked for, you keep the answer AND get a red badge — sovereignty violations stay visible.',
+      'Using your own key skips your shells for that turn — you paid the provider directly, so we don\'t charge you.',
+    ],
+  },
+  {
+    date: '2026-07-02',
+    title: 'Athena has the room to herself for now',
+    body:
+      'Cosmos and Logos are still in the sidebar, but tapping them tells ' +
+      'you they\'re back Soon. This isn\'t a demotion — it\'s the ' +
+      'opposite. Each guide is a full relationship, and giving Athena the ' +
+      'room to be first means we can bring Cosmos and Logos back at the ' +
+      'level we want them at. Building your own guide is paused for the ' +
+      'same reason. When any of them return, you\'ll know.',
+  },
+  {
+    date: '2026-06-28',
+    title: 'Show your guide what you\'re looking at',
+    body:
+      'You can now attach an image or a file to any turn. Athena\'s ' +
+      'analyzer reads it before your guide sees it — a menu photo turns ' +
+      'into text, a PDF becomes something your guide can quote. Paste ' +
+      'from your clipboard, drag from Finder, or on iOS tap the camera. ' +
+      'If your connection stalls partway through, your file is still ' +
+      'there when you come back.',
+    bullets: [
+      'Screenshots, receipts, recipes, tables, notebook pages — anything you\'d hold up on your phone and point at.',
+      'Web: paste, drag, or click the paperclip.',
+      'iOS: tap the camera or the paperclip; clipboard paste works too.',
+      'Nothing is stored on our side. The file rides with the turn and disappears after.',
+    ],
+  },
+  {
+    date: '2026-06-10',
+    title: 'Your Pantheon follows you',
+    body:
+      'Every TurtleShell user is bound to a Pantheon — a shard of the ' +
+      'fleet that holds your identity, your voice-billing, and your ' +
+      'usage history. That binding is now visible. Settings has a ' +
+      'Pantheon panel that shows which shard you\'re on and lets you ' +
+      'switch (mostly for developers). Your session binds to the shard ' +
+      'you\'re on so the fleet knows where to route you even after you ' +
+      'switch devices.',
+    bullets: [
+      'Signing in picks a Pantheon for you automatically. Most people never touch this.',
+      'Developers can point at their own local Pantheon for testing.',
+      'If you switch shards, your history and voice budget follow.',
+    ],
+  },
+  {
+    date: '2026-05-26',
+    title: 'Feedback that comes with your device\'s story',
+    body:
+      'Leave Feedback now attaches the last few minutes of what your ' +
+      'device saw — the breadcrumbs (which screen, which button, which ' +
+      'call went out), never what you typed or which token was used. ' +
+      'Support gets to see the same view of the moment you saw. A small ' +
+      'indicator at the bottom of the feedback form shows how many ' +
+      'events are riding along.',
+    bullets: [
+      'Nothing personal — no chat text, no auth tokens, no email in the payload.',
+      'Roughly the last thousand events per session, packed into a small file.',
+      'A real person on our end reads them; you\'ll usually hear back.',
+    ],
+  },
+  {
+    date: '2026-05-18',
+    title: 'Sign in with Apple',
+    body:
+      'The iPhone can now sign in with Apple. Tap the black button on ' +
+      'the login screen, use Face ID, and you\'re in. Same identity ' +
+      'between iOS and web — sign in with Apple once, and your ' +
+      'turtleshell.ai session recognizes you the next time you open ' +
+      'the browser.',
+    bullets: [
+      'If you use Apple\'s Hide My Email, your real address stays private.',
+      'The identity carries between iOS and web without re-linking.',
+      'If you signed in with an email link before, adding Apple later doesn\'t lose anything.',
+    ],
+  },
+  {
     date: '2026-04-22',
     title: 'Google Workspace joins Salesforce as a connectable tool',
     body:
