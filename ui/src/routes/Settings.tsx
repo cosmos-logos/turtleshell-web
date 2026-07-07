@@ -197,8 +197,11 @@ function SovereignAiSection() {
   const [category, setCategory] = useState<'chat' | 'voice' | null>(null);
   const chatCatalog = chatProviderByKey(store.chatProvider);
   const voiceCatalog = voiceProviderByKey(store.voiceProvider);
-  const chatKeysStored = Object.values(store.chatKeysByProvider).filter((v) => !!v).length;
-  const voiceKeysStored = Object.values(store.voiceKeysByProvider).filter((v) => !!v).length;
+  // v2: slot metadata (non-secret) mirrors what's in IndexedDB. Presence
+  // here means the user has sealed a key for that provider; the actual
+  // ciphertext lives only in IndexedDB and cannot be reached from React.
+  const chatKeysStored = Object.keys(store.chatSlotInfo).length;
+  const voiceKeysStored = Object.keys(store.voiceSlotInfo).length;
 
   return (
     <section className="space-y-3">

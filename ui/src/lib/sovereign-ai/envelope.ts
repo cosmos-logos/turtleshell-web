@@ -1,31 +1,43 @@
 // src/lib/sovereign-ai/envelope.ts
 //
-// EOS-5.4 Sovereign AI — BYOK sealed envelope for turtleshell-web.
+// EOS-5.4 Sovereign AI — BYOK sealed envelopes for turtleshell-web.
 //
 // Structural mirror of omens' Omens.Integration.CosmosLogos.SovereignEnvelopeSealer
-// and athena's src/ai/sovereign-envelope.ts (decrypt side).
+// and athena/api/src/ai/sovereign-envelope.ts (decrypt side).
 // The wire contract is defined by
 // olympus-616/docs/sovereign-ai-seam-cross-surface-reference.md §3.
 //
-// The plaintext payload sealed against the recipient god's Ed25519 pubkey is:
-//   {
-//     byok: { provider, key|null, endpoint|null, model|null },
-//     nonce:               <hex 16 bytes>,
-//     issuedAt:            <ISO-8601 UTC>,
-//     clientSurface:       "turtleshell-web",
-//     manifestFingerprint: "sha256:<hex>"     // SHA-256 of the manifest JSON at seal time
-//   }
+// ─── Version 2 (post-2026-07-07 Steward directive) ─────────────────────
 //
-// The outer wire block (unsealed, attached to the /chat body) is:
-//   {
-//     sovereignAI: {
-//       chatProvider:     "openai" | "anthropic" | "grok" | "gemini" | "ollama",
-//       sealedEnvelope:   "<base64>",
-//       envelopeFormat:   "libsodium",
-//       envelopeVersion:  "cosmos-logos-sealed-v1",
-//       manifestUrl:      "<athena manifest url>"
-//     }
-//   }
+// This module now exposes TWO seal primitives, one for each moment BYOK
+// material crosses a boundary:
+//
+//   1. sealForStorage(manifestUrl, byok)
+//        Called ONCE at paste-time. Fetches the god's manifest, seals the
+//        raw BYOK material against the god's Ed25519 pubkey, returns the
+//        ciphertext + manifest fingerprint. The client CANNOT decrypt what
+//        it sealed — only the god's private key can. Store this ciphertext
+//        in IndexedDB (via secure-storage.ts). This is the "no plaintext
+//        anywhere" primitive.
+//
+//   2. sealForWire(manifestUrl, storedInner, clientSurface)
+//        Called at EVERY /chat and /speak turn. Fetches the manifest again
+//        (to get the current pubkey + fingerprint), wraps the stored inner
+//        ciphertext inside a fresh outer envelope carrying nonce + issuedAt
+//        for anti-replay, seals that outer against the god's current pubkey,
+//        returns the wire-ready block. If the god's private key has rotated
+//        since the storage seal, the server will fail the inner decrypt
+//        with envelope_storage_stale — the client wipes the slot and prompts
+//        re-entry (Steward's rotation-kill-switch property).
+//
+// The old sealSovereignAiEnvelope function is INTENTIONALLY REMOVED. The
+// only correct call sites now are:
+//   Save flow → sealForStorage → secure-storage.saveSlot
+//   Send flow → secure-storage.loadSlot → sealForWire → attach to body
+//
+// If you're tempted to seal fresh BYOK on every request, that means you
+// still have plaintext material in memory outside of the paste flow —
+// which violates the "never plaintext at rest" property.
 
 import { sealToken } from '@/lib/cosmos-logos/crypto';
 
@@ -50,22 +62,38 @@ export type SovereignVoiceProvider =
  *  not empty strings — the server-side decrypt distinguishes null (absent)
  *  from empty (present but blank) when inferring endpointClass. */
 export interface SovereignBYOKPayload {
-  provider: string;             // openai / anthropic / grok / gemini / ollama / elevenlabs / xtts
+  provider: string;
   key: string | null;
   endpoint: string | null;
   model: string | null;
 }
 
-/** Return shape for a sealed envelope — attached to the wire body verbatim. */
+/** Return shape from sealForStorage — the ciphertext + provenance the
+ *  caller writes into IndexedDB. */
+export interface StorageSealResult {
+  /** Base64 sealed inner envelope. Only the god's private key can decrypt. */
+  storedInner: string;
+  /** SHA-256 of the manifest JSON at seal time. Locks the slot to the
+   *  god pubkey the client verified. */
+  manifestFingerprint: string;
+  /** God's identity.codename from the manifest — used for provenance and
+   *  as a soft check when we wipe on rotation. */
+  godRecipient: string;
+}
+
+/** Return shape from sealForWire — the wire block that lands verbatim in
+ *  the sovereignAI field of the outbound /chat or /speak request body. */
 export interface SealedSovereignEnvelope {
   sealedEnvelopeBase64: string;
   envelopeFormat: 'libsodium';
-  envelopeVersion: 'cosmos-logos-sealed-v1';
+  envelopeVersion: 'cosmos-logos-sealed-v2';
   manifestUrl: string;
   manifestFingerprint: string;
 }
 
-/** SHA-256 hex digest — small helper for the manifest fingerprint field. */
+// ─── Small helpers ───
+
+/** SHA-256 hex digest — used for the manifest fingerprint field. */
 async function sha256Hex(text: string): Promise<string> {
   const data = new TextEncoder().encode(text);
   const hash = await crypto.subtle.digest('SHA-256', data);
@@ -83,63 +111,144 @@ function randomNonceHex(): string {
     .join('');
 }
 
-/**
- * Fetch the recipient god's cosmos-logos manifest, seal the BYOK payload
- * against its Ed25519 pubkey, and return the wire-ready envelope block.
- *
- * The plaintext key exists in browser memory ONLY between the caller
- * invoking this function and the sealed bytes being handed back. Never
- * persisted (localStorage per-provider slot storage handles at-rest);
- * never logged. After crossing the wire only the sealed ciphertext exists;
- * only the target god's private key decrypts it.
- */
-export async function sealSovereignAiEnvelope(
-  manifestUrl: string,
-  byok: SovereignBYOKPayload,
-  clientSurface: string,
-): Promise<SealedSovereignEnvelope> {
-  // 1. Fetch manifest — no-cache so pubkey rotations flow through same session
-  const manifestResp = await fetch(manifestUrl, { cache: 'no-cache' });
-  if (!manifestResp.ok) {
-    throw new Error(`Manifest fetch failed: HTTP ${manifestResp.status}`);
+/** Fetch + parse a cosmos-logos manifest, returning the raw JSON text
+ *  (for fingerprint hashing) + parsed manifest + extracted PEM pubkey.
+ *  Cached at the caller layer if performance matters — this fn is honest. */
+async function fetchManifest(manifestUrl: string): Promise<{
+  rawText: string;
+  parsed: any;
+  pemPubkey: string;
+  fingerprint: string;
+  godRecipient: string;
+}> {
+  const resp = await fetch(manifestUrl, { cache: 'no-cache' });
+  if (!resp.ok) {
+    throw new Error(`Manifest fetch failed: HTTP ${resp.status}`);
   }
-  const manifestJson = await manifestResp.json();
-  const recipientPem: string | undefined = manifestJson?.cryptography?.public_key;
-  if (!recipientPem) {
+  const parsed = await resp.json();
+  const pemPubkey: string | undefined = parsed?.cryptography?.public_key;
+  if (!pemPubkey) {
     throw new Error('Manifest missing cryptography.public_key');
   }
+  const godRecipient: string = parsed?.identity?.codename || 'unknown';
+  // Fingerprint hashes the JSON.stringify of the PARSED manifest so a
+  // reformat-in-transit doesn't spuriously invalidate. The property that
+  // matters — same pubkey ⇒ same fingerprint — holds either way as long as
+  // both sides serialize consistently. Server currently uses the raw body,
+  // which for our returns is the same thing at the byte level today.
+  const rawText = JSON.stringify(parsed);
+  const fingerprint = 'sha256:' + (await sha256Hex(rawText));
+  return { rawText, parsed, pemPubkey, fingerprint, godRecipient };
+}
 
-  // 2. Manifest fingerprint — SHA-256 of the manifest JSON as returned.
-  //    (Server may generate the pubkey dynamically per-request per the seam
-  //    doc §5.2; the fingerprint locks the client to the exact bytes it
-  //    saw, so a mid-flight substitution is detectable during audit.)
-  const rawManifestText = JSON.stringify(manifestJson);
-  const fingerprint = 'sha256:' + (await sha256Hex(rawManifestText));
+// ─── sealForStorage — paste-time ───
 
-  // 3. Build the plaintext payload — this is what gets sealed.
-  const payload = {
+/**
+ * Seal a raw BYOK payload against the god's public key for at-rest storage.
+ * Called ONCE from the ProviderChooser paste ceremony.
+ *
+ * The plaintext key exists in caller memory only for the duration of this
+ * function's execution. Immediately after this returns, the caller should
+ * write the `storedInner` to IndexedDB and forget the plaintext.
+ *
+ * Because crypto_box_seal uses an ephemeral sender keypair, the client can
+ * NEVER decrypt what it just sealed — only the god's private key can. This
+ * is the load-bearing property that makes v2 storage safe: even under XSS,
+ * the raw provider key cannot be extracted from the ciphertext.
+ */
+export async function sealForStorage(
+  manifestUrl: string,
+  byok: SovereignBYOKPayload,
+): Promise<StorageSealResult> {
+  const { pemPubkey, fingerprint, godRecipient } = await fetchManifest(manifestUrl);
+
+  // The inner payload is intentionally minimal — no timestamp, no client
+  // surface, no fingerprint. Anti-replay lives on the outer wire envelope
+  // (see sealForWire below); mixing timestamps into the inner would make
+  // the storage record expire after 5 minutes, which is exactly the bug
+  // the storage/wire split is here to avoid.
+  const innerPayload = {
     byok: {
       provider: byok.provider,
       key: byok.key,
       endpoint: byok.endpoint,
       model: byok.model,
     },
+  };
+
+  const storedInner = await sealToken(JSON.stringify(innerPayload), pemPubkey);
+
+  return {
+    storedInner,
+    manifestFingerprint: fingerprint,
+    godRecipient,
+  };
+}
+
+// ─── sealForWire — send-time ───
+
+/**
+ * Wrap a previously-stored inner ciphertext inside a fresh outer envelope
+ * for the current /chat or /speak turn. Called from the chat client + audio
+ * manager, once per outbound request.
+ *
+ * The outer envelope carries anti-replay (`nonce` + `issuedAt`) and the
+ * current manifest fingerprint. Server decrypts outer, checks timestamps,
+ * then decrypts the inner. If the inner fails to decrypt (god private key
+ * rotated since the storedInner was sealed), the server returns
+ * envelope_storage_stale and the caller wipes the slot.
+ */
+export async function sealForWire(
+  manifestUrl: string,
+  storedInner: string,
+  clientSurface: string,
+): Promise<SealedSovereignEnvelope> {
+  const { pemPubkey, fingerprint } = await fetchManifest(manifestUrl);
+
+  const outerPayload = {
+    // The still-sealed inner ciphertext from IndexedDB — passed through
+    // verbatim. Server decrypts THIS with the god private key to recover
+    // the byok material.
+    storedInner,
     nonce: randomNonceHex(),
     issuedAt: new Date().toISOString(),
     clientSurface,
     manifestFingerprint: fingerprint,
   };
 
-  // 4. Seal via libsodium crypto_box_seal against the recipient's X25519
-  //    pubkey (converted from Ed25519). Anti-tamper: the sealed box uses
-  //    an ephemeral keypair so even the sender cannot decrypt after seal.
-  const sealed = await sealToken(JSON.stringify(payload), recipientPem);
+  const sealed = await sealToken(JSON.stringify(outerPayload), pemPubkey);
 
   return {
     sealedEnvelopeBase64: sealed,
     envelopeFormat: 'libsodium',
-    envelopeVersion: 'cosmos-logos-sealed-v1',
+    envelopeVersion: 'cosmos-logos-sealed-v2',
     manifestUrl,
     manifestFingerprint: fingerprint,
+  };
+}
+
+// ─── Manifest exposure — used by the paste ceremony to show provenance ───
+
+/**
+ * Small helper exposed so the ProviderChooser ceremony UI can render the
+ * god identity + fingerprint alongside the seal step. Kept separate from
+ * the two seal primitives so the ceremony renderer doesn't have to know
+ * anything about sealing.
+ */
+export async function fetchManifestForCeremony(manifestUrl: string): Promise<{
+  pemPubkey: string;
+  fingerprint: string;
+  godRecipient: string;
+  identity: { codename: string; name?: string };
+}> {
+  const { parsed, pemPubkey, fingerprint, godRecipient } = await fetchManifest(manifestUrl);
+  return {
+    pemPubkey,
+    fingerprint,
+    godRecipient,
+    identity: {
+      codename: godRecipient,
+      name: parsed?.identity?.name,
+    },
   };
 }

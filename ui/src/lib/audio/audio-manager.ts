@@ -7,13 +7,9 @@ import { useApolloStore } from '@/lib/store/apollo-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { useAgentStore } from '@/lib/store/agent-store';
 import { useEnvironmentStore, applyClusterOverride } from '@/lib/store/environment-store';
-import {
-  useSovereignAiStore,
-  getVoiceByokKey,
-  getVoiceByokEndpoint,
-} from '@/lib/store/sovereign-ai-store';
-import { voiceProviderByKey } from '@/lib/sovereign-ai/provider-catalog';
-import { sealSovereignAiEnvelope } from '@/lib/sovereign-ai/envelope';
+import { useSovereignAiStore } from '@/lib/store/sovereign-ai-store';
+import { sealForWire } from '@/lib/sovereign-ai/envelope';
+import { loadSlot, deleteSlot } from '@/lib/sovereign-ai/secure-storage';
 import { logSession } from '@/lib/api/session-log';
 
 let audio: HTMLAudioElement | null = null;
@@ -136,21 +132,25 @@ export async function speak(text: string) {
   } | null = null;
 
   if (wantSovereign) {
+    // Load the previously-sealed inner ciphertext from IndexedDB. If no
+    // slot is stored for this voice provider, the user hasn't done the
+    // paste ceremony yet — surface a helpful error and stop.
+    const slot = await loadSlot('voice', sai.voiceProvider);
+    if (!slot) {
+      console.warn('[Apollo] no sovereign voice slot stored — user must add key in Settings');
+      logSession('apollo.speak', 'sovereign_ai.slot_missing', {
+        provider: sai.voiceProvider,
+      }, 'warn');
+      cleanup();
+      throw new Error(
+        `Sovereign Voice: no sealed key stored for ${sai.voiceProvider}. Open Settings → Sovereign AI to add one.`,
+      );
+    }
     try {
       // Apollo manifest lives adjacent to /speak on the same perimeter path.
       const apolloBase = resolved.url.replace(/\/speak\/?$/, '');
       const manifestUrl = `${apolloBase}/.well-known/cosmos-logos.json`;
-      const providerRow = voiceProviderByKey(sai.voiceProvider);
-      const sealed = await sealSovereignAiEnvelope(
-        manifestUrl,
-        {
-          provider: sai.voiceProvider,
-          key: getVoiceByokKey(),
-          endpoint: getVoiceByokEndpoint(),
-          model: providerRow?.defaultModel ?? null,
-        },
-        clientSurface,
-      );
+      const sealed = await sealForWire(manifestUrl, slot.storedInner, clientSurface);
       sovereignBlock = {
         voiceProvider: sai.voiceProvider,
         sealedEnvelope: sealed.sealedEnvelopeBase64,
@@ -158,11 +158,11 @@ export async function speak(text: string) {
         envelopeVersion: sealed.envelopeVersion,
         manifestUrl: sealed.manifestUrl,
       };
-      logSession('apollo.speak', 'sovereign_ai.sealed', {
+      logSession('apollo.speak', 'sovereign_ai.wrapped', {
         provider: sai.voiceProvider,
-        byokPresent: !!getVoiceByokKey(),
-        endpointPresent: !!getVoiceByokEndpoint(),
+        godRecipient: slot.godRecipient,
         format: sealed.envelopeFormat,
+        version: sealed.envelopeVersion,
       });
     } catch (err) {
       console.warn('[Apollo] sovereign seal failed, falling through to house path:', err);
@@ -204,7 +204,24 @@ export async function speak(text: string) {
       body: JSON.stringify(bodyPayload),
       signal: fetchController.signal,
     });
-    if (!res.ok) { console.error('[Apollo] TTS error:', res.status); cleanup(); return; }
+    if (!res.ok) {
+      // ── Rotation kill-switch (voice edition) ── When Apollo returns
+      // envelope_storage_stale we wipe the stored inner + slot metadata so
+      // the user re-enters through the ceremony. Steward's 2026-07-07
+      // "rotation kills stored keys" property landing on the voice wire.
+      const errBody = await res.text().catch(() => '');
+      if (sovereignBlock && errBody.includes('envelope_storage_stale')) {
+        const provider = sai.voiceProvider;
+        try {
+          await deleteSlot('voice', provider);
+        } catch { /* store cleanup below carries the UI state */ }
+        useSovereignAiStore.getState().clearVoiceSlot(provider);
+        console.warn('[Apollo] cosmos-logos key rotated — voice slot invalidated. Re-enter in Settings.');
+      }
+      console.error('[Apollo] TTS error:', res.status);
+      cleanup();
+      return;
+    }
 
     // EOS-5.4 provenance header — log to session-log for cross-surface audit.
     const provenance = decodeVoiceProvenanceHeader(res.headers.get('x-og-provenance'));
