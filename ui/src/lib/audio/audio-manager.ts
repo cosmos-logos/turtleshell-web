@@ -6,6 +6,15 @@
 import { useApolloStore } from '@/lib/store/apollo-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { useAgentStore } from '@/lib/store/agent-store';
+import { useEnvironmentStore, applyClusterOverride } from '@/lib/store/environment-store';
+import {
+  useSovereignAiStore,
+  getVoiceByokKey,
+  getVoiceByokEndpoint,
+} from '@/lib/store/sovereign-ai-store';
+import { voiceProviderByKey } from '@/lib/sovereign-ai/provider-catalog';
+import { sealSovereignAiEnvelope } from '@/lib/sovereign-ai/envelope';
+import { logSession } from '@/lib/api/session-log';
 
 let audio: HTMLAudioElement | null = null;
 let objectUrl: string | null = null;
@@ -63,25 +72,151 @@ function getActiveVoiceIntent(): Record<string, unknown> | undefined {
   return undefined;
 }
 
+/** Decode a base64-encoded provenance-JSON HTTP header. Apollo emits this on
+ *  every /v1/apollo/speak response — same fields as the chat SSE provenance
+ *  frame, but the audio body is binary so headers are the only channel. */
+function decodeVoiceProvenanceHeader(headerValue: string | null): Record<string, unknown> | null {
+  if (!headerValue) return null;
+  try {
+    const raw = atob(headerValue);
+    return JSON.parse(raw);
+  } catch (err) {
+    console.warn('[Apollo] provenance header decode failed:', err);
+    return null;
+  }
+}
+
+/** Resolve the /v1/apollo/speak URL to hit. Prefer the environment store's
+ *  Apollo endpoint (goes through Ares → Hermes → Apollo, same perimeter as
+ *  chat); fall back to the legacy cosmos-logos agent discovery for users
+ *  still connected via the old handshake path. */
+function resolveApolloSpeakUrl(): { url: string; via: 'sovereign' | 'legacy' } | null {
+  // Sovereign path — env-store Apollo URL + /speak (Apollo listens on /speak
+  // AND /v1/apollo/speak; both hit the same handler). Route through Ares by
+  // using the env-store's apollo endpoint, then apply the cluster override so
+  // the currently-active Pantheon is targeted, not whatever URL was cached.
+  const envApollo = useEnvironmentStore.getState().endpoints.apollo;
+  if (envApollo) {
+    const withCluster = applyClusterOverride(envApollo);
+    return { url: `${withCluster.replace(/\/+$/, '')}/speak`, via: 'sovereign' };
+  }
+  // Legacy fallback — pre-EOS-5.4 cosmos-logos x-tts agent discovery.
+  const legacy = useApolloStore.getState().getTTSBaseUrl();
+  if (legacy) return { url: legacy, via: 'legacy' };
+  return null;
+}
+
 export async function speak(text: string) {
   cleanup();
 
-  const ttsUrl = useApolloStore.getState().getTTSBaseUrl();
-  if (!ttsUrl) return;
+  const resolved = resolveApolloSpeakUrl();
+  if (!resolved) return;
 
   fetchController = new AbortController();
   useApolloStore.setState({ _isBuffering: true });
 
   const intent = getActiveVoiceIntent();
 
+  // EOS-5.4 sovereign envelope — seal the BYOK payload when the user has
+  // picked a non-Olympus-Grid voice provider in Settings. The wire body
+  // carries a `sovereignAI` block; Apollo decrypts, routes to the picked
+  // adapter (OpenAI TTS / ElevenLabs / XTTS), and returns audio + a
+  // base64-encoded `x-og-provenance` response header carrying the honest
+  // attribution. When the user is on the Olympus-Grid path (default), no
+  // block is attached and Apollo's server-side voice engine handles it.
+  const sai = useSovereignAiStore.getState();
+  const wantSovereign = sai.useAI && sai.voiceProvider !== 'olympus-grid' && resolved.via === 'sovereign';
+  const clientSurface = 'turtleshell-web';
+  let sovereignBlock: {
+    voiceProvider: string;
+    sealedEnvelope: string;
+    envelopeFormat: string;
+    envelopeVersion: string;
+    manifestUrl: string;
+  } | null = null;
+
+  if (wantSovereign) {
+    try {
+      // Apollo manifest lives adjacent to /speak on the same perimeter path.
+      const apolloBase = resolved.url.replace(/\/speak\/?$/, '');
+      const manifestUrl = `${apolloBase}/.well-known/cosmos-logos.json`;
+      const providerRow = voiceProviderByKey(sai.voiceProvider);
+      const sealed = await sealSovereignAiEnvelope(
+        manifestUrl,
+        {
+          provider: sai.voiceProvider,
+          key: getVoiceByokKey(),
+          endpoint: getVoiceByokEndpoint(),
+          model: providerRow?.defaultModel ?? null,
+        },
+        clientSurface,
+      );
+      sovereignBlock = {
+        voiceProvider: sai.voiceProvider,
+        sealedEnvelope: sealed.sealedEnvelopeBase64,
+        envelopeFormat: sealed.envelopeFormat,
+        envelopeVersion: sealed.envelopeVersion,
+        manifestUrl: sealed.manifestUrl,
+      };
+      logSession('apollo.speak', 'sovereign_ai.sealed', {
+        provider: sai.voiceProvider,
+        byokPresent: !!getVoiceByokKey(),
+        endpointPresent: !!getVoiceByokEndpoint(),
+        format: sealed.envelopeFormat,
+      });
+    } catch (err) {
+      console.warn('[Apollo] sovereign seal failed, falling through to house path:', err);
+      logSession('apollo.speak', 'sovereign_ai.seal_failed', {
+        provider: sai.voiceProvider,
+        err: (err as Error).message.slice(0, 200),
+      }, 'warn');
+      // Fail-open on voice (unlike chat which fail-safes): degrading to house
+      // costs one tithe but the user still hears the response. Steward can
+      // toggle to fail-safe later if the audit boundary needs to be strict.
+    }
+  }
+
   try {
-    const res = await fetch(ttsUrl, {
+    // Build headers — include x-user-identity JWT for Ares like streamChat does.
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-client-surface': clientSurface,
+    };
+    const ogToken = localStorage.getItem('og_access_token');
+    if (ogToken) headers['x-user-identity'] = ogToken;
+
+    // Sovereign path — DO NOT send the legacy `intent` field. That field is
+    // populated from the active chat agent's voice manifest (e.g. Athena
+    // uses `{voiceId:'shimmer',model:'gpt-4o-mini-tts'}` from its OpenAI
+    // profile), which is nonsensical for other providers. ElevenLabs
+    // interprets voiceId='shimmer' as an unknown voice → 400 → Apollo 500.
+    // When sovereign is on, Apollo's server-side per-provider defaults
+    // (sovereign-defaults.ts — Rachel for ElevenLabs, default.wav for XTTS,
+    // shimmer for OpenAI TTS) handle the voice cleanly. Legacy path still
+    // rides the intent because the connected cosmos-logos agent's voice
+    // is authoritative in that case.
+    const bodyPayload = sovereignBlock
+      ? { text, format: 'mp3' as const, sovereignAI: sovereignBlock }
+      : { text, intent, format: 'mp3' as const };
+    const res = await fetch(resolved.url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, intent }),
+      headers,
+      body: JSON.stringify(bodyPayload),
       signal: fetchController.signal,
     });
     if (!res.ok) { console.error('[Apollo] TTS error:', res.status); cleanup(); return; }
+
+    // EOS-5.4 provenance header — log to session-log for cross-surface audit.
+    const provenance = decodeVoiceProvenanceHeader(res.headers.get('x-og-provenance'));
+    if (provenance) {
+      logSession('apollo.speak', 'provenance.received', {
+        voiceProvider: String(provenance.voiceProvider ?? ''),
+        voiceModel: String(provenance.voiceModel ?? ''),
+        byokUsed: provenance.byokUsed === true,
+        endpointClass: String(provenance.endpointClass ?? ''),
+        turnCorrelationId: String(provenance.turnCorrelationId ?? ''),
+      });
+    }
 
     const blob = await res.blob();
     fetchController = null;

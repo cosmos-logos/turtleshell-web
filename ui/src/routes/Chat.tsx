@@ -257,8 +257,17 @@ export function Chat() {
   const speakRef = useRef<(text: string) => Promise<void>>(undefined);
   const sendRef = useRef<(prompt: string) => void>(undefined);
 
-  // Talk mode → auto-send; hold-to-record → append to input for review
-  const hasTTS = useCosmosLogosStore((s) => s.agents.some(a => a.capabilities.includes('x-tts')));
+  // Talk mode → auto-send; hold-to-record → append to input for review.
+  // Voice availability now has two triggers — either the legacy cosmos-logos
+  // x-tts handshake (pre-EOS-5.4 flow) OR the sovereign Voice AI store is
+  // enabled (default true; means Apollo's house Olympus-Grid path works out
+  // of the box). The play button on assistant messages appears whenever
+  // EITHER of these is on — users with a sovereign voice provider picked
+  // (OpenAI TTS / ElevenLabs / XTTS) get their choice; unconfigured users
+  // still hear the house voice.
+  const hasLegacyTTS = useCosmosLogosStore((s) => s.agents.some(a => a.capabilities.includes('x-tts')));
+  const sovereignVoiceEnabled = useSovereignAiStore((s) => s.useAI);
+  const hasTTS = hasLegacyTTS || sovereignVoiceEnabled;
   const activeCosmosChatName = useCosmosLogosStore((s) => {
     if (!s.activeChatAgentId) return null;
     const agent = s.agents.find(a => a.id === s.activeChatAgentId);
