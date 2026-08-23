@@ -7,8 +7,7 @@ import * as audioManager from '@/lib/audio/audio-manager';
 import { useChatStore } from '@/lib/store/chat-store';
 import { useApolloStore } from '@/lib/store/apollo-store';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
-import { useSovereignAiStore, getChatByokKey, getChatByokEndpoint } from '@/lib/store/sovereign-ai-store';
-import { chatProviderByKey } from '@/lib/sovereign-ai/provider-catalog';
+import { useSovereignAiStore } from '@/lib/store/sovereign-ai-store';
 import { streamChat, type ChatProvenance, type SovereignAIIntent } from '@/lib/athena/chat-client';
 import { logSession } from '@/lib/api/session-log';
 import { streamDirect, hasDirectProvider } from '@/lib/providers/direct-chat';
@@ -426,16 +425,15 @@ export function Chat() {
       // payload against Athena's pubkey, and attaches the sovereignAI block
       // to the /chat body. Athena decrypts, routes to the BYOK provider
       // adapter with the user's key, and emits a provenance frame.
+      // EOS-5.4 Sovereign AI v2 — the client passes only the provider name
+      // and client surface hint; streamChat loads the sealed inner ciphertext
+      // from IndexedDB internally (Steward 2026-07-07 "no plaintext" rule).
       const sai = useSovereignAiStore.getState();
       const sovereignChatProvider = sai.useAI ? sai.chatProvider : 'olympus-grid';
       let sovereignAI: SovereignAIIntent | null = null;
       if (sovereignChatProvider !== 'olympus-grid') {
-        const providerRow = chatProviderByKey(sovereignChatProvider);
         sovereignAI = {
           chatProvider:  sovereignChatProvider,
-          byokKey:       getChatByokKey(),
-          byokEndpoint:  getChatByokEndpoint(),
-          byokModel:     providerRow?.defaultModel ?? null,
           clientSurface: 'turtleshell-web',
         };
       }

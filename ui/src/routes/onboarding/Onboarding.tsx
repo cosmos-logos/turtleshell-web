@@ -145,7 +145,7 @@ function GuideCustomScreen({ onBack, onComplete }: {
 
   return (
     <div className="flex flex-col items-center min-h-[80vh] justify-center pt-16 pb-12 text-center px-4">
-      <h1 className="text-2xl font-bold mb-2 text-text-primary">Name Your Guide</h1>
+      <h1 className="text-2xl font-bold mb-2 text-text-primary">Name Your Agent</h1>
       <p className="text-sm mb-7 text-text-muted">Give it an identity. It will speak in the voice you define.</p>
 
       <div className="w-full max-w-[320px] space-y-5 mb-8">
@@ -176,7 +176,7 @@ function GuideCustomScreen({ onBack, onComplete }: {
       <div className="w-full max-w-[320px] space-y-3">
         <Btn onClick={() => { if (name.trim() && creature) onComplete(name.trim(), personality.trim(), creature); }}
           disabled={!name.trim() || !creature}>
-          Create My Guide
+          Create My Agent
         </Btn>
         <Btn variant="ghost" onClick={onBack}>Back</Btn>
       </div>

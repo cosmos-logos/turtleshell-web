@@ -1,111 +1,117 @@
 // src/lib/store/sovereign-ai-store.ts
 //
-// Sovereign AI settings — per-provider slot storage for BYOK keys + endpoints.
-// Structural mirror of omens' scripts/settings/SovereignAISettings.cs (Zustand
-// flavor). The wire contract is defined by
-// olympus-616/docs/sovereign-ai-seam-cross-surface-reference.md §6.1.
+// Sovereign AI settings — Version 2 (no-plaintext-anywhere) store.
 //
-// Load-bearing invariants (per Steward 2026-07-06):
-//   1. Keys persist PER PROVIDER — switching from OpenAI to Grok MUST NOT
-//      wipe the OpenAI key. `setChatProvider(p, key, endpoint)` is ADDITIVE
-//      on the key dimension: passing empty/undefined does NOT clear the
-//      stored slot. Explicit `clearChatByokFor(provider)` for revocation.
-//   2. `chatByokKey` (and friends) are DERIVED getters — always resolve to
-//      the CURRENT provider's slot. Backward-compatible with any legacy
-//      caller that reads `settings.chatByokKey` directly.
-//   3. Legacy `turtleshell-user-api-keys` (single-blob storage from before
-//      per-provider slots) migrates on first load. Provider names are
-//      remapped: 'claude' (turtleshell-web's internal alias) → 'anthropic'
-//      (the wire allowlist value Athena expects).
-//   4. NEVER log the raw key. Persist middleware writes plaintext to
-//      localStorage (device-local); diagnostics emit `byokPresent: bool`.
+// Steward directive 2026-07-07: BYOK keys are NEVER stored in plaintext on
+// the client. This store therefore holds:
+//   • Non-secret UI state: useAI flag, current chatProvider / voiceProvider,
+//     Ollama / XTTS endpoint URLs, per-provider slot metadata.
+//   • NOT the BYOK keys. Those live as sealed ciphertext in IndexedDB
+//     (see src/lib/sovereign-ai/secure-storage.ts).
+//
+// Public API from the caller's POV:
+//   • Read what provider is selected: chatProvider / voiceProvider
+//   • Read an endpoint (non-secret): chatEndpointFor / voiceEndpointFor
+//   • Query slot presence: hasChatSlot / hasVoiceSlot (used to render the
+//     ProviderChooser "Saved" state without touching IndexedDB every render)
+//   • Mutate: setChatProvider / setVoiceProvider / setChatEndpoint / etc.
+//   • Coordinate with IndexedDB: markChatSlotSaved (call after saveSlot),
+//     clearChatSlot (call after deleteSlot), wipeCategoryOnRotation.
+//
+// Legacy plaintext scrub — on first load with schemaVersion < 3, we delete
+// the v1 turtleshell-sovereign-ai localStorage blob and the pre-EOS-5.4
+// turtleshell-user-api-keys blob. Existing users re-paste their keys with
+// the ceremony flow. This is the deliberate cost of the "no plaintext"
+// property.
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { scrubLegacyPlaintextStorage } from '@/lib/sovereign-ai/secure-storage';
 
-/** Wire-safe provider identifiers — match the sovereign envelope allowlist
- *  Athena and Apollo enforce. */
 export const CHAT_OLYMPUS_GRID = 'olympus-grid';
 export const VOICE_OLYMPUS_GRID = 'olympus-grid';
+
+/** Non-secret display metadata for a saved slot. Mirrors the IndexedDB
+ *  StoredSlot but WITHOUT the storedInner ciphertext — the store's job is
+ *  UI reactivity, not persistence-of-secrets. */
+export interface SlotInfo {
+  /** ISO timestamp of when the user pasted + sealed. */
+  savedAt: string;
+  /** Manifest identity.codename at seal time (e.g. "athena-616"). */
+  godRecipient: string;
+  /** First 12 chars of the manifest fingerprint at seal time, for display
+   *  in the ceremony UI's "Sealed for" panel. */
+  fingerprintShort: string;
+  /** Result of the last Test button run against /v1/{god}/byok/test.
+   *  Undefined = never tested. */
+  lastTestResult?: {
+    ok: boolean;
+    testedAt: string;
+    tookMs?: number;
+    error?: string;
+  };
+}
+
+/** v3 agent-scoped slot info shape: godFp → provider → SlotInfo. Each
+ *  agent (identified by pubkey fingerprint) has its own independent
+ *  credential silo. Steward directive 2026-07-09. */
+export type ScopedSlotInfo = Record<string, Record<string, SlotInfo>>;
 
 interface SovereignAiState {
   /** Whether AI is turned on at all. When false, chat/voice surfaces should
    *  refuse to invoke inference. Non-LLM capabilities keep working. */
   useAI: boolean;
 
-  /** The currently-selected chat provider. Points at whichever slot's key +
-   *  endpoint fill the derived getters below. */
   chatProvider: string;
-
-  /** The currently-selected voice provider. */
   voiceProvider: string;
 
-  /** Per-provider slot storage. Every user's whole stable of BYOK keys stays
-   *  on device; picking a provider just moves the pointer, not the material. */
-  chatKeysByProvider: Record<string, string>;
+  /** Non-secret endpoints (Ollama URL, XTTS URL). These are user-facing
+   *  addresses — treating them as secrets would be theater; they typically
+   *  point at localhost or a Tailscale-visible host. Stored per-provider so
+   *  users can keep an XTTS URL and an Ollama URL configured simultaneously. */
   chatEndpointsByProvider: Record<string, string>;
-  voiceKeysByProvider: Record<string, string>;
   voiceEndpointsByProvider: Record<string, string>;
 
-  /** Schema version for legacy migrations (see LEGACY_USER_API_KEYS_STORAGE). */
+  /** v3 agent-scoped slot metadata. Outer key = god pubkey fingerprint;
+   *  inner map = provider → SlotInfo. Two agents with different pubkeys
+   *  have wholly independent silos. Populated on saveSlot, cleared on
+   *  deleteSlot, hydrated on ProviderChooser open. */
+  chatSlotInfo: ScopedSlotInfo;
+  voiceSlotInfo: ScopedSlotInfo;
+
+  /** Schema version for legacy migration gating. */
   schemaVersion: number;
 
   // ── Setters ──
 
   setUseAI: (value: boolean) => void;
+  setChatProvider: (provider: string) => void;
+  setVoiceProvider: (provider: string) => void;
+  setChatEndpoint: (provider: string, endpoint: string | null) => void;
+  setVoiceEndpoint: (provider: string, endpoint: string | null) => void;
 
-  /**
-   * Update the chat provider selection AND persist any BYOK material into
-   * that provider's slot. Additive on the key dimension — passing null or
-   * empty does NOT wipe stored slots. To clear, call clearChatByokFor.
-   */
-  setChatProvider: (provider: string, byokKey?: string | null, byokEndpoint?: string | null) => void;
+  markChatSlotSaved: (godFp: string, provider: string, info: SlotInfo) => void;
+  markVoiceSlotSaved: (godFp: string, provider: string, info: SlotInfo) => void;
+  clearChatSlot: (godFp: string, provider: string) => void;
+  clearVoiceSlot: (godFp: string, provider: string) => void;
 
-  setVoiceProvider: (provider: string, byokKey?: string | null, byokEndpoint?: string | null) => void;
+  /** Called after IndexedDB is scanned on mount — replaces the whole
+   *  category's slotInfo map for a SPECIFIC god with what's actually
+   *  stored. Called with the current god's fingerprint on chooser open. */
+  hydrateChatSlots: (godFp: string, info: Record<string, SlotInfo>) => void;
+  hydrateVoiceSlots: (godFp: string, info: Record<string, SlotInfo>) => void;
 
-  /** Explicitly wipe the stored BYOK key + endpoint for a specific chat
-   *  provider. Used for revocation. Does not change the currently-selected
-   *  provider. */
-  clearChatByokFor: (provider: string) => void;
+  /** Set the last-test result on a slot. Called by the Test button flow. */
+  recordChatTestResult: (godFp: string, provider: string, result: SlotInfo['lastTestResult']) => void;
+  recordVoiceTestResult: (godFp: string, provider: string, result: SlotInfo['lastTestResult']) => void;
 
-  clearVoiceByokFor: (provider: string) => void;
+  /** Wipe every slot for a god in a category — used on envelope_storage_stale
+   *  server response. The corresponding IndexedDB wipe is the caller's
+   *  responsibility (see secure-storage.wipeAll). */
+  wipeCategoryOnRotation: (godFp: string, category: 'chat' | 'voice') => void;
 }
 
-const LEGACY_USER_API_KEYS_STORAGE = 'turtleshell-user-api-keys';
-const SCHEMA_VERSION = 2;
-
-/** Legacy migration: pull anything from the pre-EOS-5.4
- *  'turtleshell-user-api-keys' single-blob (used by direct-chat.ts /
- *  agent-store.ts hasUserApiKey) into per-provider slots. Provider names
- *  are remapped:
- *   - 'claude' (turtleshell-web internal alias) → 'anthropic' (wire name)
- *   - 'openai', 'grok', 'gemini' → passthrough
- *  The legacy row is left untouched so the existing direct-chat path keeps
- *  working during transition; it will be cleaned up in the same PR that
- *  retires direct-chat. */
-function migrateLegacyKeys(existing: Record<string, string>): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(LEGACY_USER_API_KEYS_STORAGE);
-    if (!raw) return existing;
-    const parsed = JSON.parse(raw) as Record<string, string>;
-    const next = { ...existing };
-    const map: Record<string, string> = {
-      openai: 'openai',
-      claude: 'anthropic',
-      grok: 'grok',
-      gemini: 'gemini',
-    };
-    for (const [legacyKey, val] of Object.entries(parsed)) {
-      const wireKey = map[legacyKey];
-      if (wireKey && !next[wireKey] && val) {
-        next[wireKey] = val;
-      }
-    }
-    return next;
-  } catch {
-    return existing;
-  }
-}
+const SCHEMA_VERSION = 4;
 
 export const useSovereignAiStore = create<SovereignAiState>()(
   persist(
@@ -113,99 +119,168 @@ export const useSovereignAiStore = create<SovereignAiState>()(
       useAI: true,
       chatProvider: CHAT_OLYMPUS_GRID,
       voiceProvider: VOICE_OLYMPUS_GRID,
-      chatKeysByProvider: {},
       chatEndpointsByProvider: {},
-      voiceKeysByProvider: {},
       voiceEndpointsByProvider: {},
+      chatSlotInfo: {},
+      voiceSlotInfo: {},
       schemaVersion: SCHEMA_VERSION,
 
       setUseAI: (value) => set({ useAI: value }),
 
-      setChatProvider: (provider, byokKey, byokEndpoint) =>
+      setChatProvider: (provider) => set({ chatProvider: provider }),
+      setVoiceProvider: (provider) => set({ voiceProvider: provider }),
+
+      setChatEndpoint: (provider, endpoint) =>
         set((state) => {
-          const normalizedKey = byokKey && byokKey.trim().length > 0 ? byokKey.trim() : null;
-          const normalizedEp = byokEndpoint && byokEndpoint.trim().length > 0 ? byokEndpoint.trim() : null;
-          const nextChatKeys = { ...state.chatKeysByProvider };
-          const nextChatEndpoints = { ...state.chatEndpointsByProvider };
-          if (normalizedKey !== null) nextChatKeys[provider] = normalizedKey;
-          if (normalizedEp !== null) nextChatEndpoints[provider] = normalizedEp;
+          const next = { ...state.chatEndpointsByProvider };
+          if (endpoint && endpoint.trim().length > 0) {
+            next[provider] = endpoint.trim();
+          } else {
+            delete next[provider];
+          }
+          return { chatEndpointsByProvider: next };
+        }),
+
+      setVoiceEndpoint: (provider, endpoint) =>
+        set((state) => {
+          const next = { ...state.voiceEndpointsByProvider };
+          if (endpoint && endpoint.trim().length > 0) {
+            next[provider] = endpoint.trim();
+          } else {
+            delete next[provider];
+          }
+          return { voiceEndpointsByProvider: next };
+        }),
+
+      markChatSlotSaved: (godFp, provider, info) =>
+        set((state) => ({
+          chatSlotInfo: {
+            ...state.chatSlotInfo,
+            [godFp]: {
+              ...(state.chatSlotInfo[godFp] ?? {}),
+              [provider]: info,
+            },
+          },
+        })),
+
+      markVoiceSlotSaved: (godFp, provider, info) =>
+        set((state) => ({
+          voiceSlotInfo: {
+            ...state.voiceSlotInfo,
+            [godFp]: {
+              ...(state.voiceSlotInfo[godFp] ?? {}),
+              [provider]: info,
+            },
+          },
+        })),
+
+      clearChatSlot: (godFp, provider) =>
+        set((state) => {
+          const godMap = state.chatSlotInfo[godFp];
+          if (!godMap) return state;
+          const nextGod = { ...godMap };
+          delete nextGod[provider];
+          const nextAll = { ...state.chatSlotInfo };
+          if (Object.keys(nextGod).length === 0) delete nextAll[godFp];
+          else nextAll[godFp] = nextGod;
+          return { chatSlotInfo: nextAll };
+        }),
+
+      clearVoiceSlot: (godFp, provider) =>
+        set((state) => {
+          const godMap = state.voiceSlotInfo[godFp];
+          if (!godMap) return state;
+          const nextGod = { ...godMap };
+          delete nextGod[provider];
+          const nextAll = { ...state.voiceSlotInfo };
+          if (Object.keys(nextGod).length === 0) delete nextAll[godFp];
+          else nextAll[godFp] = nextGod;
+          return { voiceSlotInfo: nextAll };
+        }),
+
+      hydrateChatSlots: (godFp, info) =>
+        set((state) => ({
+          chatSlotInfo: { ...state.chatSlotInfo, [godFp]: info },
+        })),
+
+      hydrateVoiceSlots: (godFp, info) =>
+        set((state) => ({
+          voiceSlotInfo: { ...state.voiceSlotInfo, [godFp]: info },
+        })),
+
+      recordChatTestResult: (godFp, provider, result) =>
+        set((state) => {
+          const existing = state.chatSlotInfo[godFp]?.[provider];
+          if (!existing) return state;
           return {
-            chatProvider: provider,
-            chatKeysByProvider: nextChatKeys,
-            chatEndpointsByProvider: nextChatEndpoints,
+            chatSlotInfo: {
+              ...state.chatSlotInfo,
+              [godFp]: {
+                ...state.chatSlotInfo[godFp]!,
+                [provider]: { ...existing, lastTestResult: result },
+              },
+            },
           };
         }),
 
-      setVoiceProvider: (provider, byokKey, byokEndpoint) =>
+      recordVoiceTestResult: (godFp, provider, result) =>
         set((state) => {
-          const normalizedKey = byokKey && byokKey.trim().length > 0 ? byokKey.trim() : null;
-          const normalizedEp = byokEndpoint && byokEndpoint.trim().length > 0 ? byokEndpoint.trim() : null;
-          const nextVoiceKeys = { ...state.voiceKeysByProvider };
-          const nextVoiceEndpoints = { ...state.voiceEndpointsByProvider };
-          if (normalizedKey !== null) nextVoiceKeys[provider] = normalizedKey;
-          if (normalizedEp !== null) nextVoiceEndpoints[provider] = normalizedEp;
+          const existing = state.voiceSlotInfo[godFp]?.[provider];
+          if (!existing) return state;
           return {
-            voiceProvider: provider,
-            voiceKeysByProvider: nextVoiceKeys,
-            voiceEndpointsByProvider: nextVoiceEndpoints,
+            voiceSlotInfo: {
+              ...state.voiceSlotInfo,
+              [godFp]: {
+                ...state.voiceSlotInfo[godFp]!,
+                [provider]: { ...existing, lastTestResult: result },
+              },
+            },
           };
         }),
 
-      clearChatByokFor: (provider) =>
+      wipeCategoryOnRotation: (godFp, category) =>
         set((state) => {
-          const nextKeys = { ...state.chatKeysByProvider };
-          const nextEndpoints = { ...state.chatEndpointsByProvider };
-          delete nextKeys[provider];
-          delete nextEndpoints[provider];
-          return { chatKeysByProvider: nextKeys, chatEndpointsByProvider: nextEndpoints };
-        }),
-
-      clearVoiceByokFor: (provider) =>
-        set((state) => {
-          const nextKeys = { ...state.voiceKeysByProvider };
-          const nextEndpoints = { ...state.voiceEndpointsByProvider };
-          delete nextKeys[provider];
-          delete nextEndpoints[provider];
-          return { voiceKeysByProvider: nextKeys, voiceEndpointsByProvider: nextEndpoints };
+          if (category === 'chat') {
+            const next = { ...state.chatSlotInfo };
+            delete next[godFp];
+            return { chatSlotInfo: next };
+          } else {
+            const next = { ...state.voiceSlotInfo };
+            delete next[godFp];
+            return { voiceSlotInfo: next };
+          }
         }),
     }),
     {
-      name: 'turtleshell-sovereign-ai',
+      name: 'turtleshell-sovereign-ai-v3',
       version: SCHEMA_VERSION,
-      // On hydration, run the legacy migration IN-PLACE — pulls anything
-      // from the pre-EOS-5.4 turtleshell-user-api-keys blob into the new
-      // per-provider slots without wiping either.
+      // Steward 2026-07-09: schema v3 → v4 is the agent-scoping migration.
+      // Pre-v4 slotInfo maps were `Record<provider, SlotInfo>` — no godFp
+      // dimension. The IDB records those referenced are also being wiped
+      // (see secure-storage.ts DB_VERSION=2 upgrade). So on a v4 boot with
+      // stale slotInfo shape, we wipe both dimensions to a clean state and
+      // let users re-paste with the agent-scoped ceremony.
       onRehydrateStorage: () => (state) => {
-        if (!state) return;
-        state.chatKeysByProvider = migrateLegacyKeys(state.chatKeysByProvider ?? {});
+        const scrubbed = scrubLegacyPlaintextStorage();
+        if (scrubbed.wipedKeys.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log(
+            '[sovereign-ai] Scrubbed legacy plaintext storage:',
+            scrubbed.wipedKeys.join(', '),
+            '- your keys will need to be re-entered under the new sealed-storage flow.',
+          );
+        }
+        if (state && state.schemaVersion < SCHEMA_VERSION) {
+          state.schemaVersion = SCHEMA_VERSION;
+          state.chatSlotInfo = {};
+          state.voiceSlotInfo = {};
+        }
       },
     },
   ),
 );
 
-// ── Derived getters — always resolve to the CURRENT provider's slot ──
-
-/** Currently-selected chat provider's BYOK key, or null if none stored. */
-export function getChatByokKey(): string | null {
-  const s = useSovereignAiStore.getState();
-  const k = s.chatKeysByProvider[s.chatProvider];
-  return k && k.length > 0 ? k : null;
-}
-
-/** Currently-selected chat provider's endpoint override, or null. */
-export function getChatByokEndpoint(): string | null {
-  const s = useSovereignAiStore.getState();
-  const e = s.chatEndpointsByProvider[s.chatProvider];
-  return e && e.length > 0 ? e : null;
-}
-
-/** Stored key for a SPECIFIC chat provider (regardless of current selection).
- *  Used by the ProviderChooser modal to pre-fill every row's field. */
-export function getChatByokFor(provider: string): string | null {
-  const s = useSovereignAiStore.getState();
-  const k = s.chatKeysByProvider[provider];
-  return k && k.length > 0 ? k : null;
-}
+// ─── Non-secret derived readers (safe from any surface) ───
 
 export function getChatEndpointFor(provider: string): string | null {
   const s = useSovereignAiStore.getState();
@@ -213,26 +288,20 @@ export function getChatEndpointFor(provider: string): string | null {
   return e && e.length > 0 ? e : null;
 }
 
-export function getVoiceByokKey(): string | null {
-  const s = useSovereignAiStore.getState();
-  const k = s.voiceKeysByProvider[s.voiceProvider];
-  return k && k.length > 0 ? k : null;
-}
-
-export function getVoiceByokEndpoint(): string | null {
-  const s = useSovereignAiStore.getState();
-  const e = s.voiceEndpointsByProvider[s.voiceProvider];
-  return e && e.length > 0 ? e : null;
-}
-
-export function getVoiceByokFor(provider: string): string | null {
-  const s = useSovereignAiStore.getState();
-  const k = s.voiceKeysByProvider[provider];
-  return k && k.length > 0 ? k : null;
-}
-
 export function getVoiceEndpointFor(provider: string): string | null {
   const s = useSovereignAiStore.getState();
   const e = s.voiceEndpointsByProvider[provider];
   return e && e.length > 0 ? e : null;
+}
+
+/** True when the given god+category+provider has a sealed slot in
+ *  IndexedDB (as reflected by the store's mirror). Cheap synchronous
+ *  check for render paths. v3: scoped to the god fingerprint so each
+ *  agent's silo is independently queryable. */
+export function hasChatSlot(godFp: string, provider: string): boolean {
+  return provider in (useSovereignAiStore.getState().chatSlotInfo[godFp] ?? {});
+}
+
+export function hasVoiceSlot(godFp: string, provider: string): boolean {
+  return provider in (useSovereignAiStore.getState().voiceSlotInfo[godFp] ?? {});
 }

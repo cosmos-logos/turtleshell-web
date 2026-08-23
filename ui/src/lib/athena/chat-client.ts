@@ -4,18 +4,22 @@ import { buildMCPHeaders } from './mcp-headers';
 import { getShellId } from '@/lib/api/olympus-grid-client';
 import { useChatStore } from '@/lib/store/chat-store';
 import { getToolBindingsForAgent } from '@/lib/store/tool-bindings-store';
-import { sealSovereignAiEnvelope } from '@/lib/sovereign-ai/envelope';
+import { sealForWire, fetchManifestForCeremony } from '@/lib/sovereign-ai/envelope';
+import { loadSlot, deleteSlot } from '@/lib/sovereign-ai/secure-storage';
+import { useSovereignAiStore } from '@/lib/store/sovereign-ai-store';
 
 /** Sovereign AI intent — attached to the chat request when the user has picked
- *  a non-Olympus-Grid chat provider and supplied BYOK material. streamChat
- *  fetches Athena's manifest, seals the payload, and adds the sovereignAI
- *  block to the wire body. See src/lib/sovereign-ai/envelope.ts and
- *  olympus-616/docs/sovereign-ai-seam-cross-surface-reference.md §3. */
+ *  a non-Olympus-Grid chat provider. The client's BYOK material never crosses
+ *  this boundary as plaintext; only the provider name + client surface hint
+ *  do. streamChat loads the previously-sealed inner ciphertext from
+ *  IndexedDB, wraps it in a fresh outer envelope, and seals the outer
+ *  against Athena's current pubkey. See src/lib/sovereign-ai/envelope.ts and
+ *  olympus-616/docs/sovereign-ai-seam-cross-surface-reference.md §3.
+ *
+ *  Steward directive 2026-07-07: no plaintext BYOK material anywhere.
+ *  The old byokKey / byokEndpoint / byokModel fields are REMOVED. */
 export interface SovereignAIIntent {
   chatProvider: string;        // openai | anthropic | grok | gemini | ollama
-  byokKey: string | null;
-  byokEndpoint: string | null;
-  byokModel: string | null;
   clientSurface: string;       // "turtleshell-web"
 }
 
@@ -123,10 +127,15 @@ export async function* streamChat(
     });
   }
 
-  // ── EOS-5.4 Sovereign AI ── Seal the BYOK envelope BEFORE we build the
-  // body. The plaintext key never touches the wire — only the sealed box
-  // does. Athena's private key decrypts on arrival; even Ares and Hermes
-  // (both pass-through proxies for the body) cannot read the key.
+  // ── EOS-5.4 Sovereign AI v2 ── Load the previously-sealed inner
+  // ciphertext from IndexedDB, wrap it in a fresh outer envelope, seal
+  // that outer against Athena's current pubkey.
+  //
+  // The plaintext BYOK NEVER exists on the client — it was sealed once at
+  // paste time by ProviderChooser (via sealForStorage), stored as bytes,
+  // and cannot be decrypted by the client (crypto_box_seal uses ephemeral
+  // sender keys). Only Athena's private key can open the inner. Ares and
+  // Hermes pass everything through opaque.
   //
   // When sovereignAI is absent or chatProvider === 'olympus-grid', we take
   // the house path and skip the seal — the request lands on the same
@@ -141,30 +150,43 @@ export async function* streamChat(
     manifestUrl: string;
   } | null = null;
   if (options?.sovereignAI && options.sovereignAI.chatProvider !== 'olympus-grid') {
+    const provider = options.sovereignAI.chatProvider;
+    const manifestUrl = `${baseUrl}/.well-known/cosmos-logos.json`;
+    // v3 agent-scoped storage — resolve the current god's pubkey fingerprint
+    // first, then load the slot keyed to THAT god. Steward 2026-07-09: same
+    // codename served by two different keypairs = two independent silos.
+    let godFp: string;
     try {
-      const manifestUrl = `${baseUrl}/.well-known/cosmos-logos.json`;
-      const sealed = await sealSovereignAiEnvelope(
+      const godInfo = await fetchManifestForCeremony(manifestUrl);
+      godFp = godInfo.pubkeyFingerprint;
+    } catch (err) {
+      throw new Error(`Failed to resolve god identity for ${provider}: ${(err as Error).message}`);
+    }
+    const slot = await loadSlot(godFp, 'chat', provider);
+    if (!slot) {
+      throw new Error(
+        `Sovereign AI: no sealed ${provider} key stored for this Athena. Open Settings → Sovereign AI to add one.`,
+      );
+    }
+    try {
+      const sealed = await sealForWire(
         manifestUrl,
-        {
-          provider: options.sovereignAI.chatProvider,
-          key: options.sovereignAI.byokKey,
-          endpoint: options.sovereignAI.byokEndpoint,
-          model: options.sovereignAI.byokModel,
-        },
+        slot.storedInner,
         options.sovereignAI.clientSurface,
       );
       sovereignBlock = {
-        chatProvider: options.sovereignAI.chatProvider,
+        chatProvider: provider,
         sealedEnvelope: sealed.sealedEnvelopeBase64,
         envelopeFormat: sealed.envelopeFormat,
         envelopeVersion: sealed.envelopeVersion,
         manifestUrl: sealed.manifestUrl,
       };
-      console.log('[ATHENA] sovereignAI sealed', {
-        provider: options.sovereignAI.chatProvider,
-        byokPresent: !!options.sovereignAI.byokKey,
-        endpointPresent: !!options.sovereignAI.byokEndpoint,
-        manifestFp: sealed.manifestFingerprint,
+      console.log('[ATHENA] sovereignAI v3 wrapped', {
+        provider,
+        godRecipient: slot.godRecipient,
+        godFp: godFp.slice(0, 16),
+        storageFp: slot.manifestFingerprint.slice(0, 20),
+        currentFp: sealed.manifestFingerprint.slice(0, 20),
       });
     } catch (err) {
       // Fail-safe: if the seal fails, refuse to fall through to the house
@@ -221,6 +243,32 @@ export async function* streamChat(
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
+    // ── Rotation kill-switch ── If Athena returns envelope_storage_stale
+    // it means the god private key rotated since we sealed the storedInner
+    // (or the seed IDB blob got mangled). Wipe the slot + slot metadata
+    // so the user re-enters through the ceremony next time. Steward's
+    // 2026-07-07 "rotation kills stored keys" property landing on the wire.
+    if (
+      options?.sovereignAI &&
+      options.sovereignAI.chatProvider !== 'olympus-grid' &&
+      body.includes('envelope_storage_stale')
+    ) {
+      const provider = options.sovereignAI.chatProvider;
+      // Re-resolve the current god fingerprint to scope the wipe. This
+      // is the god that just returned stale — it's the same one we sealed
+      // against (a fresh manifest fetch on a rotation would still return
+      // a valid manifest, just with a new pubkey; either way the fp we
+      // wipe is the one the wrapped envelope targeted).
+      try {
+        const manifestUrl = `${baseUrl}/.well-known/cosmos-logos.json`;
+        const godInfo = await fetchManifestForCeremony(manifestUrl);
+        await deleteSlot(godInfo.pubkeyFingerprint, 'chat', provider);
+        useSovereignAiStore.getState().clearChatSlot(godInfo.pubkeyFingerprint, provider);
+      } catch { /* swallow — best-effort cleanup */ }
+      throw new Error(
+        `Athena's cosmos-logos key rotated — your saved ${provider} key was invalidated. Re-enter it in Settings → Sovereign AI.`,
+      );
+    }
     throw new Error(`Athena returned ${response.status}: ${body || response.statusText}`);
   }
 
