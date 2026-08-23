@@ -8,7 +8,7 @@ import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
 import { useAgentStore } from '@/lib/store/agent-store';
 import { useEnvironmentStore, applyClusterOverride } from '@/lib/store/environment-store';
 import { useSovereignAiStore } from '@/lib/store/sovereign-ai-store';
-import { sealForWire } from '@/lib/sovereign-ai/envelope';
+import { sealForWire, fetchManifestForCeremony } from '@/lib/sovereign-ai/envelope';
 import { loadSlot, deleteSlot } from '@/lib/sovereign-ai/secure-storage';
 import { logSession } from '@/lib/api/session-log';
 
@@ -132,47 +132,64 @@ export async function speak(text: string) {
   } | null = null;
 
   if (wantSovereign) {
-    // Load the previously-sealed inner ciphertext from IndexedDB. If no
-    // slot is stored for this voice provider, the user hasn't done the
-    // paste ceremony yet — surface a helpful error and stop.
-    const slot = await loadSlot('voice', sai.voiceProvider);
-    if (!slot) {
-      console.warn('[Apollo] no sovereign voice slot stored — user must add key in Settings');
-      logSession('apollo.speak', 'sovereign_ai.slot_missing', {
-        provider: sai.voiceProvider,
-      }, 'warn');
-      cleanup();
-      throw new Error(
-        `Sovereign Voice: no sealed key stored for ${sai.voiceProvider}. Open Settings → Sovereign AI to add one.`,
-      );
-    }
+    // v3 agent-scoped storage — resolve the Apollo pubkey fingerprint first,
+    // then load the slot keyed to THAT god. Same Apollo codename served by
+    // two clusters with different keypairs = two independent silos.
+    const apolloBase = resolved.url.replace(/\/speak\/?$/, '');
+    const manifestUrl = `${apolloBase}/.well-known/cosmos-logos.json`;
+    let godFp: string;
     try {
-      // Apollo manifest lives adjacent to /speak on the same perimeter path.
-      const apolloBase = resolved.url.replace(/\/speak\/?$/, '');
-      const manifestUrl = `${apolloBase}/.well-known/cosmos-logos.json`;
-      const sealed = await sealForWire(manifestUrl, slot.storedInner, clientSurface);
-      sovereignBlock = {
-        voiceProvider: sai.voiceProvider,
-        sealedEnvelope: sealed.sealedEnvelopeBase64,
-        envelopeFormat: sealed.envelopeFormat,
-        envelopeVersion: sealed.envelopeVersion,
-        manifestUrl: sealed.manifestUrl,
-      };
-      logSession('apollo.speak', 'sovereign_ai.wrapped', {
-        provider: sai.voiceProvider,
-        godRecipient: slot.godRecipient,
-        format: sealed.envelopeFormat,
-        version: sealed.envelopeVersion,
-      });
+      const godInfo = await fetchManifestForCeremony(manifestUrl);
+      godFp = godInfo.pubkeyFingerprint;
     } catch (err) {
-      console.warn('[Apollo] sovereign seal failed, falling through to house path:', err);
-      logSession('apollo.speak', 'sovereign_ai.seal_failed', {
+      console.warn('[Apollo] manifest fetch failed — falling through to house path:', err);
+      logSession('apollo.speak', 'sovereign_ai.manifest_failed', {
         provider: sai.voiceProvider,
         err: (err as Error).message.slice(0, 200),
       }, 'warn');
-      // Fail-open on voice (unlike chat which fail-safes): degrading to house
-      // costs one tithe but the user still hears the response. Steward can
-      // toggle to fail-safe later if the audit boundary needs to be strict.
+      // fall through to house path
+      godFp = '';
+    }
+    if (!godFp) {
+      // No godFp = can't resolve slot; proceed with house-path (fail-open on voice)
+    } else {
+      const slot = await loadSlot(godFp, 'voice', sai.voiceProvider);
+      if (!slot) {
+        console.warn('[Apollo] no sovereign voice slot stored — user must add key in Settings');
+        logSession('apollo.speak', 'sovereign_ai.slot_missing', {
+          provider: sai.voiceProvider,
+          godFp: godFp.slice(0, 16),
+        }, 'warn');
+        cleanup();
+        throw new Error(
+          `Sovereign Voice: no sealed key stored for ${sai.voiceProvider} on this Apollo. Open Settings → Sovereign AI to add one.`,
+        );
+      }
+      try {
+        const sealed = await sealForWire(manifestUrl, slot.storedInner, clientSurface);
+        sovereignBlock = {
+          voiceProvider: sai.voiceProvider,
+          sealedEnvelope: sealed.sealedEnvelopeBase64,
+          envelopeFormat: sealed.envelopeFormat,
+          envelopeVersion: sealed.envelopeVersion,
+          manifestUrl: sealed.manifestUrl,
+        };
+        logSession('apollo.speak', 'sovereign_ai.wrapped_v3', {
+          provider: sai.voiceProvider,
+          godRecipient: slot.godRecipient,
+          godFp: godFp.slice(0, 16),
+          format: sealed.envelopeFormat,
+          version: sealed.envelopeVersion,
+        });
+      } catch (err) {
+        console.warn('[Apollo] sovereign seal failed, falling through to house path:', err);
+        logSession('apollo.speak', 'sovereign_ai.seal_failed', {
+          provider: sai.voiceProvider,
+          err: (err as Error).message.slice(0, 200),
+        }, 'warn');
+        // Fail-open on voice (unlike chat which fail-safes): degrading to
+        // house costs one tithe but the user still hears the response.
+      }
     }
   }
 
@@ -212,10 +229,14 @@ export async function speak(text: string) {
       const errBody = await res.text().catch(() => '');
       if (sovereignBlock && errBody.includes('envelope_storage_stale')) {
         const provider = sai.voiceProvider;
+        // Re-resolve the Apollo pubkey fingerprint to scope the wipe.
         try {
-          await deleteSlot('voice', provider);
-        } catch { /* store cleanup below carries the UI state */ }
-        useSovereignAiStore.getState().clearVoiceSlot(provider);
+          const apolloBaseForFp = resolved.url.replace(/\/speak\/?$/, '');
+          const manifestUrlForFp = `${apolloBaseForFp}/.well-known/cosmos-logos.json`;
+          const godInfo = await fetchManifestForCeremony(manifestUrlForFp);
+          await deleteSlot(godInfo.pubkeyFingerprint, 'voice', provider);
+          useSovereignAiStore.getState().clearVoiceSlot(godInfo.pubkeyFingerprint, provider);
+        } catch { /* best-effort */ }
         console.warn('[Apollo] cosmos-logos key rotated — voice slot invalidated. Re-enter in Settings.');
       }
       console.error('[Apollo] TTS error:', res.status);

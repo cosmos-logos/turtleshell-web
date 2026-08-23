@@ -18,7 +18,7 @@
 // where it was first proven — cosmos-logos handshake step visualization is
 // the trust primitive we're carrying forward into the mainline flow.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Eye, EyeOff, ClipboardPaste, Trash2, Check, X, ShieldCheck,
   Lock, Unlock, Hash, PenTool, CheckCircle, XCircle, Send, RefreshCw,
@@ -43,10 +43,18 @@ import {
   listSlots,
   type StoredSlot,
 } from '@/lib/sovereign-ai/secure-storage';
-import { useEnvironmentStore, applyClusterOverride } from '@/lib/store/environment-store';
 
 interface Props {
   category: SovereignCategory;
+  /** Explicit manifest URL for the AGENT whose credentials this chooser
+   *  scopes to. Steward 2026-07-09: sovereignty is agent-anchored, not
+   *  cluster-anchored. Different agents (different pubkeys) have wholly
+   *  independent credential silos. Callers (Settings' per-agent config
+   *  panel) MUST provide this so it's clear which agent is being edited. */
+  manifestUrl: string;
+  /** Human-visible label for the scope banner, e.g. "Athena at Local Dev
+   *  Tunnel". If absent, only the manifest identity + fingerprint show. */
+  scopeLabel?: string;
   open: boolean;
   onClose: () => void;
 }
@@ -100,31 +108,30 @@ function shortFp(fp: string): string {
   return trimmed.slice(0, 12);
 }
 
-// ─── Per-category god endpoint resolution ───
+// ─── Per-agent context derived from the caller's manifest URL ───
+//
+// Steward 2026-07-09: sovereignty is agent-anchored. The chooser no longer
+// derives the god from `category` + the current cluster's env store — that
+// implicit binding was the design bug. Now the caller (Settings' per-agent
+// config panel) passes the agent's manifest URL explicitly, and everything
+// else — test-endpoint URL, wire-block field name — is derived from it or
+// from the category the chooser was opened in.
 
-function useGodContext(category: SovereignCategory) {
+function useAgentContext(category: SovereignCategory, manifestUrl: string) {
   return useMemo(() => {
-    if (category === 'chat') {
-      const rawBase = useEnvironmentStore.getState().getBaseUrl();
-      const base = applyClusterOverride(rawBase);
-      return {
-        baseUrl: base,
-        manifestUrl: `${base}/.well-known/cosmos-logos.json`,
-        testUrl: `${base}/byok/test`,
-        godLabel: 'Athena',
-        blockFieldName: 'chatProvider' as const,
-      };
-    }
-    const envApollo = useEnvironmentStore.getState().endpoints.apollo || '';
-    const base = applyClusterOverride(envApollo).replace(/\/+$/, '');
+    // Derive the test URL by lopping `/.well-known/cosmos-logos.json` off
+    // the manifest URL and appending `/byok/test`. Athena and Apollo both
+    // expose `/byok/test` at their base.
+    const baseUrl = manifestUrl.replace(/\/\.well-known\/cosmos-logos\.json\/?$/, '');
     return {
-      baseUrl: base,
-      manifestUrl: `${base}/.well-known/cosmos-logos.json`,
-      testUrl: `${base}/byok/test`,
-      godLabel: 'Apollo',
-      blockFieldName: 'voiceProvider' as const,
+      baseUrl,
+      manifestUrl,
+      testUrl: `${baseUrl}/byok/test`,
+      blockFieldName: (category === 'chat' ? 'chatProvider' : 'voiceProvider') as
+        | 'chatProvider'
+        | 'voiceProvider',
     };
-  }, [category]);
+  }, [category, manifestUrl]);
 }
 
 // ─── Console breadcrumb helper (Steward's ceremony visibility directive) ───
@@ -139,7 +146,20 @@ function logStep(category: SovereignCategory, providerKey: string, msg: string, 
   );
 }
 
-export function ProviderChooser({ category, open, onClose }: Props) {
+/** God identity resolved at chooser-open time. v3 sovereign storage is
+ *  scoped to this pubkey fingerprint — every slot op in this modal reads
+ *  from and writes to the silo for the current god only. Switching
+ *  cluster/agent while the chooser is open would break the scope; the
+ *  effect re-fetches on category change and users close+reopen if they
+ *  switched cluster. */
+interface GodIdentity {
+  pubkeyFingerprint: string;
+  manifestFingerprint: string;
+  godRecipient: string;   // codename (e.g. "athena-616")
+  displayName: string;    // manifest identity.name (e.g. "Athena")
+}
+
+export function ProviderChooser({ category, manifestUrl, scopeLabel, open, onClose }: Props) {
   const store = useSovereignAiStore();
   const currentProvider = category === 'chat' ? store.chatProvider : store.voiceProvider;
   const setProvider = category === 'chat' ? store.setChatProvider : store.setVoiceProvider;
@@ -147,53 +167,90 @@ export function ProviderChooser({ category, open, onClose }: Props) {
   const markSlotSaved = category === 'chat' ? store.markChatSlotSaved : store.markVoiceSlotSaved;
   const clearSlotStore = category === 'chat' ? store.clearChatSlot : store.clearVoiceSlot;
   const recordTest = category === 'chat' ? store.recordChatTestResult : store.recordVoiceTestResult;
-  const hasSlot = category === 'chat' ? hasChatSlot : hasVoiceSlot;
-  const getEndpointFor = category === 'chat' ? getChatEndpointFor : getVoiceEndpointFor;
-  const godCtx = useGodContext(category);
-
+  const hasSlotForGod = category === 'chat' ? hasChatSlot : hasVoiceSlot;
+  const godCtx = useAgentContext(category, manifestUrl);
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const [uiState, setUiState] = useState<Record<string, RowUiState>>({});
+  /** v3: which god's silo we're editing. Populated by manifest fetch on
+   *  open. Until this is set, slot rows show a "resolving trust anchor"
+   *  loading state — we can't render "Saved" vs "not saved" without
+   *  knowing which godFp to check. */
+  const [godInfo, setGodInfo] = useState<GodIdentity | null>(null);
+  const [godLoadError, setGodLoadError] = useState<string | null>(null);
+  const hasSlot = (providerKey: string): boolean =>
+    godInfo ? hasSlotForGod(godInfo.pubkeyFingerprint, providerKey) : false;
 
-  /** Hydrate the store's slot metadata from IndexedDB on open. This makes
-   *  hasChatSlot / hasVoiceSlot synchronous checks reflect reality for the
-   *  UI on first render. */
-  const hydrateFromIdb = useCallback(async () => {
-    try {
-      const slots = await listSlots(category);
-      const info: Record<string, { savedAt: string; godRecipient: string; fingerprintShort: string }> = {};
-      for (const s of slots) {
-        info[s.provider] = {
-          savedAt: s.savedAt,
-          godRecipient: s.godRecipient,
-          fingerprintShort: shortFp(s.manifestFingerprint),
-        };
-      }
-      if (category === 'chat') store.hydrateChatSlots(info);
-      else store.hydrateVoiceSlots(info);
-    } catch (err) {
-      logStep(category, '_', 'IndexedDB hydration failed', err);
-    }
-  }, [category, store]);
-
+  // Draft-seed + IDB-hydrate is split into TWO effects and both depend ONLY
+  // on `open` and `category`. Previously the combined effect took
+  // `hydrateFromIdb` (useCallback with `store` as a dep) and `getEndpointFor`
+  // (local const, new identity every render) as deps — so the effect fired
+  // on every store update, and the async hydrate itself triggered a store
+  // update. Loop: user pastes → draft state changes → component re-renders
+  // → `store` identity churn → `hydrateFromIdb` gets new identity → effect
+  // fires → drafts wiped back to seed. Steward: "field briefly flashes then
+  // goes blank". Fix: seed drafts ONCE on open (or category change), never
+  // re-seed on downstream store activity. Read store getters imperatively
+  // inside the effect body so they don't need to be deps.
   useEffect(() => {
     if (!open) return;
-    void hydrateFromIdb();
-    // Seed drafts — key stays EMPTY (we never re-expose plaintext), endpoint
-    // seeded from non-secret store value (Ollama URL, XTTS URL — those are
-    // addresses, not secrets).
+    // 1. Seed drafts. Key stays EMPTY (we never re-expose plaintext).
+    //    Endpoint seeds from non-secret store value (Ollama URL, XTTS URL —
+    //    those are addresses, not secrets).
+    const readEndpointFor = category === 'chat' ? getChatEndpointFor : getVoiceEndpointFor;
     const seed: Record<string, RowDraft> = {};
     const uiSeed: Record<string, RowUiState> = {};
     for (const p of providersFor(category)) {
       seed[p.key] = {
         key: '',
-        endpoint: getEndpointFor(p.key) ?? (p.requiresEndpoint ? (p.defaultEndpointUrl ?? '') : ''),
+        endpoint: readEndpointFor(p.key) ?? (p.requiresEndpoint ? (p.defaultEndpointUrl ?? '') : ''),
         reveal: false,
       };
       uiSeed[p.key] = { steps: [], busy: false, pendingDelete: false };
     }
     setDrafts(seed);
     setUiState(uiSeed);
-  }, [open, category, getEndpointFor, hydrateFromIdb]);
+    setGodInfo(null);
+    setGodLoadError(null);
+    // 2. Resolve the god identity (v3 storage scope), then hydrate that
+    //    god's slot metadata into the store. Inline — no useCallback, no
+    //    `store` dep, no feedback loop.
+    (async () => {
+      try {
+        const manifest = await fetchManifestForCeremony(godCtx.manifestUrl);
+        const identity: GodIdentity = {
+          pubkeyFingerprint: manifest.pubkeyFingerprint,
+          manifestFingerprint: manifest.fingerprint,
+          godRecipient: manifest.godRecipient,
+          // Prefer manifest.identity.name (e.g. "Athena"), fall back to
+          // codename (e.g. "athena-616"), then to the scopeLabel the caller
+          // passed us as ultimate fallback.
+          displayName: manifest.identity.name || manifest.godRecipient || scopeLabel || 'the agent',
+        };
+        setGodInfo(identity);
+        logStep(category, '_', 'trust anchor resolved', {
+          codename: identity.godRecipient,
+          pubkeyFp: identity.pubkeyFingerprint.slice(0, 16),
+        });
+        const slots = await listSlots(identity.pubkeyFingerprint, category);
+        const info: Record<string, { savedAt: string; godRecipient: string; fingerprintShort: string }> = {};
+        for (const s of slots) {
+          info[s.provider] = {
+            savedAt: s.savedAt,
+            godRecipient: s.godRecipient,
+            fingerprintShort: shortFp(s.manifestFingerprint),
+          };
+        }
+        const storeSnap = useSovereignAiStore.getState();
+        if (category === 'chat') storeSnap.hydrateChatSlots(identity.pubkeyFingerprint, info);
+        else storeSnap.hydrateVoiceSlots(identity.pubkeyFingerprint, info);
+      } catch (err) {
+        const msg = (err as Error).message;
+        setGodLoadError(msg);
+        logStep(category, '_', 'trust anchor resolution failed', err);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, category]);
 
   if (!open) return null;
 
@@ -266,13 +323,13 @@ export function ProviderChooser({ category, open, onClose }: Props) {
 
       const manifest = await fetchManifestForCeremony(godCtx.manifestUrl);
       addStep(providerKey, {
-        label: `2. ${godCtx.godLabel} identity attested`,
+        label: `2. ${(godInfo?.displayName ?? 'the agent')} identity attested`,
         detail: `codename: ${manifest.identity.codename}\nfingerprint: sha256:${shortFp(manifest.fingerprint)}…`,
         status: 'ok',
         mono: true,
       });
       addStep(providerKey, {
-        label: `3. ${godCtx.godLabel}'s Ed25519 public key (recipient)`,
+        label: `3. ${(godInfo?.displayName ?? 'the agent')}'s Ed25519 public key (recipient)`,
         detail: manifest.pemPubkey.replace(/-----[^-]+-----/g, '').replace(/\s/g, '').slice(0, 88) + '…',
         status: 'hash',
         mono: true,
@@ -311,19 +368,27 @@ export function ProviderChooser({ category, open, onClose }: Props) {
       });
 
       addStep(providerKey, { label: '6. Storing sealed bytes in IndexedDB', status: 'send' });
+      // v3: slot is keyed by the god's pubkey fingerprint. sealForStorage
+      // returns it alongside the ciphertext — use that same fp for both the
+      // IDB write and the store's mirror. Guarantees storage-time consistency
+      // even if godInfo state hasn't hydrated yet (edge case: user pastes
+      // very fast after opening the chooser).
       await saveSlot({
+        godFp: sealed.pubkeyFingerprint,
         category,
         provider: p.key,
         storedInner: sealed.storedInner,
         manifestFingerprint: sealed.manifestFingerprint,
         godRecipient: sealed.godRecipient,
       });
-      markSlotSaved(p.key, {
+      markSlotSaved(sealed.pubkeyFingerprint, p.key, {
         savedAt: new Date().toISOString(),
         godRecipient: sealed.godRecipient,
         fingerprintShort: shortFp(sealed.manifestFingerprint),
       });
-      logStep(category, providerKey, 'IndexedDB saved');
+      logStep(category, providerKey, 'IndexedDB saved', {
+        godFp: sealed.pubkeyFingerprint.slice(0, 16),
+      });
 
       // Clear the plaintext draft immediately — no matter how briefly the
       // input holds it, once sealed it should be gone from the UI too.
@@ -331,7 +396,7 @@ export function ProviderChooser({ category, open, onClose }: Props) {
 
       addStep(providerKey, {
         label: '7. Your key is sealed and stored',
-        detail: `${godCtx.godLabel} is the only party that can ever open it. If ${godCtx.godLabel}'s key rotates, this stored ciphertext becomes unreadable and you will be asked to re-enter — that IS the security posture.`,
+        detail: `${(godInfo?.displayName ?? 'the agent')} is the only party that can ever open it. If ${(godInfo?.displayName ?? 'the agent')}'s key rotates, this stored ciphertext becomes unreadable and you will be asked to re-enter — that IS the security posture.`,
         status: 'ok',
       });
 
@@ -366,11 +431,19 @@ export function ProviderChooser({ category, open, onClose }: Props) {
       addStep(providerKey, { label: 'Test flow starting', status: 'info' });
       logStep(category, providerKey, 'test starting');
 
-      const slot = await loadSlot(category, p.key);
+      if (!godInfo) {
+        addStep(providerKey, {
+          label: 'Trust anchor not resolved yet',
+          detail: godLoadError ?? 'still fetching the god manifest',
+          status: 'fail',
+        });
+        return;
+      }
+      const slot = await loadSlot(godInfo.pubkeyFingerprint, category, p.key);
       if (!slot) {
         addStep(providerKey, {
-          label: 'No sealed key in IndexedDB',
-          detail: 'Enter your key and hit Save & Seal first.',
+          label: 'No sealed key in IndexedDB for this agent',
+          detail: `Enter your key and hit Save & Seal first. Scope: ${godInfo.displayName} (${godInfo.pubkeyFingerprint.slice(0, 16)}…)`,
           status: 'fail',
         });
         logStep(category, providerKey, 'test aborted: no slot');
@@ -405,9 +478,9 @@ export function ProviderChooser({ category, open, onClose }: Props) {
         });
         // Proactive wipe — server would tell us anyway, but no need to burn
         // a network round trip when we can see the rotation locally.
-        try { await deleteSlot(category, p.key); } catch { /* ignore */ }
-        clearSlotStore(p.key);
-        recordTest(p.key, {
+        try { await deleteSlot(godInfo.pubkeyFingerprint, category, p.key); } catch { /* ignore */ }
+        clearSlotStore(godInfo.pubkeyFingerprint, p.key);
+        recordTest(godInfo.pubkeyFingerprint, p.key, {
           ok: false,
           testedAt: new Date().toISOString(),
           error: 'cosmos-logos key rotated — key wiped, re-enter',
@@ -424,7 +497,7 @@ export function ProviderChooser({ category, open, onClose }: Props) {
       const wire = await sealForWire(godCtx.manifestUrl, slot.storedInner, 'turtleshell-web');
 
       addStep(providerKey, {
-        label: `Sending sealed test envelope to ${godCtx.godLabel}`,
+        label: `Sending sealed test envelope to ${(godInfo?.displayName ?? 'the agent')}`,
         detail: `POST ${godCtx.testUrl}`,
         status: 'send',
         mono: true,
@@ -457,15 +530,15 @@ export function ProviderChooser({ category, open, onClose }: Props) {
         // envelope_storage_stale from the server = same kill-switch as
         // proactive detection above; wipe and prompt re-entry.
         if (verdict.errorCode === 'envelope_storage_stale') {
-          try { await deleteSlot(category, p.key); } catch { /* ignore */ }
-          clearSlotStore(p.key);
+          try { await deleteSlot(godInfo.pubkeyFingerprint, category, p.key); } catch { /* ignore */ }
+          clearSlotStore(godInfo.pubkeyFingerprint, p.key);
         }
         addStep(providerKey, {
           label: `${p.displayName} rejected the key`,
           detail: verdict.error || `HTTP ${resp.status}`,
           status: 'fail',
         });
-        recordTest(p.key, {
+        recordTest(godInfo.pubkeyFingerprint, p.key, {
           ok: false,
           testedAt: new Date().toISOString(),
           tookMs: took,
@@ -475,7 +548,7 @@ export function ProviderChooser({ category, open, onClose }: Props) {
       }
 
       addStep(providerKey, {
-        label: `${godCtx.godLabel} decrypted the envelope privately`,
+        label: `${(godInfo?.displayName ?? 'the agent')} decrypted the envelope privately`,
         detail: `The stored ciphertext was opened server-side. Timing: ${verdict.tookMs ?? took}ms.`,
         status: 'unlock',
       });
@@ -490,7 +563,7 @@ export function ProviderChooser({ category, open, onClose }: Props) {
         detail: `endpoint class: ${verdict.endpointClass ?? 'managed-cloud'}. You can chat / speak against this provider now.`,
         status: 'ok',
       });
-      recordTest(p.key, {
+      recordTest(godInfo.pubkeyFingerprint, p.key, {
         ok: true,
         testedAt: new Date().toISOString(),
         tookMs: took,
@@ -509,10 +582,13 @@ export function ProviderChooser({ category, open, onClose }: Props) {
 
   const handleDeleteConfirm = async (p: SovereignProvider) => {
     try {
-      await deleteSlot(category, p.key);
-      clearSlotStore(p.key);
+      if (!godInfo) throw new Error('trust anchor not resolved');
+      await deleteSlot(godInfo.pubkeyFingerprint, category, p.key);
+      clearSlotStore(godInfo.pubkeyFingerprint, p.key);
       resetSteps(p.key);
-      logStep(category, p.key, 'slot deleted from IndexedDB and store');
+      logStep(category, p.key, 'slot deleted from IndexedDB and store', {
+        godFp: godInfo.pubkeyFingerprint.slice(0, 16),
+      });
     } catch (err) {
       logStep(category, p.key, 'delete failed', err);
     } finally {
@@ -536,14 +612,40 @@ export function ProviderChooser({ category, open, onClose }: Props) {
          onClick={onClose}>
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-surface-1 border border-shell-500/40 rounded-2xl shadow-2xl"
            onClick={(e) => e.stopPropagation()}>
-        <div className="sticky top-0 bg-surface-1 border-b border-border-muted px-6 py-4 flex items-center gap-3">
-          <button onClick={onClose} className="text-shell-400 hover:text-shell-300 text-sm">
-            ‹ Back
-          </button>
-          <h2 className="flex-1 text-center text-lg font-semibold text-shell-300">
-            {category === 'chat' ? 'Chat AI' : 'Voice AI'}
-          </h2>
-          <div className="w-14" />
+        <div className="sticky top-0 bg-surface-1 border-b border-border-muted px-6 py-4">
+          <div className="flex items-center gap-3">
+            <button onClick={onClose} className="text-shell-400 hover:text-shell-300 text-sm">
+              ‹ Back
+            </button>
+            <h2 className="flex-1 text-center text-lg font-semibold text-shell-300">
+              {category === 'chat' ? 'Chat AI' : 'Voice AI'}
+            </h2>
+            <div className="w-14" />
+          </div>
+          {/* v3 scope banner — makes it visible which agent this credential
+              silo is scoped to. Two Athenas with different pubkeys are
+              cryptographically distinct sovereign silos. Steward 2026-07-09. */}
+          <div className="mt-2 flex items-center justify-center gap-1.5 text-2xs">
+            {godInfo ? (
+              <>
+                <ShieldCheck size={12} className="text-shell-500" />
+                <span className="text-text-muted">
+                  Editing for <span className="text-shell-300 font-semibold">
+                    {scopeLabel ?? godInfo.displayName}
+                  </span>
+                </span>
+                <span className="text-text-muted/60 font-mono">
+                  · sha256:{godInfo.pubkeyFingerprint.slice(0, 12)}…
+                </span>
+              </>
+            ) : godLoadError ? (
+              <span className="text-red-400">
+                Trust anchor fetch failed: {godLoadError.slice(0, 60)}
+              </span>
+            ) : (
+              <span className="text-text-muted italic">Resolving trust anchor…</span>
+            )}
+          </div>
         </div>
 
         <div className="p-6 space-y-4">
@@ -559,9 +661,11 @@ export function ProviderChooser({ category, open, onClose }: Props) {
             if (!draft || !ui) return null;
             const isCurrent = currentProvider === p.key;
             const slotPresent = hasSlot(p.key);
-            const slotInfo = category === 'chat'
-              ? store.chatSlotInfo[p.key]
-              : store.voiceSlotInfo[p.key];
+            const slotInfo = godInfo
+              ? (category === 'chat'
+                  ? store.chatSlotInfo[godInfo.pubkeyFingerprint]?.[p.key]
+                  : store.voiceSlotInfo[godInfo.pubkeyFingerprint]?.[p.key])
+              : undefined;
 
             return (
               <div key={p.key}
@@ -670,7 +774,7 @@ export function ProviderChooser({ category, open, onClose }: Props) {
                       </button>
                     </div>
                     <div className="text-2xs text-text-muted">
-                      ⓘ This is the URL {godCtx.godLabel} will call, not this browser.
+                      ⓘ This is the URL {(godInfo?.displayName ?? 'the agent')} will call, not this browser.
                     </div>
                   </div>
                 )}
@@ -767,7 +871,7 @@ export function ProviderChooser({ category, open, onClose }: Props) {
             <p className="text-2xs text-text-muted flex items-start gap-2">
               <ShieldCheck size={14} className="flex-shrink-0 mt-0.5 text-shell-500/70" />
               <span>
-                Your keys are sealed against the exact server that will use them at the moment you paste. This browser can no longer read them; only {godCtx.godLabel} can. Ares and Hermes see opaque bytes; if either god's key rotates, your saved key stops working and you'll be asked to re-enter — that's the security posture.
+                Your keys are sealed against the exact server that will use them at the moment you paste. This browser can no longer read them; only {(godInfo?.displayName ?? 'the agent')} can. Ares and Hermes see opaque bytes; if either god's key rotates, your saved key stops working and you'll be asked to re-enter — that's the security posture.
               </span>
             </p>
           </div>

@@ -4,7 +4,7 @@ import { buildMCPHeaders } from './mcp-headers';
 import { getShellId } from '@/lib/api/olympus-grid-client';
 import { useChatStore } from '@/lib/store/chat-store';
 import { getToolBindingsForAgent } from '@/lib/store/tool-bindings-store';
-import { sealForWire } from '@/lib/sovereign-ai/envelope';
+import { sealForWire, fetchManifestForCeremony } from '@/lib/sovereign-ai/envelope';
 import { loadSlot, deleteSlot } from '@/lib/sovereign-ai/secure-storage';
 import { useSovereignAiStore } from '@/lib/store/sovereign-ai-store';
 
@@ -151,14 +151,24 @@ export async function* streamChat(
   } | null = null;
   if (options?.sovereignAI && options.sovereignAI.chatProvider !== 'olympus-grid') {
     const provider = options.sovereignAI.chatProvider;
-    const slot = await loadSlot('chat', provider);
+    const manifestUrl = `${baseUrl}/.well-known/cosmos-logos.json`;
+    // v3 agent-scoped storage — resolve the current god's pubkey fingerprint
+    // first, then load the slot keyed to THAT god. Steward 2026-07-09: same
+    // codename served by two different keypairs = two independent silos.
+    let godFp: string;
+    try {
+      const godInfo = await fetchManifestForCeremony(manifestUrl);
+      godFp = godInfo.pubkeyFingerprint;
+    } catch (err) {
+      throw new Error(`Failed to resolve god identity for ${provider}: ${(err as Error).message}`);
+    }
+    const slot = await loadSlot(godFp, 'chat', provider);
     if (!slot) {
       throw new Error(
-        `Sovereign AI: no sealed key stored for ${provider}. Open Settings → Sovereign AI to add one.`,
+        `Sovereign AI: no sealed ${provider} key stored for this Athena. Open Settings → Sovereign AI to add one.`,
       );
     }
     try {
-      const manifestUrl = `${baseUrl}/.well-known/cosmos-logos.json`;
       const sealed = await sealForWire(
         manifestUrl,
         slot.storedInner,
@@ -171,9 +181,10 @@ export async function* streamChat(
         envelopeVersion: sealed.envelopeVersion,
         manifestUrl: sealed.manifestUrl,
       };
-      console.log('[ATHENA] sovereignAI v2 wrapped', {
+      console.log('[ATHENA] sovereignAI v3 wrapped', {
         provider,
         godRecipient: slot.godRecipient,
+        godFp: godFp.slice(0, 16),
         storageFp: slot.manifestFingerprint.slice(0, 20),
         currentFp: sealed.manifestFingerprint.slice(0, 20),
       });
@@ -243,10 +254,17 @@ export async function* streamChat(
       body.includes('envelope_storage_stale')
     ) {
       const provider = options.sovereignAI.chatProvider;
+      // Re-resolve the current god fingerprint to scope the wipe. This
+      // is the god that just returned stale — it's the same one we sealed
+      // against (a fresh manifest fetch on a rotation would still return
+      // a valid manifest, just with a new pubkey; either way the fp we
+      // wipe is the one the wrapped envelope targeted).
       try {
-        await deleteSlot('chat', provider);
-      } catch { /* swallow — the store cleanup below is what matters for UI */ }
-      useSovereignAiStore.getState().clearChatSlot(provider);
+        const manifestUrl = `${baseUrl}/.well-known/cosmos-logos.json`;
+        const godInfo = await fetchManifestForCeremony(manifestUrl);
+        await deleteSlot(godInfo.pubkeyFingerprint, 'chat', provider);
+        useSovereignAiStore.getState().clearChatSlot(godInfo.pubkeyFingerprint, provider);
+      } catch { /* swallow — best-effort cleanup */ }
       throw new Error(
         `Athena's cosmos-logos key rotated — your saved ${provider} key was invalidated. Re-enter it in Settings → Sovereign AI.`,
       );

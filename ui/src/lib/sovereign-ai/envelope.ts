@@ -76,6 +76,14 @@ export interface StorageSealResult {
   /** SHA-256 of the manifest JSON at seal time. Locks the slot to the
    *  god pubkey the client verified. */
   manifestFingerprint: string;
+  /** v3 storage key (Steward 2026-07-09) — SHA-256 hex of the RAW 32-byte
+   *  Ed25519 pubkey. This is the stable cryptographic identity of the
+   *  target god. Same key across clusters/reformattings → same fingerprint
+   *  → same sovereign slot. Different pubkey (same codename or not) →
+   *  different slot. This is what makes agent-scoped sovereign storage
+   *  work: two Athenas with the same name but different keypairs live in
+   *  cryptographically distinct silos. */
+  pubkeyFingerprint: string;
   /** God's identity.codename from the manifest — used for provenance and
    *  as a soft check when we wipe on rotation. */
   godRecipient: string;
@@ -111,14 +119,50 @@ function randomNonceHex(): string {
     .join('');
 }
 
+/** Extract the raw base64 body from an Ed25519 PEM. Kept lenient about
+ *  whitespace / different header labels — `-----BEGIN PUBLIC KEY-----`
+ *  is standard but Ed25519 tools sometimes emit `-----BEGIN Ed25519 PUBLIC KEY-----`. */
+function pemBodyBase64(pem: string): string {
+  return pem
+    .replace(/-----[^-]+-----/g, '')
+    .replace(/\s/g, '')
+    .trim();
+}
+
+/** SHA-256 of the RAW PUBLIC KEY bytes (not the PEM string). This is the
+ *  stable cryptographic identity of the target god — same key across
+ *  clusters or reformattings produces the same fingerprint. Used to key
+ *  sovereign-storage slots so a saved BYOK travels with the trust anchor
+ *  it was sealed against.
+ *
+ *  v3 (agent-scoped sovereign storage, Steward 2026-07-09): this fingerprint
+ *  is what makes two agents with the same codename but different keypairs
+ *  cryptographically distinct sovereign silos, and what makes the same
+ *  agent reached via two clusters share a single silo. */
+export async function computePubkeyFingerprint(pemPubkey: string): Promise<string> {
+  const b64 = pemBodyBase64(pemPubkey);
+  // Decode base64 → raw DER bytes → take the last 32 bytes (Ed25519 SPKI
+  // wraps the 32-byte key in a small SubjectPublicKeyInfo prefix; taking
+  // the tail matches Athena's server-side heuristic).
+  const binary = atob(b64);
+  const raw = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) raw[i] = binary.charCodeAt(i);
+  const tail = raw.slice(-32);
+  const hashed = await crypto.subtle.digest('SHA-256', tail);
+  return Array.from(new Uint8Array(hashed))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 /** Fetch + parse a cosmos-logos manifest, returning the raw JSON text
- *  (for fingerprint hashing) + parsed manifest + extracted PEM pubkey.
- *  Cached at the caller layer if performance matters — this fn is honest. */
+ *  (for fingerprint hashing) + parsed manifest + extracted PEM pubkey +
+ *  pubkey fingerprint (v3 storage key). */
 async function fetchManifest(manifestUrl: string): Promise<{
   rawText: string;
   parsed: any;
   pemPubkey: string;
   fingerprint: string;
+  pubkeyFingerprint: string;
   godRecipient: string;
 }> {
   const resp = await fetch(manifestUrl, { cache: 'no-cache' });
@@ -131,6 +175,7 @@ async function fetchManifest(manifestUrl: string): Promise<{
     throw new Error('Manifest missing cryptography.public_key');
   }
   const godRecipient: string = parsed?.identity?.codename || 'unknown';
+  const pubkeyFingerprint = await computePubkeyFingerprint(pemPubkey);
   // Fingerprint hashes the JSON.stringify of the PARSED manifest so a
   // reformat-in-transit doesn't spuriously invalidate. The property that
   // matters — same pubkey ⇒ same fingerprint — holds either way as long as
@@ -138,7 +183,7 @@ async function fetchManifest(manifestUrl: string): Promise<{
   // which for our returns is the same thing at the byte level today.
   const rawText = JSON.stringify(parsed);
   const fingerprint = 'sha256:' + (await sha256Hex(rawText));
-  return { rawText, parsed, pemPubkey, fingerprint, godRecipient };
+  return { rawText, parsed, pemPubkey, fingerprint, pubkeyFingerprint, godRecipient };
 }
 
 // ─── sealForStorage — paste-time ───
@@ -160,7 +205,7 @@ export async function sealForStorage(
   manifestUrl: string,
   byok: SovereignBYOKPayload,
 ): Promise<StorageSealResult> {
-  const { pemPubkey, fingerprint, godRecipient } = await fetchManifest(manifestUrl);
+  const { pemPubkey, fingerprint, pubkeyFingerprint, godRecipient } = await fetchManifest(manifestUrl);
 
   // The inner payload is intentionally minimal — no timestamp, no client
   // surface, no fingerprint. Anti-replay lives on the outer wire envelope
@@ -181,6 +226,7 @@ export async function sealForStorage(
   return {
     storedInner,
     manifestFingerprint: fingerprint,
+    pubkeyFingerprint,
     godRecipient,
   };
 }
@@ -238,13 +284,16 @@ export async function sealForWire(
 export async function fetchManifestForCeremony(manifestUrl: string): Promise<{
   pemPubkey: string;
   fingerprint: string;
+  /** v3 storage-key fingerprint. See envelope.computePubkeyFingerprint. */
+  pubkeyFingerprint: string;
   godRecipient: string;
   identity: { codename: string; name?: string };
 }> {
-  const { parsed, pemPubkey, fingerprint, godRecipient } = await fetchManifest(manifestUrl);
+  const { parsed, pemPubkey, fingerprint, pubkeyFingerprint, godRecipient } = await fetchManifest(manifestUrl);
   return {
     pemPubkey,
     fingerprint,
+    pubkeyFingerprint,
     godRecipient,
     identity: {
       codename: godRecipient,

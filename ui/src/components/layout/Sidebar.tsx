@@ -7,7 +7,6 @@ import {
   BookOpen,
   History,
   Brain,
-  Wrench,
   ChevronLeft,
   ChevronRight,
   X,
@@ -152,7 +151,9 @@ function useNavItems(): NavItem[] {
     ...cosmosItems,
     { to: '/app/history', icon: History, label: 'History' },
     { to: '/app/memory', icon: Brain, label: 'Memory' },
-    { to: '/app/tools', icon: Wrench, label: 'Tools' },
+    // Steward 2026-07-09: Tools removed from sidebar — now managed per-agent
+    // in Settings → Manage {agent} → MCP providers. The /app/tools route
+    // still resolves for the manage-modal link; only the nav entry is hidden.
   ];
   if (testBetaEnabled) {
     items.push(

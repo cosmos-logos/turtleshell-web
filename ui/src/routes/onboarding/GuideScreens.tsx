@@ -23,10 +23,11 @@ export function GuideBtn({ children, onClick, disabled, variant = 'primary', cla
 }
 
 // ── Guide grid entry metadata ──────────────────────────
-// Order: Athena first (the core LLM router), then the two bundled personas,
-// then Build Your Own as a Soon teaser. Cosmos and Logos went GA in the
-// manifest-driven routing pass; Custom ("Build Your Own") stays gated with
-// a "Soon" badge.
+// Order: Athena first (the only bookable guide right now — she's the whole
+// launch until Cosmos/Logos ship a full persona). Cosmos, Logos, and Build
+// Your Own are gated as `soon: true` so the onboarding grid renders them
+// visibly (users see what's coming) but disabled + labeled "Soon". Steward
+// directive 2026-07-02: "Athena has the room to herself for now."
 export interface GuideEntry {
   key: GuideKey;
   style: string;
@@ -38,21 +39,21 @@ export interface GuideEntry {
 
 export const GUIDE_ENTRIES: readonly Omit<GuideEntry, 'configured'>[] = [
   { key: 'athena', style: 'text-purple-400', selectedBg: 'bg-purple-500/10', selectedBorder: 'border-purple-500/40' },
-  { key: 'cosmos', style: 'text-shell-400', selectedBg: 'bg-shell-500/10', selectedBorder: 'border-shell-500/40' },
-  { key: 'logos',  style: 'text-teal-400',  selectedBg: 'bg-teal-500/10',  selectedBorder: 'border-teal-500/40'  },
+  { key: 'cosmos', style: 'text-shell-400', selectedBg: 'bg-shell-500/10', selectedBorder: 'border-shell-500/40', soon: true },
+  { key: 'logos',  style: 'text-teal-400',  selectedBg: 'bg-teal-500/10',  selectedBorder: 'border-teal-500/40',  soon: true },
   { key: 'custom', style: 'text-amber-400', selectedBg: 'bg-amber-500/10', selectedBorder: 'border-amber-500/40', soon: true },
 ];
 
 // ── Guide Choose Screen ────────────────────────────────
 export function GuideChooseScreen({
-  title = 'Choose Your Guide',
+  title = 'Choose Your Agent',
   subtitle = 'Who walks with you through the ocean?',
   selected,
   onSelect,
   onNext,
-  onByok,
+  onByok: _onByok,
   configuredIds = new Set<string>(),
-  primaryLabel = 'This Is My Guide',
+  primaryLabel = 'This Is My Agent',
   byokLabel = 'Use your own API keys →',
 }: {
   title?: string;
@@ -60,6 +61,8 @@ export function GuideChooseScreen({
   selected: GuideKey | null;
   onSelect: (k: GuideKey) => void;
   onNext: () => void;
+  /** Kept in the prop shape for future refactor — currently ignored because
+   *  the BYOK onboarding path writes plaintext (see disabled button below). */
   onByok: () => void;
   /** IDs of guides the user has already configured — renders a subtle badge so
    *  the user can see their existing set while picking another. */
@@ -117,9 +120,20 @@ export function GuideChooseScreen({
 
       <GuideBtn onClick={onNext} disabled={!selected}>{primaryLabel}</GuideBtn>
 
-      <button onClick={onByok}
-        className="mt-4 text-xs text-text-muted hover:text-shell-400 transition-colors underline underline-offset-2">
-        {byokLabel}
+      {/* BYOK entry point disabled 2026-07-09 — this screen writes plaintext
+          API keys to localStorage (see agent-store.setUserApiKey → 'turtleshell-user-api-keys'),
+          which violates Steward's 2026-07-07 "no plaintext BYOK anywhere"
+          property. Rather than route the onboarding-BYOK save through the
+          sovereign v2 seal ceremony right now, we're gating the entry
+          point. Users who want their own key will do it in Settings →
+          Sovereign AI (where the seal-at-paste ceremony IS wired). Once
+          the onboarding BYOK screen is refactored to seal through Athena's
+          pubkey, this button comes back. */}
+      <button disabled
+        className="mt-4 text-xs text-text-muted/60 cursor-not-allowed underline underline-offset-2 decoration-dotted"
+        title="Available after onboarding — go to Settings → Sovereign AI"
+        onClick={(e) => e.preventDefault()}>
+        {byokLabel} <span className="ml-1 text-[9px] uppercase tracking-wider">Soon</span>
       </button>
     </div>
   );
@@ -141,7 +155,7 @@ export function ByokScreen({
   configuredIds = new Set<string>(),
   title = 'Bring Your Own Key',
   subtitle = 'Choose a provider and enter your API key.',
-  primaryLabel = 'This Is My Guide',
+  primaryLabel = 'This Is My Agent',
   backLabel = 'Back',
 }: {
   selected: GuideKey | null;

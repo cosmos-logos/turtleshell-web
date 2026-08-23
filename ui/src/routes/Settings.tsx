@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Info, Sun, Moon, Brain, Wrench, Compass, Plus, Sparkles, Mic } from 'lucide-react';
+import { Info, Sun, Moon, Wrench, Compass, Plus, Sliders, Brain } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useEnvironmentStore } from '@/lib/store/environment-store';
 import { useChatStore } from '@/lib/store/chat-store';
@@ -10,9 +10,8 @@ import { useAllowDeveloperMode } from '@/lib/hooks/useAllowDeveloperMode';
 import { useConfiguredGuidesStore } from '@/lib/store/configured-guides-store';
 import { useAgentStore, hasUserApiKey } from '@/lib/store/agent-store';
 import { useCosmosLogosStore } from '@/lib/cosmos-logos/store';
-import { useSovereignAiStore } from '@/lib/store/sovereign-ai-store';
-import { chatProviderByKey, voiceProviderByKey } from '@/lib/sovereign-ai/provider-catalog';
-import { ProviderChooser } from '@/components/settings/ProviderChooser';
+import { AgentSettingsSheet } from '@/components/settings/AgentSettingsSheet';
+import { AddAgentModal } from '@/components/settings/AddAgentModal';
 import { GUIDES, BYOK_GUIDES } from '@/routes/onboarding/OnboardingData';
 
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
@@ -50,6 +49,17 @@ function GuideSection() {
   const setActiveAgent = useAgentStore((s) => s.setActiveAgent);
   const builtinActive = useAgentStore((s) => s.activeAgent);
   const switchAgent = useChatStore((s) => s.switchAgent);
+  const clusterLabel = useEnvironmentStore((s) => s.current);
+
+  // Per-agent credential manager modal state. Only one open at a time.
+  // Steward 2026-07-09: sovereignty is agent-anchored — credentials live
+  // on the agent card, not in a global "Sovereign AI" section.
+  const [managingAgent, setManagingAgent] = useState<{
+    name: string;
+    chatManifestUrl?: string;
+    voiceManifestUrl?: string;
+  } | null>(null);
+  const [addAgentOpen, setAddAgentOpen] = useState(false);
 
   type GuideCard = {
     key: string;
@@ -57,15 +67,29 @@ function GuideSection() {
     name: string;
     role: string;
     isActive: boolean;
-    onClick: () => void;
+    onActivate: () => void;
+    /** Manifest URL for chat capability. When present, "Chat providers"
+     *  is offered in this agent's settings sheet. */
+    chatManifestUrl?: string;
+    /** Manifest URL for voice capability (usually the paired Apollo at
+     *  the same cluster). When present, "Voice providers" is offered. */
+    voiceManifestUrl?: string;
   };
 
   const cards: GuideCard[] = configuredList
     .map((key): GuideCard | null => {
       if (key === 'athena' || key === 'cosmos' || key === 'logos') {
         const info = GUIDES[key];
-        const matchCodename = key === 'athena' ? 'athena-616' : key;
-        const cosmos = cosmosAgents.find((a) => a.manifest.identity.codename === matchCodename);
+        // Take the first cosmos-logos agent whose codename starts with the
+        // family key (athena/cosmos/logos). This lets a user-added
+        // Athena-family agent (e.g. `athena-717`) map through the same
+        // curated card slot when Athena is the family they configured.
+        const cosmos = cosmosAgents.find((a) => {
+          const cn = a.manifest.identity.codename;
+          return key === 'athena'
+            ? (cn === 'athena-616' || cn.startsWith('athena'))
+            : cn === key;
+        });
         const activeCodename = activeChatAgentId
           ? cosmosAgents.find((a) => a.id === activeChatAgentId)?.manifest.identity.codename
           : null;
@@ -74,19 +98,34 @@ function GuideSection() {
             ? activeCodename.startsWith('athena')
             : activeCodename === key
         );
+        // Manifest URLs for this agent's credential silos. Chat targets
+        // this agent's Athena directly. Voice pairs with the Apollo at
+        // the same cluster (derived by string-swap on the base URL).
+        // Steward's launch scope: one chat agent + its paired Apollo.
+        // Future: separate agents per capability (Your Sound = Apollo
+        // is a peer agent, not a derivative of Athena).
+        const agentBase = cosmos?.url;
+        const chatManifestUrl = agentBase
+          ? `${agentBase}/.well-known/cosmos-logos.json`
+          : undefined;
+        const voiceManifestUrl = agentBase
+          ? `${agentBase.replace('/v1/athena', '/v1/apollo')}/.well-known/cosmos-logos.json`
+          : undefined;
         return {
           key,
           emoji: info.emoji,
           name: info.name,
           role: info.role,
           isActive,
-          onClick: () => {
+          onActivate: () => {
             if (cosmos) {
               setActiveChatAgent(cosmos.id);
               switchAgent(cosmos.id);
               navigate('/app/chat');
             }
           },
+          chatManifestUrl,
+          voiceManifestUrl,
         };
       }
       if (['openai', 'claude', 'grok', 'gemini'].includes(key)) {
@@ -94,13 +133,17 @@ function GuideSection() {
         if (!info || !hasUserApiKey(key)) return null;
         const builtin = builtinAgents.find((a) => a.id === key);
         const isActive = !activeChatAgentId && builtinActive.id === key;
+        // BYOK guides talk directly to the provider — they don't route
+        // through a cosmos-logos agent, so there's no manifest URL and
+        // no sovereign silo to manage here (the plaintext-key flow lives
+        // in the Agents route). No settings gear rendered.
         return {
           key,
           emoji: info.emoji,
           name: info.name,
           role: info.role,
           isActive,
-          onClick: () => {
+          onActivate: () => {
             setActiveChatAgent(null);
             if (builtin) setActiveAgent(builtin);
             switchAgent(key);
@@ -112,10 +155,59 @@ function GuideSection() {
     })
     .filter((x): x is GuideCard => x !== null);
 
+  // ── Add cards for user-added cosmos-logos agents ──────────────
+  // Any cosmos-logos agent whose codename doesn't map to the curated
+  // athena/cosmos/logos family gets its own card. Steward 2026-07-09:
+  // this is where "Add another agent" pastes land — the agent is stored
+  // in cosmos-logos-store but doesn't fit the guide-family keys, so we
+  // render it directly.
+  const familyCodenames = new Set<string>();
+  for (const c of cards) {
+    // Track the codenames the curated cards already picked up so we
+    // don't render them twice.
+    if (c.key === 'athena' || c.key === 'cosmos' || c.key === 'logos') {
+      const cosmos = cosmosAgents.find((a) => {
+        const cn = a.manifest.identity.codename;
+        return c.key === 'athena'
+          ? cn.startsWith('athena')
+          : cn === c.key;
+      });
+      if (cosmos) familyCodenames.add(cosmos.manifest.identity.codename);
+    }
+  }
+  for (const agent of cosmosAgents) {
+    if (familyCodenames.has(agent.manifest.identity.codename)) continue;
+    // Skip background services (poseidon, apollo — those live in future
+    // "Your MCP Servers" and "Your Sound" sections).
+    if (agent.manifest.display?.visible === false) continue;
+    const codename = agent.manifest.identity.codename;
+    // Skip apollo-family too (visible: false in most manifests but be defensive)
+    if (codename === 'apollo' || codename.startsWith('apollo-')) continue;
+    if (codename === 'poseidon' || codename.startsWith('poseidon-')) continue;
+
+    const isActive = activeChatAgentId === agent.id;
+    const chatManifestUrl = `${agent.url}/.well-known/cosmos-logos.json`;
+    const voiceManifestUrl = `${agent.url.replace('/v1/athena', '/v1/apollo')}/.well-known/cosmos-logos.json`;
+    cards.push({
+      key: `cosmos:${agent.id}`,
+      emoji: '🌀',
+      name: agent.displayName ?? agent.manifest.identity.name ?? codename,
+      role: codename,
+      isActive,
+      onActivate: () => {
+        setActiveChatAgent(agent.id);
+        switchAgent(agent.id);
+        navigate('/app/chat');
+      },
+      chatManifestUrl,
+      voiceManifestUrl,
+    });
+  }
+
   return (
     <section className="space-y-3">
       <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-        <Compass size={14} /> Your Guides
+        <Compass size={14} /> Your Agents
       </h2>
 
       {cards.length === 0 && (
@@ -123,7 +215,7 @@ function GuideSection() {
           to="/app/settings/change-guide"
           className="block p-4 bg-surface-1 border border-border-muted rounded-xl hover:border-shell-500/40 transition-colors text-center"
         >
-          <div className="text-sm font-semibold text-text-primary">Pick your first guide</div>
+          <div className="text-sm font-semibold text-text-primary">Pick your first agent</div>
           <div className="text-2xs text-text-muted mt-1">
             Choose a voice to walk with you through the ocean.
           </div>
@@ -132,148 +224,119 @@ function GuideSection() {
 
       {cards.length > 0 && (
         <div className="space-y-2">
-          {cards.map((it) => (
-            <button
-              key={it.key}
-              type="button"
-              onClick={it.onClick}
-              className={`w-full flex items-center gap-3 p-4 rounded-xl text-left bg-surface-1 border transition-all ${
-                it.isActive
-                  ? 'border-shell-500/40 bg-shell-500/5'
-                  : 'border-border-muted hover:border-shell-500/30'
-              }`}
-            >
-              <div className="w-10 h-10 rounded-full bg-surface-2 border border-border-muted flex items-center justify-center text-xl shrink-0">
-                {it.emoji}
+          {cards.map((it) => {
+            const hasSovereign = !!it.chatManifestUrl || !!it.voiceManifestUrl;
+            return (
+              <div
+                key={it.key}
+                className={`w-full flex items-center gap-3 p-4 rounded-xl bg-surface-1 border transition-all ${
+                  it.isActive
+                    ? 'border-shell-500/40 bg-shell-500/5'
+                    : 'border-border-muted hover:border-shell-500/30'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={it.onActivate}
+                  className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                >
+                  <div className="w-10 h-10 rounded-full bg-surface-2 border border-border-muted flex items-center justify-center text-xl shrink-0">
+                    {it.emoji}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-sm font-semibold ${it.isActive ? 'text-shell-400' : 'text-text-primary'}`}>
+                      {it.name}
+                    </div>
+                    <div className="text-[11px] uppercase tracking-wider text-text-muted">{it.role}</div>
+                  </div>
+                  {it.isActive ? (
+                    <div className="flex items-center gap-1.5 text-xs text-shell-400 shrink-0">
+                      <div className="w-1.5 h-1.5 rounded-full bg-shell-400 animate-pulse" />Active
+                    </div>
+                  ) : (
+                    <div className="text-xs text-text-muted shrink-0">Switch →</div>
+                  )}
+                </button>
+                {/* Sovereign credential manager gear. Steward 2026-07-09:
+                    credentials belong to the agent, not to a global section. */}
+                {hasSovereign && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setManagingAgent({
+                        name: it.name,
+                        chatManifestUrl: it.chatManifestUrl,
+                        voiceManifestUrl: it.voiceManifestUrl,
+                      });
+                    }}
+                    className="p-2 rounded-lg text-text-muted hover:text-shell-300 hover:bg-shell-500/10 transition-colors shrink-0"
+                    title={`Manage ${it.name}'s credentials`}
+                    aria-label={`Manage ${it.name}'s credentials`}
+                  >
+                    <Sliders size={16} />
+                  </button>
+                )}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className={`text-sm font-semibold ${it.isActive ? 'text-shell-400' : 'text-text-primary'}`}>
-                  {it.name}
-                </div>
-                <div className="text-[11px] uppercase tracking-wider text-text-muted">{it.role}</div>
-              </div>
-              {it.isActive ? (
-                <div className="flex items-center gap-1.5 text-xs text-shell-400 shrink-0">
-                  <div className="w-1.5 h-1.5 rounded-full bg-shell-400 animate-pulse" />Active
-                </div>
-              ) : (
-                <div className="text-xs text-text-muted shrink-0">Switch →</div>
-              )}
-            </button>
-          ))}
+            );
+          })}
 
-          {/* "Add another guide" — gated as "Soon" until multi-guide onboarding
-              is ready. Athena is the only launchable interface tonight. */}
-          <div
-            className="flex items-center gap-3 p-4 rounded-xl bg-surface-1 border border-dashed border-border-muted text-text-muted opacity-60 cursor-not-allowed"
-            title="Additional guides coming soon"
-            aria-disabled="true"
+          {/* "Add another agent" — Steward 2026-07-09: un-gated. Paste a
+              cosmos-logos manifest URL; the modal handshakes with it and
+              adds it as a new agent with its own sovereign silo. */}
+          <button
+            type="button"
+            onClick={() => setAddAgentOpen(true)}
+            className="w-full flex items-center gap-3 p-4 rounded-xl bg-surface-1 border border-dashed border-border-muted text-text-secondary hover:border-shell-500/40 hover:text-shell-300 transition-colors text-left"
           >
             <div className="w-10 h-10 rounded-full bg-surface-2 border border-dashed border-border-muted flex items-center justify-center shrink-0">
               <Plus size={18} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <div className="text-sm font-semibold">Add another guide</div>
-                <span className="text-2xs font-semibold px-1.5 py-0.5 bg-surface-3 rounded-full uppercase tracking-wider">Soon</span>
-              </div>
+              <div className="text-sm font-semibold">Add another agent</div>
               <div className="text-2xs mt-0.5">
-                Each has their own voice and their own memory.
+                Paste any cosmos-logos manifest URL. The agent's pubkey becomes
+                its own sovereign credential silo.
               </div>
             </div>
-          </div>
+          </button>
         </div>
       )}
-    </section>
-  );
-}
 
-// ── Sovereign AI section ───────────────────────────────
-// The commodity-thesis-as-UI: chat + voice provider picker. Every row is a
-// visual peer of Olympus-Grid. Storage is per-provider slot (Zustand +
-// localStorage) — switching providers doesn't wipe stored keys.
-function SovereignAiSection() {
-  const store = useSovereignAiStore();
-  const [category, setCategory] = useState<'chat' | 'voice' | null>(null);
-  const chatCatalog = chatProviderByKey(store.chatProvider);
-  const voiceCatalog = voiceProviderByKey(store.voiceProvider);
-  // v2: slot metadata (non-secret) mirrors what's in IndexedDB. Presence
-  // here means the user has sealed a key for that provider; the actual
-  // ciphertext lives only in IndexedDB and cannot be reached from React.
-  const chatKeysStored = Object.keys(store.chatSlotInfo).length;
-  const voiceKeysStored = Object.keys(store.voiceSlotInfo).length;
-
-  return (
-    <section className="space-y-3">
-      <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-        <Sparkles size={14} /> Sovereign AI
-      </h2>
-      <div className="p-4 bg-surface-1 border border-border-muted rounded-xl space-y-4">
-        <p className="text-2xs text-text-muted">
-          Pick who thinks and speaks for your Guardian. Bring your own keys — sealed for the exact server that will use them; not even we can read them in transit.
-        </p>
-
-        {/* Chat AI row */}
-        <button
-          onClick={() => setCategory('chat')}
-          className="w-full flex items-center gap-3 p-3 rounded-lg bg-surface-2/40 border border-border-muted hover:border-shell-500/40 transition-colors text-left"
-        >
-          <Brain size={16} className="flex-shrink-0 text-shell-400" />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-text-primary flex items-center gap-2">
-              Chat AI
-              {chatKeysStored > 0 && (
-                <span className="text-2xs font-normal text-shell-400/80 bg-shell-500/10 px-1.5 py-0.5 rounded-full">
-                  {chatKeysStored} key{chatKeysStored === 1 ? '' : 's'} saved
-                </span>
-              )}
-            </div>
-            <div className="text-2xs text-text-muted mt-0.5">
-              {chatCatalog?.displayName ?? 'Olympus-Grid'}
-              {store.chatProvider !== 'olympus-grid' && <span className="text-shell-400/80"> · your key</span>}
-            </div>
-          </div>
-          <span className="text-xs text-text-muted">Change ›</span>
-        </button>
-
-        {/* Voice AI row */}
-        <button
-          onClick={() => setCategory('voice')}
-          className="w-full flex items-center gap-3 p-3 rounded-lg bg-surface-2/40 border border-border-muted hover:border-shell-500/40 transition-colors text-left"
-        >
-          <Mic size={16} className="flex-shrink-0 text-shell-400" />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-text-primary flex items-center gap-2">
-              Voice AI
-              {voiceKeysStored > 0 && (
-                <span className="text-2xs font-normal text-shell-400/80 bg-shell-500/10 px-1.5 py-0.5 rounded-full">
-                  {voiceKeysStored} key{voiceKeysStored === 1 ? '' : 's'} saved
-                </span>
-              )}
-            </div>
-            <div className="text-2xs text-text-muted mt-0.5">
-              {voiceCatalog?.displayName ?? 'Olympus-Grid'}
-              {store.voiceProvider !== 'olympus-grid' && <span className="text-shell-400/80"> · your key</span>}
-            </div>
-          </div>
-          <span className="text-xs text-text-muted">Change ›</span>
-        </button>
-
-        <div className="pt-2 text-2xs text-text-muted italic">
-          Every AI is a commodity. If one gets too expensive, switch. Your Guardian doesn't care.
-        </div>
-      </div>
-
-      {category && (
-        <ProviderChooser
-          category={category}
+      {managingAgent && (
+        <AgentSettingsSheet
+          agentName={managingAgent.name}
+          chatManifestUrl={managingAgent.chatManifestUrl}
+          voiceManifestUrl={managingAgent.voiceManifestUrl}
+          scopeSuffix={`on ${clusterLabel}`}
           open={true}
-          onClose={() => setCategory(null)}
+          onClose={() => setManagingAgent(null)}
         />
       )}
+
+      <AddAgentModal
+        open={addAgentOpen}
+        onClose={() => setAddAgentOpen(false)}
+        onAdded={(agentId) => {
+          // After adding, auto-open the credential manager so the user can
+          // configure providers for the new agent immediately.
+          const added = cosmosAgents.find((a) => a.id === agentId)
+            ?? useCosmosLogosStore.getState().agents.find((a) => a.id === agentId);
+          if (added) {
+            const chatManifestUrl = `${added.url}/.well-known/cosmos-logos.json`;
+            const voiceManifestUrl = `${added.url.replace('/v1/athena', '/v1/apollo')}/.well-known/cosmos-logos.json`;
+            setManagingAgent({
+              name: added.displayName ?? added.manifest.identity.name ?? added.manifest.identity.codename,
+              chatManifestUrl,
+              voiceManifestUrl,
+            });
+          }
+        }}
+      />
     </section>
   );
 }
+
 
 const AGENT_THEMES: { value: AgentTheme; label: string }[] = [
   { value: 'standard', label: 'Standard' },
@@ -337,8 +400,6 @@ export function Settings() {
         </div>
 
         <GuideSection />
-
-        <SovereignAiSection />
 
         {/* Appearance — Dark Mode toggle only. First visible knob. */}
         <section className="space-y-3">

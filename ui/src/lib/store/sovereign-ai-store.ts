@@ -52,6 +52,11 @@ export interface SlotInfo {
   };
 }
 
+/** v3 agent-scoped slot info shape: godFp → provider → SlotInfo. Each
+ *  agent (identified by pubkey fingerprint) has its own independent
+ *  credential silo. Steward directive 2026-07-09. */
+export type ScopedSlotInfo = Record<string, Record<string, SlotInfo>>;
+
 interface SovereignAiState {
   /** Whether AI is turned on at all. When false, chat/voice surfaces should
    *  refuse to invoke inference. Non-LLM capabilities keep working. */
@@ -67,11 +72,12 @@ interface SovereignAiState {
   chatEndpointsByProvider: Record<string, string>;
   voiceEndpointsByProvider: Record<string, string>;
 
-  /** Per-provider slot metadata. Populated on saveSlot (via
-   *  markChatSlotSaved / markVoiceSlotSaved), cleared on deleteSlot,
-   *  hydrated on first mount by ProviderChooser's mount effect. */
-  chatSlotInfo: Record<string, SlotInfo>;
-  voiceSlotInfo: Record<string, SlotInfo>;
+  /** v3 agent-scoped slot metadata. Outer key = god pubkey fingerprint;
+   *  inner map = provider → SlotInfo. Two agents with different pubkeys
+   *  have wholly independent silos. Populated on saveSlot, cleared on
+   *  deleteSlot, hydrated on ProviderChooser open. */
+  chatSlotInfo: ScopedSlotInfo;
+  voiceSlotInfo: ScopedSlotInfo;
 
   /** Schema version for legacy migration gating. */
   schemaVersion: number;
@@ -84,27 +90,28 @@ interface SovereignAiState {
   setChatEndpoint: (provider: string, endpoint: string | null) => void;
   setVoiceEndpoint: (provider: string, endpoint: string | null) => void;
 
-  markChatSlotSaved: (provider: string, info: SlotInfo) => void;
-  markVoiceSlotSaved: (provider: string, info: SlotInfo) => void;
-  clearChatSlot: (provider: string) => void;
-  clearVoiceSlot: (provider: string) => void;
+  markChatSlotSaved: (godFp: string, provider: string, info: SlotInfo) => void;
+  markVoiceSlotSaved: (godFp: string, provider: string, info: SlotInfo) => void;
+  clearChatSlot: (godFp: string, provider: string) => void;
+  clearVoiceSlot: (godFp: string, provider: string) => void;
 
   /** Called after IndexedDB is scanned on mount — replaces the whole
-   *  category's slotInfo map with what's actually stored. Idempotent. */
-  hydrateChatSlots: (info: Record<string, SlotInfo>) => void;
-  hydrateVoiceSlots: (info: Record<string, SlotInfo>) => void;
+   *  category's slotInfo map for a SPECIFIC god with what's actually
+   *  stored. Called with the current god's fingerprint on chooser open. */
+  hydrateChatSlots: (godFp: string, info: Record<string, SlotInfo>) => void;
+  hydrateVoiceSlots: (godFp: string, info: Record<string, SlotInfo>) => void;
 
   /** Set the last-test result on a slot. Called by the Test button flow. */
-  recordChatTestResult: (provider: string, result: SlotInfo['lastTestResult']) => void;
-  recordVoiceTestResult: (provider: string, result: SlotInfo['lastTestResult']) => void;
+  recordChatTestResult: (godFp: string, provider: string, result: SlotInfo['lastTestResult']) => void;
+  recordVoiceTestResult: (godFp: string, provider: string, result: SlotInfo['lastTestResult']) => void;
 
-  /** Wipe every slot in a category — used on envelope_storage_stale
+  /** Wipe every slot for a god in a category — used on envelope_storage_stale
    *  server response. The corresponding IndexedDB wipe is the caller's
    *  responsibility (see secure-storage.wipeAll). */
-  wipeCategoryOnRotation: (category: 'chat' | 'voice') => void;
+  wipeCategoryOnRotation: (godFp: string, category: 'chat' | 'voice') => void;
 }
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 export const useSovereignAiStore = create<SovereignAiState>()(
   persist(
@@ -145,69 +152,114 @@ export const useSovereignAiStore = create<SovereignAiState>()(
           return { voiceEndpointsByProvider: next };
         }),
 
-      markChatSlotSaved: (provider, info) =>
+      markChatSlotSaved: (godFp, provider, info) =>
         set((state) => ({
-          chatSlotInfo: { ...state.chatSlotInfo, [provider]: info },
+          chatSlotInfo: {
+            ...state.chatSlotInfo,
+            [godFp]: {
+              ...(state.chatSlotInfo[godFp] ?? {}),
+              [provider]: info,
+            },
+          },
         })),
 
-      markVoiceSlotSaved: (provider, info) =>
+      markVoiceSlotSaved: (godFp, provider, info) =>
         set((state) => ({
-          voiceSlotInfo: { ...state.voiceSlotInfo, [provider]: info },
+          voiceSlotInfo: {
+            ...state.voiceSlotInfo,
+            [godFp]: {
+              ...(state.voiceSlotInfo[godFp] ?? {}),
+              [provider]: info,
+            },
+          },
         })),
 
-      clearChatSlot: (provider) =>
+      clearChatSlot: (godFp, provider) =>
         set((state) => {
-          const next = { ...state.chatSlotInfo };
-          delete next[provider];
-          return { chatSlotInfo: next };
+          const godMap = state.chatSlotInfo[godFp];
+          if (!godMap) return state;
+          const nextGod = { ...godMap };
+          delete nextGod[provider];
+          const nextAll = { ...state.chatSlotInfo };
+          if (Object.keys(nextGod).length === 0) delete nextAll[godFp];
+          else nextAll[godFp] = nextGod;
+          return { chatSlotInfo: nextAll };
         }),
 
-      clearVoiceSlot: (provider) =>
+      clearVoiceSlot: (godFp, provider) =>
         set((state) => {
-          const next = { ...state.voiceSlotInfo };
-          delete next[provider];
-          return { voiceSlotInfo: next };
+          const godMap = state.voiceSlotInfo[godFp];
+          if (!godMap) return state;
+          const nextGod = { ...godMap };
+          delete nextGod[provider];
+          const nextAll = { ...state.voiceSlotInfo };
+          if (Object.keys(nextGod).length === 0) delete nextAll[godFp];
+          else nextAll[godFp] = nextGod;
+          return { voiceSlotInfo: nextAll };
         }),
 
-      hydrateChatSlots: (info) => set({ chatSlotInfo: info }),
-      hydrateVoiceSlots: (info) => set({ voiceSlotInfo: info }),
+      hydrateChatSlots: (godFp, info) =>
+        set((state) => ({
+          chatSlotInfo: { ...state.chatSlotInfo, [godFp]: info },
+        })),
 
-      recordChatTestResult: (provider, result) =>
+      hydrateVoiceSlots: (godFp, info) =>
+        set((state) => ({
+          voiceSlotInfo: { ...state.voiceSlotInfo, [godFp]: info },
+        })),
+
+      recordChatTestResult: (godFp, provider, result) =>
         set((state) => {
-          const existing = state.chatSlotInfo[provider];
+          const existing = state.chatSlotInfo[godFp]?.[provider];
           if (!existing) return state;
           return {
             chatSlotInfo: {
               ...state.chatSlotInfo,
-              [provider]: { ...existing, lastTestResult: result },
+              [godFp]: {
+                ...state.chatSlotInfo[godFp]!,
+                [provider]: { ...existing, lastTestResult: result },
+              },
             },
           };
         }),
 
-      recordVoiceTestResult: (provider, result) =>
+      recordVoiceTestResult: (godFp, provider, result) =>
         set((state) => {
-          const existing = state.voiceSlotInfo[provider];
+          const existing = state.voiceSlotInfo[godFp]?.[provider];
           if (!existing) return state;
           return {
             voiceSlotInfo: {
               ...state.voiceSlotInfo,
-              [provider]: { ...existing, lastTestResult: result },
+              [godFp]: {
+                ...state.voiceSlotInfo[godFp]!,
+                [provider]: { ...existing, lastTestResult: result },
+              },
             },
           };
         }),
 
-      wipeCategoryOnRotation: (category) =>
-        set(() =>
-          category === 'chat'
-            ? { chatSlotInfo: {} }
-            : { voiceSlotInfo: {} },
-        ),
+      wipeCategoryOnRotation: (godFp, category) =>
+        set((state) => {
+          if (category === 'chat') {
+            const next = { ...state.chatSlotInfo };
+            delete next[godFp];
+            return { chatSlotInfo: next };
+          } else {
+            const next = { ...state.voiceSlotInfo };
+            delete next[godFp];
+            return { voiceSlotInfo: next };
+          }
+        }),
     }),
     {
-      name: 'turtleshell-sovereign-ai-v2',
+      name: 'turtleshell-sovereign-ai-v3',
       version: SCHEMA_VERSION,
-      // Legacy scrub — runs after localStorage rehydrate on FIRST load.
-      // Any pre-v3 blob is a plaintext-storage residue and gets purged.
+      // Steward 2026-07-09: schema v3 → v4 is the agent-scoping migration.
+      // Pre-v4 slotInfo maps were `Record<provider, SlotInfo>` — no godFp
+      // dimension. The IDB records those referenced are also being wiped
+      // (see secure-storage.ts DB_VERSION=2 upgrade). So on a v4 boot with
+      // stale slotInfo shape, we wipe both dimensions to a clean state and
+      // let users re-paste with the agent-scoped ceremony.
       onRehydrateStorage: () => (state) => {
         const scrubbed = scrubLegacyPlaintextStorage();
         if (scrubbed.wipedKeys.length > 0) {
@@ -220,9 +272,6 @@ export const useSovereignAiStore = create<SovereignAiState>()(
         }
         if (state && state.schemaVersion < SCHEMA_VERSION) {
           state.schemaVersion = SCHEMA_VERSION;
-          // Any old slot info from v1/v2 schemas points at plaintext keys
-          // that no longer exist — wipe the metadata so the UI shows the
-          // slots as "not saved" and prompts re-entry.
           state.chatSlotInfo = {};
           state.voiceSlotInfo = {};
         }
@@ -245,13 +294,14 @@ export function getVoiceEndpointFor(provider: string): string | null {
   return e && e.length > 0 ? e : null;
 }
 
-/** True when the given category+provider has a sealed slot in IndexedDB
- *  (as reflected by the store's mirror). Cheap synchronous check for
- *  render paths. */
-export function hasChatSlot(provider: string): boolean {
-  return provider in useSovereignAiStore.getState().chatSlotInfo;
+/** True when the given god+category+provider has a sealed slot in
+ *  IndexedDB (as reflected by the store's mirror). Cheap synchronous
+ *  check for render paths. v3: scoped to the god fingerprint so each
+ *  agent's silo is independently queryable. */
+export function hasChatSlot(godFp: string, provider: string): boolean {
+  return provider in (useSovereignAiStore.getState().chatSlotInfo[godFp] ?? {});
 }
 
-export function hasVoiceSlot(provider: string): boolean {
-  return provider in useSovereignAiStore.getState().voiceSlotInfo;
+export function hasVoiceSlot(godFp: string, provider: string): boolean {
+  return provider in (useSovereignAiStore.getState().voiceSlotInfo[godFp] ?? {});
 }
